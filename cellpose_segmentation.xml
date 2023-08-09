@@ -1,0 +1,92 @@
+<tool id="cellpose_segmentation" name="Cellpose Segmentation." version="1.0">
+
+   <description>Cellpose: Segment Cells</description>
+
+   <command>
+      source /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/activate;
+      /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/python
+      /finkbeiner/imaging/work/metal3/galaxy/tools/development_modules/cellpose_segmentation.py
+      --experiment $EXPERIMENT
+      --chosen_channels '$these_channels_only'
+      --img_norm_name $IMG_NORM_NAME
+      --model_type $model_type
+      --batch_size $BATCH_SIZE
+      --cell_diameter $CELL_DIAMETER
+      --flow_threshold $FLOW_THRESHOLD
+      --cell_probability $CELL_PROBABILITY
+      #if str($these_wells_only) !='':
+      --chosen_wells '$these_wells_only'
+      --wells_toggle $wells_toggle
+      #end if
+      #if str($these_times_only) !='':
+      --chosen_timepoints '$these_times_only'
+      --timepoints_toggle $timepoints_toggle
+      #end if
+      #if str($TILE) !='':
+      --tile $TILE
+      #end if
+      --input_dict $input_dict
+      --outfile $outfile
+   </command>
+
+   <inputs>
+      <param name="input_dict" type="data" format="data"
+         label="Used to connect modules. Otherwise not used." />
+      <param name="EXPERIMENT" type="text" format="text" size="70"
+         label="Plate Name. Might include PID." />
+      <param name="these_channels_only" type="text" format="text" value="" size="70"
+         label="Enter channel to segment."
+         help="Just one channel for segmentation."
+         optional="false" />
+      <param name='IMG_NORM_NAME' type='select' label='Normalization Type'>
+         <option value='division' selected='true'>division</option>
+         <option value='subtraction'>subtraction</option>
+         <option value='identity'>None</option>
+      </param>
+      <param name='model_type' type='select' label='Model type'>
+         <option value='cyto'>cyto</option>
+         <option value='cyto2' selected='true'>cyto2</option>
+         <option value='nuclei'>nuclei</option>
+      </param>
+
+      <param name="BATCH_SIZE" type="integer" value='8' size="70"
+         label="Cellpose batch size. Default is 8." />
+      <param name="CELL_DIAMETER" type="integer" value='30' size="70"
+         label="Cell diameter. Default is 30." />
+      <param name="FLOW_THRESHOLD" type="float" value='0.4' size="70"
+         label="Flow Threshold. Flow error threshold (all cells with errors below threshold are kept). Default is 0.4." />
+      <param name="CELL_PROBABILITY" type="float" value='0.' size="70"
+         label="Cell Probability. All pixels with value above threshold kept for masks, decrease to find more and larger masks. Default is 0." />
+
+      <param name="these_wells_only" type="text" format="text" value="" size="70"
+         label="Optional: Enter wells you would like included or excluded"
+         help="Separate individual wells by commas (e.g. A3,B11,D4,D6). Can also indicate a range of wells using a dash (e.g. B11-D2). Leave blank to include all available wells."
+         optional="true" />
+      <param name="wells_toggle" type="select" display="radio"
+         label="Select whether to include or exclude the wells specified above:">
+         <option value="include" selected="true">Include wells</option>
+         <option value="exclude">Exclude wells</option>
+      </param>
+      <param name="these_times_only" type="text" format="text" value="" size="70"
+         label="Optional: Enter timepoints you would like included or excluded"
+         help="Separate individual timepoints by commas (e.g. T3,T4,T9,T12). Can also indicate a range of timepoints using a dash (e.g. T5-T10). Leave blank to include all available timepoints."
+         optional="true" />
+      <param name="timepoints_toggle" type="select" display="radio"
+         label="Select whether to include or exclude the timepoints specified above">
+         <option value="include" selected="true">Include timepoints</option>
+         <option value="exclude">Exclude timepoints</option>
+      </param>
+      <param name="TILE" type="integer" size="70"
+         label="Enter single tile if you want. Good for checking data."
+         optional="true" />
+   </inputs>
+
+   <outputs>
+      <data name="outfile" type="text" format="data" label="Cellpose Segmentation Result" />
+   </outputs>
+
+   <help>
+      Segmentation using Cellpose.
+   </help>
+
+</tool>

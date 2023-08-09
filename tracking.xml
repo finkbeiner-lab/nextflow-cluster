@@ -1,0 +1,87 @@
+<tool id="tracking" name="Track cells with Voronoi Regions and Minimum Cost Flow algorithm."
+   version="1.0">
+
+   <description>Track cells with voronoi regions and minimum cost flow.</description>
+
+   <command>
+      source /finkbeiner/imaging/work/VENV-GALAXY/TF/bin/activate;
+      /finkbeiner/imaging/work/VENV-GALAXY/TF/bin/python
+      /finkbeiner/imaging/work/metal3/galaxy/tools/development_modules/tracking.py --experiment
+      $experiment
+      --DISTANCE_THRESHOLD $DISTANCE_THRESHOLD
+      --VORONOI_BOOL $VORONOI_BOOL
+      --chosen_channels '$these_channels_only'
+      #if str($these_wells_only) !='':
+      --chosen_wells '$these_wells_only'
+      --wells_toggle $wells_toggle
+      #end if
+      #if str($these_times_only) !='':
+      --chosen_timepoints '$these_times_only'
+      --timepoints_toggle $timepoints_toggle
+      #end if
+      #if str($TILE) !='':
+      --tile $TILE
+      #end if
+      --input_dict $input_dict
+      --outfile $outfile
+   </command>
+
+   <inputs>
+      <param name="input_dict" type="data" format="data"
+         label="Used to connect modules. Otherwise not used." />
+      <param name="experiment" type="text"
+         format="text" size="70" label="Experiment name" />
+      <param name="these_channels_only"
+         type="text" format="text" value="" size="70"
+         label="Enter channel to track."
+         help="Likely the same as your segmentation channel."
+         optional="false" />
+      <param name="DISTANCE_THRESHOLD" type="integer" size="70" value="300"
+         label="Max Distance Possible"
+         help="Maximum distance a cell might travel between successive time points" />
+      <param name="these_wells_only"
+         type="text" format="text" value="" size="70"
+         label="Optional: Enter wells you would like included or excluded"
+         help="Separate individual wells by commas (e.g. A3,B11,D4,D6). Can also indicate a range of wells using a dash (e.g. B11-D2). Leave blank to include all available wells."
+         optional="true" />
+      <param name="wells_toggle" type="select" display="radio"
+         label="Select whether to include or exclude the wells specified above:">
+         <option value="include" selected="true">Include wells</option>
+         <option value="exclude">Exclude wells</option>
+      </param>
+      <param name="these_times_only"
+         type="text" format="text" value="" size="70"
+         label="Optional: Enter timepoints you would like included or excluded"
+         help="Separate individual timepoints by commas (e.g. T3,T4,T9,T12). Can also indicate a range of timepoints using a dash (e.g. T5-T10). Leave blank to include all available timepoints."
+         optional="true" />
+      <param name="timepoints_toggle" type="select" display="radio"
+         label="Select whether to include or exclude the timepoints specified above">
+         <option value="include" selected="true">Include timepoints</option>
+         <option value="exclude">Exclude timepoints</option>
+      </param>
+      <param
+         name="channels_toggle" type="select" display="radio"
+         label="Select whether to include or exclude the channels specified above">
+         <option value="include" selected="true">Include channels</option>
+         <option value="exclude">Exclude channels</option>
+      </param> optional="false" /> <param
+         name='VORONOI_BOOL' type='select' label='Use Voronoi Regions?'>
+         <option value='true' selected='true'>Use Voronoi Regions</option>
+         <option value='false' selected='true'>Just Use Proximity</option>
+      </param>
+      <param
+         name="TILE" type="integer" size="70"
+         label="Enter single tile if you want. Good for checking data."
+         optional="true" />
+
+   </inputs>
+
+   <outputs>
+      <data name="outfile" type="text" format="data" label="Voronoi Track Cells Result" />
+   </outputs>
+
+   <help>
+      Tracks cells using proximity, voronoi regions, and minimum cost flow with linear programming.
+   </help>
+
+</tool>

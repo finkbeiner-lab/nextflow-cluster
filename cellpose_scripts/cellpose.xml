@@ -1,0 +1,102 @@
+<tool id='cellpose' name='Cellpose' version='1.0'>
+  <description> Cellpose training and evaluation runs</description>
+
+  <command>
+    source /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/activate;
+    /finkbeiner/imaging/work/VENV-GALAXY/TF/bin/python -m cellpose
+    #if str($model.root_dir) != str()# --root_dir $model.root_dir #end if#
+    #if str($model.model_name) != str()# --model_name $model.model_name #end if#
+    #if str($model.model_type) != 'none'# --model_type $model.model_type #end if#
+    #if str($data.img_dir) != str()# --img_dir $data.img_dir #end if#
+    #if str($data.mask_dir) != str()# --mask_dir $data.mask_dir #end if#
+    --channel $data.channel
+    --channel2 $data.channel2
+    #if str($data.img_ext) != str()# --img_ext $data.img_ext #end if#
+    $model.modes.mode
+
+    #if $model.modes.mode == 'train'#
+      #if str($model.modes.train.epochs) != str()# --epochs $model.modes.train.epochs #end if#
+      #if str($model.modes.train.learning_rate) != str()# --learning_rate $model.modes.train.learning_rate #end if#
+      #if str($model.modes.train.weight_decay) != str()# --weight_decay $model.modes.train.weight_decay #end if#
+    #end if#
+    #if $model.modes.mode == 'eval'#
+      #if str($model.modes.eval.out_dir) != str()# --out_dir $model.modes.eval.out_dir #end if#
+      #if str($model.modes.eval.diameter) != str()# --diameter $model.modes.eval.diameter #end if#
+      #if str($model.modes.eval.flow_threshold) != str()# --flow_threshold $model.modes.eval.flow_threshold #end if#
+      #if str($model.modes.eval.cellprob_threshold) != str()# --cellprob_threshold $model.modes.eval.cellprob_threshold #end if#
+      #if str($model.modes.eval.ap_threshold) != str()# --ap_threshold $model.modes.eval.ap_threshold #end if#
+    #end if#
+  </command>
+
+  <inputs>
+    <section name='model' title='Model parameters'>
+      <param name='root_dir' type='text' label='Root directory' optional='false'/>
+
+      <param name='model_name' type='text' label='Model name'/>
+      <param name='model_type' type='select' label='Model type'>
+        <option value='CP'>CP</option>
+        <option value='CPx'>CPx</option>
+        <option value='cyto'>cyto</option>
+        <option value='cyto2'>cyto2</option>
+        <option value='LC1'>LC1</option>
+        <option value='LC2'>LC2</option>
+        <option value='LC3'>LC3</option>
+        <option value='LC4'>LC4</option>
+        <option value='livecell'>livecell</option>
+        <option value='none' selected='true'>none</option>
+        <option value='nuclei'>nuclei</option>
+        <option value='tissuenet'>tissuenet</option>
+        <option value='TN1'>TN1</option>
+        <option value='TN2'>TN2</option>
+        <option value='TN3'>TN3</option>
+      </param>
+
+      <conditional name='modes'>
+        <param name='mode' type='select' label='Mode' display='radio'>
+          <option value='train'>Train</option>
+          <option value='eval'>Evaluation</option>
+        </param>
+
+        <when value='train'>
+          <section name='train' title='Train parameters'>
+            <param name='epochs' type='text' label='Epochs' value='100'/>
+            <param name='learning_rate' type='text' label='Learning rate' value='0.1'/>
+            <param name='weight_decay' type='text' label='Weight decay' value='0.0001'/>
+          </section>
+        </when>
+
+        <when value='eval'>
+          <section name='eval' title='Evaluation parameters'>
+            <param name='out_dir' type='text' label='Output directory' optional='false'/>
+            <param name='diameter' type='text' label='Diameter' value='30.0'/>
+            <param name='flow_threshold' type='text' label='Flow threshold' value='0.4'/>
+            <param name='cellprob_threshold' type='text' label='Cell probability threshold' value='0.0'/>
+            <param name='ap_threshold' type='text' label='Average precision threshold' value='0.5'/>
+          </section>
+        </when>
+      </conditional>
+    </section>
+
+    <section name='data' title='Data parameters'>
+      <param name='img_dir' type='text' label='Image directory' optional='false'/>
+      <param name='mask_dir' type='text' label='Mask directory'/>
+      <param name='channel' type='select' label='Channel'>
+        <option value='0' selected='true'>grayscale</option>
+        <option value='1'>red</option>
+        <option value='2'>green</option>
+        <option value='3'>blue</option>
+      </param>
+      <param name='channel2' type='select' label='Nuclear channel (optional)'>
+        <option value='0' selected='true'>none</option>
+        <option value='1'>red</option>
+        <option value='2'>green</option>
+        <option value='3'>blue</option>
+      </param>
+      <param name='img_ext' type='text' label='Image extension' value='tif'/>
+    </section>
+  </inputs>
+
+  <outputs>
+    <data name='output' type='txt'/>
+  </outputs>
+</tool>

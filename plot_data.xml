@@ -1,0 +1,66 @@
+<tool id="plot_data" name="Plot Data." version="1.0">
+
+    <description>Plot Data</description>
+    <command>
+      source /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/activate;
+      /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/python /finkbeiner/imaging/work/metal3/galaxy/tools/development_modules/plot_data.py 
+        --experiment $EXPERIMENT
+        #if str($these_wells_only) !='':
+        --chosen_wells '$these_wells_only'
+        --wells_toggle $wells_toggle
+        #end if
+        #if str($these_times_only) !='':
+        --chosen_timepoints '$these_times_only'
+        --timepoints_toggle $timepoints_toggle
+        #end if
+        #if str($these_channels_only) !='':
+        --chosen_channels '$these_channels_only'
+        --channels_toggle $channels_toggle
+        #end if
+        --input_dict $input_dict
+        --outfile $outfile
+    </command>
+
+    <inputs>
+        <param name="input_dict" type="data" format="data"
+         label="Used to connect modules. Otherwise not used." />
+        <param name="EXPERIMENT" type="text" format="text" size="70"
+         label="Plate Name. Might include PID." />
+        <param name="these_wells_only" type="text" format="text" value="" size="70"
+            label="Optional: Enter wells you would like included or excluded"
+            help="Separate individual wells by commas (e.g. A3,B11,D4,D6). Can also indicate a range of wells using a dash (e.g. B11-D2). Leave blank to include all available wells."
+            optional="true" />
+        <param name="wells_toggle" type="select" display="radio"
+            label="Select whether to include or exclude the wells specified above:">
+            <option value="include" selected="true">Include wells</option>
+            <option value="exclude">Exclude wells</option>
+        </param>
+        <param name="these_times_only" type="text" format="text" value="" size="70"
+            label="Optional: Enter timepoints you would like included or excluded"
+            help="Separate individual timepoints by commas (e.g. T3,T4,T9,T12). Can also indicate a range of timepoints using a dash (e.g. T5-T10). Leave blank to include all available timepoints."
+            optional="true" />
+        <param name="timepoints_toggle" type="select" display="radio"
+            label="Select whether to include or exclude the timepoints specified above">
+            <option value="include" selected="true">Include timepoints</option>
+            <option value="exclude">Exclude timepoints</option>
+        </param>
+        <param name="these_channels_only" type="text" format="text" value="" size="70"
+            label="Optional: Enter channel identifiers you would like included or excluded"
+            help="Separate individual channels by commas (e.g. FITC,RFP,DAPI). Leave blank to include all available channels."
+            optional="true" />
+        <param name="channels_toggle" type="select" display="radio"
+            label="Select whether to include or exclude the channels specified above">
+            <option value="include" selected="true">Include channels</option>
+            <option value="exclude">Exclude channels</option>
+        </param>
+    </inputs>
+
+    <outputs>
+        <data name="outfile" format="txt" label="Plot Data" />
+    </outputs>
+
+    <help>
+        Plot Data
+    </help>
+
+</tool>

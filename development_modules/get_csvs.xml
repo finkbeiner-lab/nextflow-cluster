@@ -1,0 +1,29 @@
+<tool id="getcsvs" name="Get CSVS." version="1.0">
+
+    <description>Get csvs from experiment.</description>
+
+    <command>
+        source /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/activate;
+        /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/python
+        /finkbeiner/imaging/work/metal3/galaxy/tools/development_modules/get_csvs.py
+        --experiment $EXPERIMENT
+        --input_dict $input_dict
+        --outfile $outfile
+    </command>
+
+    <inputs>
+        <param name="input_dict" type="data" format="data"
+         label="Used to connect modules. Otherwise not used." />
+        <param name="EXPERIMENT" type="text" format="text" size="70"
+            label="Plate Name. Might include PID." />
+    </inputs>
+
+    <outputs>
+        <data name="outfile" type="txt" format="data" label="Get CSVS Result" />
+    </outputs>
+
+    <help>
+        Get CSVS from experiment.
+    </help>
+
+</tool>

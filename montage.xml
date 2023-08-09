@@ -1,0 +1,79 @@
+<tool id="montage" name="Tile Montage." version="1.0">
+
+    <description>Montage</description>
+
+    <command>
+        source /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/activate;
+        /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/python
+        /finkbeiner/imaging/work/metal3/galaxy/tools/development_modules/montage.py
+        --experiment $EXPERIMENT
+        --tiletype $tiletype
+        --img_norm_name $IMG_NORM_NAME
+        --chosen_channels '$these_channels_only'
+        #if str($these_wells_only) !='':
+        --chosen_wells '$these_wells_only'
+        --wells_toggle $wells_toggle
+        #end if
+        #if str($these_times_only) !='':
+        --chosen_timepoints '$these_times_only'
+        --timepoints_toggle $timepoints_toggle
+        #end if
+        #if str($TILE) !='':
+        --tile $TILE
+        #end if
+        --input_dict $input_dict
+        --outfile $outfile
+    </command>
+
+    <inputs>
+          <param name="input_dict" type="data" format="data"
+         label="Used to connect modules. Otherwise not used." />
+        <param name="EXPERIMENT" type="text" format="text" size="70"
+            label="Plate Name. Might include PID." />
+        <param name='tiletype' type='select' label='Type of Tile to Montage'>
+            <option value='filename' selected='true'>Image</option>
+            <option value='maskpath'>Binary Mask</option>
+            <option value='trackedmaskpath'>Tracked Mask</option>
+        </param>
+        <param name="these_channels_only" type="text" format="text" value="" size="70"
+            label="Enter channel to montage."
+            help="If montaging a mask, choose your morphology channel."
+            optional="false" />
+        <param name='IMG_NORM_NAME' type='select' label='Normalization Type for Image'>
+            <option value='division'>division</option>
+            <option value='subtraction'>subtraction</option>
+            <option value='identity' selected='true'>None</option>
+        </param>
+        <param name="these_wells_only" type="text" format="text" value="" size="70"
+            label="Optional: Enter wells you would like included or excluded"
+            help="Separate individual wells by commas (e.g. A3,B11,D4,D6). Can also indicate a range of wells using a dash (e.g. B11-D2). Leave blank to include all available wells."
+            optional="true" />
+        <param name="wells_toggle" type="select" display="radio"
+            label="Select whether to include or exclude the wells specified above:">
+            <option value="include" selected="true">Include wells</option>
+            <option value="exclude">Exclude wells</option>
+        </param>
+        <param name="these_times_only" type="text" format="text" value="" size="70"
+            label="Optional: Enter timepoints you would like included or excluded"
+            help="Separate individual timepoints by commas (e.g. T3,T4,T9,T12). Can also indicate a range of timepoints using a dash (e.g. T5-T10). Leave blank to include all available timepoints."
+            optional="true" />
+        <param name="timepoints_toggle" type="select" display="radio"
+            label="Select whether to include or exclude the timepoints specified above">
+            <option value="include" selected="true">Include timepoints</option>
+            <option value="exclude">Exclude timepoints</option>
+        </param>
+        <param name="TILE" type="integer" size="70"
+            label="Enter single tile if you want. Good for checking data."
+            optional="true" />
+
+    </inputs>
+
+    <outputs>
+        <data name="outfile" type="txt" format="data" label="Montage Result" />
+    </outputs>
+
+    <help>
+        Montage Tiles.
+    </help>
+
+</tool>
