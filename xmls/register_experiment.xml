@@ -1,0 +1,103 @@
+<tool id="register_experiment" name="Register Experiment." version="1.0">
+
+    <description>Register Experiment to Database</description>
+    <command>
+      source /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/activate;
+      /finkbeiner/imaging/work/VENV-GALAXY/TORCH/bin/python /finkbeiner/imaging/work/metal3/galaxy/tools/development_modules/register_experiment.py 
+        --input_path $INPUT_PATH
+        --output_path $OUTPUT_PATH
+        #if str($TEMPLATE_PATH) !='':
+        --template_path $TEMPLATE_PATH
+        #end if
+        #if str($PLATEMAP_PATH) !='':
+        --platemap_path $PLATEMAP_PATH
+        #end if
+        #if str($IXM_HTS_FILE) !='':
+        --ixm_hts_file $IXM_HTS_FILE
+        #end if
+        --robo_num $ROBO_NUM
+        #if str($these_wells_only) !='':
+        --chosen_wells '$these_wells_only'
+        --wells_toggle $wells_toggle
+        #end if
+        #if str($these_times_only) !='':
+        --chosen_timepoints '$these_times_only'
+        --timepoints_toggle $timepoints_toggle
+        #end if
+        #if str($these_channels_only) !='':
+        --chosen_channels '$these_channels_only'
+        --channels_toggle $channels_toggle
+        #end if
+        --outfile $outfile
+    </command>
+
+    <inputs>
+        <param name="INPUT_PATH" type="text" format="text"
+            value="/gladstone/finkbeiner/robodata/experiment_folder" size="70"
+            label="Enter path to raw images"
+            help="Note that RoboData/your_folders = /gladstone/finkbeiner/robodata/experiment_folder" />
+        <param name="OUTPUT_PATH" type="text" format="text"
+            value="/gladstone/finkbeiner/your_folders/GXYTMP" size="70"
+            label="Enter path to output destination. Must contain the string 'GXYTMP' (case sensitive)"
+            help="Note that RoboData/your_folders = /gladstone/finkbeiner/your_folders ( /gladstone/finkbeiner/steve, /gladstone/finkbeiner/barbe, /gladstone/finkbeiner/elia, /gladstone/finkbeiner/kaye, /gladstone/finkbeiner/linsley, /gladstone/finkbeiner/robodata, /gladstone/finkbeiner/scratch, /gladstone/finkbeiner/lab)" />
+        <param name="TEMPLATE_PATH" type="text" format="text"
+            value="/path/to/Microscope/Templates_sent/yourtemplate.xlsx" size="70"
+            label="Enter path to imaging template. Needed for Robo images. Leave blanks for IXM."
+            help="Note that RoboData/your_folders = /gladstone/finkbeiner/robodata/experiment_folder" 
+            optional="true"/>
+        <param name="PLATEMAP_PATH" type="text" format="text"
+            value="/path/to/platemap.csv" size="70"
+            label="Enter path to platemap"
+            help="Note that RoboData/your_folders = /gladstone/finkbeiner/robodata/experiment_folder" 
+            optional="true" />
+        <param name="IXM_HTS_FILE" type="text" format="text"
+            size="70"
+            label="Path to IXM Template (.hts file)"
+            help="Note that RoboData/your_folders = /gladstone/finkbeiner/robodata/experiment_folder" 
+            optional="true" />
+        <param name="ROBO_NUM" type="select" label="Select microscope or auto-detect"
+            help="Select file naming convention used for imaging. For IXM please use Robo 0.">
+            <option value="3">Robo3</option>
+            <option value="4">Robo4</option>
+            <option value="0" selected="true">Robo0</option>
+        </param>
+        <param name="these_wells_only" type="text" format="text" value="" size="70"
+            label="Optional: Enter wells you would like included or excluded"
+            help="Separate individual wells by commas (e.g. A3,B11,D4,D6). Can also indicate a range of wells using a dash (e.g. B11-D2). Leave blank to include all available wells."
+            optional="true" />
+        <param name="wells_toggle" type="select" display="radio"
+            label="Select whether to include or exclude the wells specified above:">
+            <option value="include" selected="true">Include wells</option>
+            <option value="exclude">Exclude wells</option>
+        </param>
+        <param name="these_times_only" type="text" format="text" value="" size="70"
+            label="Optional: Enter timepoints you would like included or excluded"
+            help="Separate individual timepoints by commas (e.g. T3,T4,T9,T12). Can also indicate a range of timepoints using a dash (e.g. T5-T10). Leave blank to include all available timepoints."
+            optional="true" />
+        <param name="timepoints_toggle" type="select" display="radio"
+            label="Select whether to include or exclude the timepoints specified above">
+            <option value="include" selected="true">Include timepoints</option>
+            <option value="exclude">Exclude timepoints</option>
+        </param>
+        <param name="these_channels_only" type="text" format="text" value="" size="70"
+            label="Optional: Enter channel identifiers you would like included or excluded"
+            help="Separate individual channels by commas (e.g. FITC,RFP,DAPI). Leave blank to include all available channels."
+            optional="true" />
+        <param name="channels_toggle" type="select" display="radio"
+            label="Select whether to include or exclude the channels specified above">
+            <option value="include" selected="true">Include channels</option>
+            <option value="exclude">Exclude channels</option>
+        </param>
+    </inputs>
+
+    <outputs>
+        <data name="outfile" format="txt" label="Register Experiment" />
+    </outputs>
+
+    <help>
+        Read template excel sheet, platemap, and filenames from experiment to register experiment in
+        database. Also creates
+        folders.
+    </help>
+
+</tool>
