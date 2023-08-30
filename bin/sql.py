@@ -1,6 +1,6 @@
 """Database handler"""
 
-from sqlalchemy import create_engine, MetaData, ForeignKey, Table, Column, Integer, String, Float, select, update, func, delete, URL, UniqueConstraint
+from sqlalchemy import create_engine, MetaData, ForeignKey, Table, Column, Integer, String, Float, select, update, func, delete, UniqueConstraint
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import functions
 from sqlalchemy.dialects.postgresql import UUID
@@ -39,14 +39,14 @@ class Database:
         _df = pd.read_csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
         pw = _df.pw.iloc[0]
         conn_string = f'postgresql://postgres:{pw}@fb-postgres01.gladstone.internal:5432/galaxy'
-        url_object = URL.create(
-            drivername="postgresql",
-            username="postgres",
-            password=f"{pw}",  # plain (unescaped) text
-            host="fb-postgres01.gladstone.internal",
-            port='5432',
-            database="galaxy"
-        )
+        # url_object = URL.create(
+        #     drivername="postgresql",
+        #     username="postgres",
+        #     password=f"{pw}",  # plain (unescaped) text
+        #     host="fb-postgres01.gladstone.internal",
+        #     port='5432',
+        #     database="galaxy"
+        # )
         self.engine = create_engine(conn_string)
         self.meta = MetaData()
         self.meta.reflect(bind=self.engine)
