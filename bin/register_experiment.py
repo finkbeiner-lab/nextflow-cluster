@@ -155,6 +155,14 @@ class Intro:
             args.template_path = new_template_path
             logger.warn(f'Converted template from IXM to XLSX.')
             logger.warn(f'Template path set to {args.template_path}')
+        
+        # If platemap is given as an arg
+        if args.platemap_path is not None:
+            platemap_path = str.strip(args.platemap_path)
+            mapdf = pd.read_csv(platemap_path)
+        else:
+            mapdf = None
+
         if args.template_path is not None:
             template_path = str.strip(args.template_path)
             # TODO: check template, but not micromanager core
@@ -164,12 +172,14 @@ class Intro:
             # QC.check_timepoint_template()
             QC.check_microscope_template()
             File = TemplateClass(template_path)  # read template
+            if File.platemap is not None:
+                mapdf = File.platemap
+                QC.check_platemap_template()
+            else:
+                mapdf = None
         else:
             File = None
-        if args.platemap_path is not None:
-            platemap_path = str.strip(args.platemap_path)
-        else:
-            platemap_path = None
+            
         robo_num = args.robo_num
         outfile = args.outfile
 
@@ -221,7 +231,7 @@ class Intro:
         else:
             overlap = 0
 
-        self.write_to_welldata(platemap_path, Db, exp_uuid, wells)
+        self.write_to_welldata(mapdf, Db, exp_uuid, wells)
 
         self.write_to_channeldata(File, Db, exp_uuid, wells)
 
@@ -382,13 +392,12 @@ class Intro:
 
         Db.add_row('channeldata', channel_dcts)
 
-    def write_to_welldata(self, platemap_path, Db, exp_uuid, wells):
+    def write_to_welldata(self, mapdf, Db, exp_uuid, wells):
         logger.warn('Writing to well data: {wells}')
         well_dcts = []
         dosage_dcts = []
 
-        if platemap_path is not None:
-            mapdf = pd.read_csv(platemap_path)
+        if mapdf is not None:
 
             for well in wells:
                 print('Well for platemap', well)

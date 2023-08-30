@@ -102,7 +102,10 @@ class Puncta:
             fig.savefig(os.path.join(savedir, f'try_all_{df.well.iloc[0]}.png'))   # save the figure to file
             return
         else:
-            thresh = self.thresh_func(smoothed_im)
+            try:
+                thresh = self.thresh_func(smoothed_im)
+            except:
+                thresh = np.zeros_like(smoothed_im)
         regions = (smoothed_im > thresh) * 255
         if save_puncta_image_bool:
             savedir = os.path.join(self.analysisdir, self.puncta_folder_name, df.well.iloc[0])

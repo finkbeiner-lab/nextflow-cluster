@@ -4,6 +4,7 @@ from db_util import Ops
 import random
 import imageio
 import os
+from time import time
 from skimage import filters, restoration, transform
 import argparse
 import cv2
@@ -13,12 +14,15 @@ class Normalize(Ops):
     def __init__(self, opt):
         super().__init__(opt)
         self.flatfields = {}
+        self.backgrounds = {}
         self.image_correction = dict(division=self.division_flatfield,
                                      subtraction=self.subtract_flatfield,
                                      identity=self.identity,
                                      rollingball=self.rolling_ball)
-        
-        
+        self.image_bg_correction = dict(division=self.division_bg,
+                                        subtraction=self.subtract_bg,
+                                        identity=self.identity)
+
     def test(self):
         _, analysisdir = self.get_raw_and_analysis_dir()
         savedir = os.path.join(analysisdir, 'NormalizedImages')
@@ -27,7 +31,7 @@ class Normalize(Ops):
         df = self.get_flatfields()
         for i, row in df.iterrows():
             print('row', row)
-            img = imageio.imread(row.filename) 
+            img = imageio.imread(row.filename)
             img = np.uint16(self.image_correction[self.opt.img_norm_name](img, row.tile))
             normpath = self.save_norm(img, row.filename, savedir)
             print('normpath', normpath)
@@ -42,12 +46,12 @@ class Normalize(Ops):
         im = img / self.flatfields[tile]
         im = im / np.max(im) * 50000
         return im
-    
+
     def rolling_ball(self, img, tile):
         # img = np.uint16(self.gaussian_filter(img))
-        img = transform.rescale(img, 1/8, anti_aliasing=True)
+        img = transform.rescale(img, 1 / 8, anti_aliasing=True)
         background = restoration.rolling_ball(img, radius=100)
-        
+
         im = img - background
         im = np.uint16(transform.rescale(im, 8,))
         return im
@@ -55,6 +59,21 @@ class Normalize(Ops):
     def subtract_flatfield(self, img, tile):
         im = img - self.flatfields[tile]
         print('flatfield', np.min(self.flatfields[tile]), np.max(self.flatfields[tile]))
+        print('im', np.min(im), np.max(im))
+        im[im < 0] = 0
+        return im
+
+    def identity_bg(self, img, well, timepoint):
+        return img
+
+    def division_bg(self, img, well, timepoint):
+        im = img / self.backgrounds[well][timepoint]
+        im = im / np.max(im) * 50000
+        return im
+
+    def subtract_bg(self, img, well, timepoint):
+        im = img - self.backgrounds[well][timepoint]
+        print('background range', np.min(self.backgrounds[well][timepoint]), np.max(self.backgrounds[well][timepoint]))
         print('im', np.min(im), np.max(im))
         im[im < 0] = 0
         return im
@@ -73,6 +92,7 @@ class Normalize(Ops):
         tiles = sorted(list(df.tile.unique()))
         for i in tiles:
             img_lst = []
+            # Different timepoint, same tile
             filenames = df.loc[df.tile == i, 'filename'].tolist()
             random.seed(121)
             if len(filenames):
@@ -85,7 +105,89 @@ class Normalize(Ops):
             flat[flat < 1] = 1
             self.flatfields[i] = flat
         return df
-    
+
+    def get_flatfields_for_training(self, tablenames: list):
+        df = self.get_df_for_training(tablenames)
+        if self.opt.img_norm_name not in ['division', 'subtraction']:
+            return df
+        tiles = sorted(list(df.tile.unique()))
+        for i in tiles:
+            img_lst = []
+            filenames = df.loc[df.tile == i, 'filename'].tolist()
+            random.seed(121)
+            if len(filenames):
+                print('ONLY ONE FILE: TOO FEW FOR BACKGROUND SUBTRACTION/DIVISION')
+            filenames = random.sample(filenames, min(20, len(filenames)))
+            for f in filenames:
+                img = imageio.imread(f)
+                img_lst.append(img)
+            flat = np.median(img_lst, axis=0)
+            flat[flat < 1] = 1
+            self.flatfields[i] = flat
+        return df
+
+    @staticmethod
+    def in_well(df, x):
+        return df.well == x
+
+    @staticmethod
+    def around_well(df, x):
+        return df.well == x
+
+    def get_background_image(self, df, well, timepoint):
+        if well in self.backgrounds and timepoint in self.backgrounds[well]:
+            return
+        else:
+            self.collect_images(df, well, timepoint)
+        return
+
+    def collect_images(self, df, well, timepoint):
+        strt = time()
+        print('Collecting images for background subtraction')
+        img_lst = []
+        filenames = df.filename.tolist()
+        for f in filenames:
+            img = imageio.imread(f)
+            img_lst.append(img)
+        bg = np.median(img_lst, axis=0)
+        bg[bg < 1] = 1
+        if well not in self.backgrounds:
+            self.backgrounds[well] = {}
+        self.backgrounds[well][timepoint] = bg
+        print(f'Calculated background image for {well} at T{timepoint} in {time() - strt}')
+
+    def collect_images_by_timepoint(self, df):
+        tiles = sorted(list(df.tile.unique()))
+        for i in tiles:
+            img_lst = []
+            filenames = df.loc[df.tile == i, 'filename'].tolist()
+            random.seed(121)
+            if len(filenames):
+                print('ONLY ONE FILE: TOO FEW FOR BACKGROUND SUBTRACTION/DIVISION')
+            filenames = random.sample(filenames, min(20, len(filenames)))
+            for f in filenames:
+                img = imageio.imread(f)
+                img_lst.append(img)
+            flat = np.median(img_lst, axis=0)
+            flat[flat < 1] = 1
+            self.flatfields[i] = flat
+
+    def collect_images_by_tile_position(self, df):
+        tiles = sorted(list(df.tile.unique()))
+        for i in tiles:
+            img_lst = []
+            filenames = df.loc[df.tile == i, 'filename'].tolist()
+            random.seed(121)
+            if len(filenames):
+                print('ONLY ONE FILE: TOO FEW FOR BACKGROUND SUBTRACTION/DIVISION')
+            filenames = random.sample(filenames, min(20, len(filenames)))
+            for f in filenames:
+                img = imageio.imread(f)
+                img_lst.append(img)
+            flat = np.median(img_lst, axis=0)
+            flat[flat < 1] = 1
+            self.flatfields[i] = flat
+
     def save_norm(self, normed_image, image_file, savedir):
         name = os.path.basename(image_file)
         name = name.split('.t')[0]  # split by tiff suffix
@@ -94,7 +196,8 @@ class Normalize(Ops):
         savepath = os.path.join(savedir, name + '_NORM.tif')
         cv2.imwrite(savepath, normed_image)
         return savepath
-    
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(

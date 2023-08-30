@@ -6,48 +6,70 @@ from sql import Database
 from db_util import Ops
 from montage import Montage
 import imageio
+import logging
+import datetime
 
+logger = logging.getLogger("PlateMontage")
+# logger.propagate = False
+now = datetime.datetime.now()
+TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
+print('Timestamp', TIMESTAMP)
+fink_log_dir = '/finkbeiner/imaging/work/metal3/galaxy/finkbeiner_logs'
+if not os.path.exists(fink_log_dir):
+    os.makedirs(fink_log_dir)
+logname = os.path.join(fink_log_dir, f'PlateMontage-log_{TIMESTAMP}.log')
+fh = logging.FileHandler(logname)
+# fh.setLevel(logging.DEBUG)
+logger.addHandler(fh)
+logger.warn('Running Plate Montage from Database.')
 
 class PlateMontage(Montage):
     def __init__(self, opt):
         super().__init__(opt)
         self.opt = opt
+        self.opt.img_size = int(self.opt.img_size)
         self.Dbops = Ops(self.opt)
         self.Db = Database()
         self.imagedir, self.analysisdir = self.Dbops.get_raw_and_analysis_dir()
+        logger.warn(f'Analysis dir : {self.analysisdir}')
 
     def run(self):
-        tiledata_df = self.Norm.get_flatfields()
+        tiledata_df = self.Norm.get_flatfields_for_training(['channeldata'])
         tiledata_df = tiledata_df.sort_values(by=['timepoint', 'well', 'tile'])
+        channels = tiledata_df.channel.unique()
         timepoints = tiledata_df.timepoint.unique()
         groups = tiledata_df.groupby(by='timepoint')
-
+        logger.warn(f'Tiledata length: {len(tiledata_df)}')
         wells = tiledata_df.well.unique()
         rows = sorted(list(np.unique([w[0] for w in wells])))
         cols = sorted(list(np.unique([int(w[1:]) for w in wells])))
         plate_montage = np.zeros((len(rows) * self.opt.img_size, len(cols) * self.opt.img_size), dtype='uint8')
         for timepoint in timepoints:
-            savepath = os.path.join(self.montagedir, f'{self.opt.experiment}_plate-montage-T{timepoint}.png')
+            for channel in channels:
+                logger.warn(f'Running tp {timepoint}')
+                savepath = os.path.join(self.montagedir, f'{self.opt.experiment}_{channel}_plate-montage-T{timepoint}.png')
 
-            tp_df = tiledata_df[tiledata_df.timepoint == timepoint]
-            groups = tp_df.groupby('well')
-            for well, df in groups:
-                well_montage = self.single_montage(df, savebool=False)
+                tp_df = tiledata_df[(tiledata_df.timepoint == timepoint) & (tiledata_df.channel==channel)]
+                groups = tp_df.groupby('well')
+                for well, df in groups:
+                    logger.warn(f'running {well}')
+                    well_montage = self.single_montage(df, savebool=False)
 
-                row = well[0]
-                col = int(well[1:])
-                ridx = rows.index(row)
-                cidx = cols.index(col)
+                    row = well[0]
+                    col = int(well[1:])
+                    ridx = rows.index(row)
+                    cidx = cols.index(col)
+                    logger.warn(f'Well montage: {np.size(well_montage)}')
+                    img = cv2.resize(well_montage, dsize=(self.opt.img_size, self.opt.img_size), interpolation=cv2.INTER_AREA)
+                    img = np.clip(img / self.opt.norm_intensity * 255, 0, 255)
+                    img = img.astype('uint8')
 
-                img = cv2.resize(well_montage, dsize=(self.opt.img_size, self.opt.img_size), interpolation=cv2.INTER_AREA)
-                img = np.clip(img / self.opt.norm_intensity * 255, 0, 255)
-                img = img.astype('uint8')
-
-                plate_montage[ridx * self.opt.img_size: (ridx + 1) * self.opt.img_size,
-                              cidx * self.opt.img_size: (cidx + 1) * self.opt.img_size] = img
-            imageio.v3.imwrite(savepath, plate_montage)
+                    plate_montage[ridx * self.opt.img_size: (ridx + 1) * self.opt.img_size,
+                                cidx * self.opt.img_size: (cidx + 1) * self.opt.img_size] = img
+                imageio.v3.imwrite(savepath, plate_montage)
         with open(self.opt.outfile, 'w') as f:
             f.write(f'Plate Montaged Images.')
+        logger.warn(f"Saved to {self.opt.outfile}")
         print('Done.')
 
 
@@ -70,6 +92,8 @@ if __name__ == '__main__':
                         help='Montage image, binary mask, or tracked mask.')
     parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
+    parser.add_argument('--montage_pattern', help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
+    
     parser.add_argument("--wells_toggle",
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle",

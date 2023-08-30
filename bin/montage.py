@@ -42,10 +42,22 @@ class Montage:
         print('Done.')
 
     def single_montage(self, df, savebool=True):
+        """
+                # Get Robo0/3/4 montage order indexes relative to
+        # regular left to right and top to bottom order.
+        # like
+        # 3 2 1                 1 2 3
+        # 4 5 6     relative to 4 5 6
+        # 9 8 7                 7 8 9
+        # But here we start from 0
+        """
         images = []
         savepath = None
         mont = None
         overlap = 0  # TODO: use overlap?
+        logger.warn(f'Length of df: {len(df)} and max tile: {df.tile.max()}')
+        print(f'Length of df: {len(df)} and max tile: {df.tile.max()}')
+        df = df.sort_values('tile')
         if len(df) == df.tile.max():
             for i, row in df.iterrows():
                 f = row[self.opt.tiletype]
@@ -69,7 +81,15 @@ class Montage:
             mont = np.zeros((int(h * side), int(w * side)), dtype=images[0].dtype)
             for i in range(side):
                 for j in range(side):
-                    mont[j * w:(j + 1) * w, i * h:(i + 1) * h] = images[i * side + j]
+                    #TODO: map montages for legacy montage, new montages, and ixm montages
+                    if self.opt.montage_pattern == 'legacy':
+                        if i%2==0:
+                            k = side - (j+1)
+                        else:
+                            k = j
+                    else:
+                        k = j
+                    mont[i * h:(i + 1) * h, j * w:(j + 1) * w] = images[i * side + k]
             if savebool:
                 imageio.v3.imwrite(savepath, mont)
         return mont
@@ -92,6 +112,7 @@ if __name__ == '__main__':
                         help='Montage image, binary mask, or tracked mask.')
     parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
+    parser.add_argument('--montage_pattern', help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
     parser.add_argument("--wells_toggle",
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle",

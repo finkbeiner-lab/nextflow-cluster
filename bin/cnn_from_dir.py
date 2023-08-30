@@ -12,11 +12,11 @@ from PIL import Image
 from torch.utils.data import Dataset
 import random
 import pandas as pd
-import os, stat
+import os
+import stat
 import argparse
 from time import time
 import wandb
-
 # os.environ["WANDB_SILENT"] = "true"
 
 transform = transforms.Compose(
@@ -185,10 +185,11 @@ class Train:
         # optimizer = optim.SGD(net.parameters(), lr=self.opt.learning_rate, momentum=self.opt.momentum)
         # train_opt = torch.compile(self.train_one_epoch, mode='reduce-overhead')
         for epoch in range(self.opt.epochs):  # loop over the dataset multiple times
-            epoch_loss,train_acc = self.train_one_epoch(trainloader, )
-            print(f'Epoch {epoch + 1}: {epoch_loss / len(trainloader)}')
-            print(f'Epoch {epoch + 1}: {train_acc / len(trainloader)}')
-            if self.opt.use_wandb: wandb.log({"train_loss_epoch": epoch_loss / len(trainset)})
+            epoch_loss, train_acc = self.train_one_epoch(trainloader,)
+
+            if self.opt.use_wandb:
+                wandb.log({"train_loss_epoch": epoch_loss})
+                wandb.log({"train_acc_epoch": train_acc})
             with torch.no_grad():
                 val_acc = 0
                 val_epoch_loss = 0
@@ -206,7 +207,7 @@ class Train:
                     if self.opt.use_wandb: wandb.log({"val_loss": valloss.item()})
                 val_acc = val_acc / len(valloader)
                 val_epoch_loss = val_epoch_loss / len(valloader)
-                print(f'Accuracy of the network on validation images: {val_acc * 100} %')
+                print(f'Accuracy of the network on validation images: {val_acc * 100:.2} %')
                 print(f'Loss of the network on validation images: {val_epoch_loss:.3f}')
 
         print('Finished Training')
@@ -242,7 +243,8 @@ class Train:
             self.optimizer.step()
 
             # print statistics
-            if self.opt.use_wandb: wandb.log({"loss": loss.item()})
+            if self.opt.use_wandb:
+                wandb.log({"loss": loss.item()})
             running_loss += loss.item()
             epoch_loss += loss.item()
             print(f'loss: {loss.item()}')
@@ -270,33 +272,16 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--traindir', default='/gladstone/finkbeiner/linsley/josh/dogs_vs_cats/train/S_folder',
-                        type=str)
-    parser.add_argument('--savedir', default='/gladstone/finkbeiner/linsley/josh/dogs_vs_cats/train', type=str)
-    parser.add_argument('--num_channels', default=3)
-    parser.add_argument('--n_samples', default=100)
-    parser.add_argument('--epochs', default=25)
+    parser.add_argument('--traindir', type=str)
+    parser.add_argument('--savedir', type=str)
+    parser.add_argument('--num_channels', default=1)
+    parser.add_argument('--n_samples', default=1)
+    parser.add_argument('--epochs', default=1)
     parser.add_argument('--batch_size', default=16)
-    parser.add_argument('--learning_rate', default=1e-6)
+    parser.add_argument('--learning_rate', default=1e-3)
     parser.add_argument('--momentum', default=0.9)
-    parser.add_argument('--use_wandb', default=0, type=int, help="Log training with wandb.")
+    parser.add_argument('--use_wandb', default=1, type=int, help="Log training with wandb.")
     args = parser.parse_args()
     print(args)
-    # trainset = DirectoryDataset(args.traindir,
-    #                             args.n_samples,
-    #                             transform=transform)
-    #
-    # trainloader = torch.utils.data.DataLoader(trainset, batch_size=16,
-    #                                           shuffle=True, num_workers=0,
-    #                                           pin_memory=True)
-    # for X, y in trainloader:
-    #     img = X[0].detach().numpy()
-    #     img = np.moveaxis(img, 0, -1)
-    #     img -= np.min(img)
-    #     img /= np.max(img)
-    #     img *= 255
-    #     img = np.uint8(img)
-    #     plt.imshow(img)
-    #     plt.show()
     Tr = Train(args)
     Tr.run()

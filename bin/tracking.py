@@ -10,10 +10,10 @@ print('working dir', os.getcwd())
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from track_cells_res.minimum_flow import MinimumFlow
-from track_cells_res.solver import SolverSmall
-from track_cells_res.output_helper import OutputSmall
-from track_cells_res.tracking_graph import Graph
+from image_analysis_modules.track_cells_res.minimum_flow import MinimumFlow
+from image_analysis_modules.track_cells_res.solver import SolverSmall
+from image_analysis_modules.track_cells_res.output_helper import OutputSmall
+from image_analysis_modules.track_cells_res.tracking_graph import Graph
 import os
 import warnings
 import matplotlib.pyplot as plt

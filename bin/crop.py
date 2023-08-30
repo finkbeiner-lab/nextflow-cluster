@@ -84,12 +84,18 @@ class Crop:
                 print('cropname', croppath)
                 print('crop', crop)
                 imageio.v3.imwrite(croppath, crop)
+                check_cropdct = dict(experimentdata_id=self.experimentdata_id,
+                                         welldata_id=df.welldata_id.iloc[0],
+                                         channeldata_id=target_channeldata_id,
+                                         celldata_id=row.id)
                 cropdcts.append(dict(id=uuid.uuid4(),
                                          experimentdata_id=self.experimentdata_id,
                                          welldata_id=df.welldata_id.iloc[0],
                                          channeldata_id=target_channeldata_id,
                                          celldata_id=row.id,
                                          croppath=croppath))
+                self.Db.delete_based_on_duplicate_name(tablename='cropdata', kwargs=check_cropdct)
+
             self.Db.add_row('cropdata', cropdcts)
 
     def get_coords(self, sh, row):

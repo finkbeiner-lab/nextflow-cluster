@@ -60,19 +60,21 @@ class Ops:
         tiledata_df = Db.get_df_from_query('tiledata', dict(experimentdata_id=exp_uuid))
         tiledata_df = pd.merge(tiledata_df, welldata_df[['id', 'well', 'celltype']], left_on='welldata_id', right_on='id', how='left', suffixes=[None, '_dontuse'])
 
-        if self.opt.chosen_wells is not None:
+        if self.opt.chosen_wells is not None and len(self.opt.chosen_wells) > 0:
             selected_wells = utils.get_iter_from_user(self.opt.chosen_wells)
+            print(f'Selected wells: {selected_wells}')
             welldata_df = self.filter_df(welldata_df, 'well', selected_wells, self.opt.wells_toggle)
             if not(len(welldata_df)): 
                 print('Welldata df is empty.')
                 logger_db.warn('Welldata df is empty.')
-        if self.opt.chosen_channels is not None:
+        if self.opt.chosen_channels is not None and len(self.opt.chosen_channels) > 0:
             selected_channels = self.opt.chosen_channels.strip(' ').split(',')
+            print(f'Selected channels {selected_channels}')
             channeldata_df = self.filter_df(channeldata_df, 'channel', selected_channels, self.opt.channels_toggle)
             if not (len(channeldata_df)): 
                 print('Channeldata df is empty')
                 logger_db.warn('Channeldata df is empty')
-        if self.opt.chosen_timepoints is not None:
+        if self.opt.chosen_timepoints is not None and len(self.opt.chosen_timepoints) > 0:
             selected_timepoints = utils.get_iter_from_user(self.opt.chosen_timepoints)
             if len(selected_timepoints) and len(selected_timepoints[0]) > 1 and selected_timepoints[0][0]=='T':
                 selected_timepoints = [t[1:] for t in selected_timepoints]
@@ -120,13 +122,19 @@ class Ops:
         exp_uuid = Db.get_table_uuid('experimentdata', dict(experiment=self.experiment))
         for tablename in tablenames:
             table_df = Db.get_df_from_query(tablename, dict(experimentdata_id=exp_uuid))
-            if tablename=='celldata':
+            if tablename=='celldata':  # celldata is based on morphology channel
                 df = pd.merge(df, table_df, on='tiledata_id', how='inner', suffixes=[None, '_dontuse'])
                 df.rename(columns={'id': 'celldata_id'}, inplace=True)
-            if tablename=='cropdata':
+            if tablename=='cropdata':  # can have multiple channels per cell
                 df = pd.merge(df, table_df, on='celldata_id', how='inner', suffixes=[None, '_dontuse'])
             if tablename=='dosagedata':
                 df = pd.merge(df, table_df, on='welldata_id', how='inner', suffixes=[None, '_dontuse'])
+            if tablename=='channeldata':
+                if self.opt.chosen_channels is not None and len(self.opt.chosen_channels) > 0:
+                    selected_channels = self.opt.chosen_channels.strip(' ').split(',')
+                    print(f'Selected channels for ML: {selected_channels}')
+                    table_df = self.filter_df(table_df, 'channel', selected_channels, self.opt.channels_toggle)
+                df = pd.merge(df, table_df, left_on='channeldata_id', right_on='id', how='inner', suffixes=[None, '_dontuse'])
         return df
     
     def get_punctadata_df(self):

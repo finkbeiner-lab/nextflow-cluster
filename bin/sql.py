@@ -1,6 +1,6 @@
 """Database handler"""
 
-from sqlalchemy import create_engine, MetaData, ForeignKey, Table, Column, Integer, String, Float, select, update, func, delete, UniqueConstraint
+from sqlalchemy import create_engine, MetaData, ForeignKey, Table, Column, Integer, String, Float, select, update, func, delete, URL, UniqueConstraint
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import functions
 from sqlalchemy.dialects.postgresql import UUID
@@ -39,14 +39,14 @@ class Database:
         _df = pd.read_csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
         pw = _df.pw.iloc[0]
         conn_string = f'postgresql://postgres:{pw}@fb-postgres01.gladstone.internal:5432/galaxy'
-        # url_object = URL.create(
-        #     drivername="postgresql",
-        #     username="postgres",
-        #     password=f"{pw}",  # plain (unescaped) text
-        #     host="fb-postgres01.gladstone.internal",
-        #     port='5432',
-        #     database="galaxy"
-        # )
+        url_object = URL.create(
+            drivername="postgresql",
+            username="postgres",
+            password=f"{pw}",  # plain (unescaped) text
+            host="fb-postgres01.gladstone.internal",
+            port='5432',
+            database="galaxy"
+        )
         self.engine = create_engine(conn_string)
         self.meta = MetaData()
         self.meta.reflect(bind=self.engine)
@@ -75,7 +75,10 @@ class Database:
                 self.create_organelledata_table()
             if not self.engine.dialect.has_table(connection, 'cropdata'):
                 self.create_cropdata_table()
-
+            if not self.engine.dialect.has_table(connection, 'modeldata'):
+                self.create_modeldata_table()
+            if not self.engine.dialect.has_table(connection, 'modelcropdata'):
+                self.create_modelcropdata_table()
     def create_experimentdata_table(self):
         # TODO: default uuid4 isn't working through sqlalchemy so I added the default with SQL
         # ALTER TABLE experimentdata
@@ -197,6 +200,47 @@ class Database:
             Column("celldata_id", UUID(as_uuid=True), ForeignKey("celldata.id", ondelete="CASCADE"),
                    index=True, nullable=False),
             Column('croppath', String)
+        )
+        self.meta.create_all(self.engine)
+
+    def create_modeldata_table(self):
+        modeldata = Table(
+            'modeldata', self.meta,
+            Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
+            Column("experimentdata_id", UUID(as_uuid=True), ForeignKey("experimentdata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column('modelname', String),
+            Column('modelpath', String),
+            Column('wandbpath', String),
+            Column('train_loss', Float),
+            Column('val_loss', Float),
+            Column('train_acc', Float),
+            Column('val_acc', Float),
+
+        )
+        self.meta.create_all(self.engine)
+
+    def create_modelcropdata_table(self):
+        """Model crop data could include multiple crops. Expect just one celldata id though. 
+        Model for puncta will need a new table"""
+        modelcropdata = Table(
+            'modelcropdata', self.meta,
+            Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
+            Column("model_id", UUID(as_uuid=True), ForeignKey("modeldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("experimentdata_id", UUID(as_uuid=True), ForeignKey("experimentdata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("welldata_id", UUID(as_uuid=True), ForeignKey("welldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("celldata_id", UUID(as_uuid=True), ForeignKey("celldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column('stage', String),
+            Column('output', Float),
+            Column('prediction', Float),
+            Column('groundtruth', Float),
+            Column('prediction_label', String),
+            Column('groundtruth_label', String),
+
         )
         self.meta.create_all(self.engine)
 

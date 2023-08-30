@@ -1,4 +1,3 @@
-#!/opt/conda/bin/python
 """Get csvs from database for experiment"""
 
 from sql import Database
@@ -13,7 +12,7 @@ logger = logging.getLogger("Puncta")
 now = datetime.datetime.now()
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
 print('Timestamp', TIMESTAMP)
-fink_log_dir = './finkbeiner_logs'
+fink_log_dir = '/finkbeiner/imaging/work/metal3/galaxy/finkbeiner_logs'
 if not os.path.exists(fink_log_dir):
     os.makedirs(fink_log_dir)
 logname = os.path.join(fink_log_dir, f'CSV-log_{TIMESTAMP}.log')
@@ -44,6 +43,8 @@ class GetCSVS:
         dosagedata = Db.get_df_from_query('dosagedata', dict(experimentdata_id=exp_uuid))
         intensitycelldata = Db.get_df_from_query('intensitycelldata', dict(experimentdata_id=exp_uuid))
         intensitypunctadata = Db.get_df_from_query('intensitypunctadata', dict(experimentdata_id=exp_uuid))
+        modeldata = Db.get_df_from_query('modeldata', dict(experimentdata_id=exp_uuid))
+        modelcropdata = Db.get_df_from_query('modelcropdata', dict(experimentdata_id=exp_uuid))
 
         experimentdata.to_csv(os.path.join(savedir, 'experimentdata.csv'))
         welldata.to_csv(os.path.join(savedir, 'welldata.csv'))
@@ -54,6 +55,8 @@ class GetCSVS:
         dosagedata.to_csv(os.path.join(savedir, 'dosagedata.csv'))
         intensitycelldata.to_csv(os.path.join(savedir, 'intensitycelldata.csv'))
         intensitypunctadata.to_csv(os.path.join(savedir, 'intensitypunctadata.csv'))
+        modeldata.to_csv(os.path.join(savedir, 'modeldata.csv'))
+        modelcropdata.to_csv(os.path.join(savedir, 'modelcropdata.csv'))
         logger.warn(f'Saved csvs to {savedir}.')
 
 

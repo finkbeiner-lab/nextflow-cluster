@@ -3,6 +3,7 @@
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
+from glob import glob
 import torch
 import torch.optim as optim
 import torchvision
@@ -13,16 +14,23 @@ from PIL import Image
 from torch.utils.data import Dataset
 import pandas as pd
 import os
+import stat
 import argparse
 from db_util import Ops
+from time import time
 from sql import Database
+import uuid
 import wandb
+os.environ["WANDB_SILENT"] = "true"
 
 transform = transforms.Compose(
     # [transforms.ToTensor(),
-    [transforms.Lambda(lambda image: torch.from_numpy(np.array(image).astype(np.float32)).unsqueeze(0)),
+    # [transforms.Lambda(lambda image: torch.from_numpy(np.array(image).astype(np.float32)).unsqueeze(0)),
+    [transforms.Lambda(lambda image: torch.from_numpy(image.astype(np.float32))),
+     transforms.Resize((224, 224), antialias=True),
      transforms.Normalize((0.5,), (0.5,))])
 #  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+print(f'CUDA Available: {torch.cuda.is_available()}')
 
 
 def collate_fn(batch):
@@ -33,31 +41,63 @@ class Net(nn.Module):
     def __init__(self, num_classes, h, w, num_channels):
         super().__init__()
         # Output height = (Input height + padding height top + padding height bottom - kernel height) / (stride height) + 1.
-        self.conv1 = nn.Conv2d(num_channels, 6, 5)
+        # self.conv1 = nn.Conv2d(num_channels, 6, 5)
+        # self.pool = nn.MaxPool2d(2, 2)
+        # self.conv2 = nn.Conv2d(6, 16, 5)
+        # self.fc1 = nn.Linear(16 * 72 * 72, 120)
+        # self.fc2 = nn.Linear(120, 84)
+        # self.fc3 = nn.Linear(84, num_classes)
+        self.conv1 = nn.Conv2d(num_channels, 32, kernel_size=3, padding=0)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=0)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=0)
+        self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2, 2)
-        self.conv2 = nn.Conv2d(6, 16, 5)
-        self.fc1 = nn.Linear(16 * 72 * 72, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, num_classes)
+        self.flatten = nn.Flatten()
+        self.fc1 = nn.Linear(128 * 26 * 26, 100)
+        self.fc2 = nn.Linear(100, num_classes)
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        # print(x.size())
-        x = self.pool(F.relu(self.conv2(x)))
-        # print(x.size())
+        x = self.pool(self.relu(self.conv1(x)))
+        x = self.pool(self.relu(self.conv2(x)))
+        x = self.pool(self.relu(self.conv3(x)))
+        x = self.flatten(x)
+        x = self.relu(self.fc1(x))
+        x = self.fc2(x)
+        # x = self.pool(F.relu(self.conv1(x)))
+        # # print(x.size())
+        # x = self.pool(F.relu(self.conv2(x)))
+        # # print(x.size())
 
-        x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        # print(x.size())
+        # x = torch.flatten(x, 1)  # flatten all dimensions except batch
+        # # print(x.size())
 
-        x = F.relu(self.fc1(x))
-        # print(x.size())
+        # x = F.relu(self.fc1(x))
+        # # print(x.size())
 
-        x = F.relu(self.fc2(x))
-        # print(x.size())
+        # x = F.relu(self.fc2(x))
+        # # print(x.size())
 
-        x = self.fc3(x)
+        # x = self.fc3(x)
 
         return x
+
+
+class EarlyStopper:
+    def __init__(self, patience=1, min_delta=0):
+        self.patience = patience
+        self.min_delta = min_delta
+        self.counter = 0
+        self.min_validation_loss = np.inf
+
+    def early_stop(self, validation_loss):
+        if validation_loss < self.min_validation_loss:
+            self.min_validation_loss = validation_loss
+            self.counter = 0
+        elif validation_loss > (self.min_validation_loss + self.min_delta):
+            self.counter += 1
+            if self.counter >= self.patience:
+                return True
+        return False
 
 
 class ImageDataset(Dataset):
@@ -73,30 +113,43 @@ class ImageDataset(Dataset):
 
         # get tiles
         print('Data length', len(df))
-        self.df = df.sample(frac=1)
-        unique_lbls = np.unique(self.df[label_type])
+        # Celldata id is based off morphology channel. Cropdata_id connects celldata_id with crop channel.
+        self.grouped = df.groupby('celldata_id')
+        self.groupkeys = list(self.grouped.groups.keys())
+        self.label_type = label_type
 
+        # label mapping
+        unique_lbls = np.unique(df[self.label_type])
         self.label2num_dct = {lbl: i for i, lbl in enumerate(unique_lbls)}
         self.num2label_dct = {i: lbl for lbl, i in self.label2num_dct.items()}
-        labels = self.df[label_type].values
-        numeric_labels = [self.label2num_dct[lbl] for lbl in labels]
-        self.img_labels = torch.tensor(numeric_labels)
+
         self.transform = transform
         self.target_transform = target_transform
 
     def __len__(self):
-        return len(self.df)
+        return len(self.grouped)
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-        img_path = row.croppath
-        image = Image.open(img_path)
-        label = self.img_labels[idx]
+        celldata_id = self.groupkeys[idx]
+        df = self.grouped.get_group(celldata_id)
+        celldata_id = str(celldata_id)
+        experimentdata_id = str(df.experimentdata_id.iloc[0])
+        welldata_id = str(df.welldata_id.iloc[0])
+        df = df.sort_values('channel')
+        df_label = df[self.label_type].iloc[0]
+        num_label = self.label2num_dct[df_label]
+        label = torch.tensor(num_label)
+        images = []
+        for i, row in df.iterrows():
+            image = Image.open(row.croppath)
+            images.append(np.array(image))
+        img = np.stack(images, axis=0)
+
         if self.transform:
-            image = self.transform(image)
+            img = self.transform(img)
         if self.target_transform:
             label = self.target_transform(label)
-        return image, label
+        return img, label, experimentdata_id, welldata_id, celldata_id
 
 
 class Train:
@@ -108,15 +161,31 @@ class Train:
         self.opt.learning_rate = float(self.opt.learning_rate)
         self.opt.momentum = float(self.opt.momentum)
         self.opt.use_wandb = int(self.opt.use_wandb)
+        self.opt.num_channels = int(self.opt.num_channels)
+        self.opt.n_samples = int(self.opt.n_samples)
         self.Dbops = Ops(opt)
         self.Db = Database()
         self.classes = None
+        self.device = None
+        self.model = None
+        self.optimizer = None
+        self.criterion = None
+        self.label_column = None
         self.imagedir, self.analysisdir = self.Dbops.get_raw_and_analysis_dir()
+        experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
+        self.wandbdir = os.path.join(self.analysisdir, 'wandb')
         self.modeldir = os.path.join(self.analysisdir, 'Models')
         if not os.path.exists(self.modeldir):
             os.makedirs(self.modeldir)
         if self.opt.use_wandb:
-            wandb.init("CNN", mode='offline')
+            if not os.path.exists(self.wandbdir):
+                os.mkdir(self.wandbdir)
+            os.chmod(self.wandbdir, 0o0777)
+            wandb.init("CNN", mode='offline', dir=self.wandbdir)
+        self.model_id = uuid.uuid4()
+        self.Db.add_row('modeldata', dict(id=self.model_id,
+                                          experimentdata_id=experimentdata_id,
+                                          ))
         # possible classes, as specific as possible
         # Gedi ratio, divide one intensity by another.
         # Live dead based on gedi ratio, either manual or automatically calculated
@@ -136,15 +205,22 @@ class Train:
                 # use all classes
                 # TODO: make case insensitive
                 classes = self.Db.get_table_value('dosagedata', self.opt.label_type, dict(experimentdata_id=experimentdata_id,
-                                                                             kind=self.opt.label_name))  # inhibitor, treatment, antibody
+                                                                                          kind=self.opt.label_name))  # inhibitor, treatment, antibody
                 classes = np.unique(classes)
             else:
                 classes = self.opt.classes.split(',')
                 # assert len(classes) > 1, 'must have multiple classes if training'
             print('classes', classes)
             self.classes = classes
-            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'dosagedata'])
+            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'dosagedata', 'channeldata'])  #'dosagedata', 'channeldata'
+            _g = df.groupby(['celldata_id'])
+            g_keys = list(_g.groups.keys())
+            print('key 0', g_keys[0])
+            example = _g.get_group(g_keys[0])
+            print('EX 0', example)           
             df = df[df['name'].isin(self.classes)]
+            self.label_column = 'name'
+
         elif self.opt.label_type == 'celltype':
             if self.opt.classes is None:
                 # use all classes
@@ -155,142 +231,260 @@ class Train:
                 classes = self.opt.classes.split(',')
             print('classes', classes)
             self.classes = classes
-            df = self.Dbops.get_df_for_training(['celldata', 'cropdata'])
+            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'channeldata'])
             print('columns', df.columns)
             df = df[df['celltype'].isin(self.classes)]
+            self.label_column = 'celltype'
         else:
             assert 0, f'label type {self.opt.label_type} not in selection'
+        print('label column', self.label_column)
         return df
 
+    def train_val_test_split(self, df, balance_method='cutoff'):
+        """Split data into train, validation, testing dataframes"""
+
+        sizes = df.groupby(self.label_column).size()
+        cutoff = min(sizes) // self.opt.num_channels
+        max_size = max(sizes)
+        # cutoff other data
+        if balance_method == 'cutoff':  # sample the same number of celldata_ids from each group
+            label_group = df.groupby(self.label_column)
+            dfs = []
+            for name, _df in label_group:
+                g = _df.groupby('celldata_id')
+                shuf=np.arange(g.ngroups)
+                np.random.shuffle(shuf)
+                dfs.append(_df[g.ngroup().isin(shuf[:cutoff])]) 
+            balanced_df = pd.concat(dfs)
+            _sizes = balanced_df.groupby(self.label_column).size()
+            for _s in _sizes:
+                print(_s//self.opt.num_channels, cutoff)
+                assert _s//self.opt.num_channels == cutoff, 'class size not what was intended'
+        else:
+            balanced_df = df
+        if self.opt.n_samples > 0: # randomly sample from groupby
+            g = balanced_df.groupby(['celldata_id', self.label_column])
+            print(f'Grouped data length: {len(g)}')
+            shuf=np.arange(g.ngroups)
+            np.random.shuffle(shuf)
+            balanced_df = balanced_df[g.ngroup().isin(shuf[:self.opt.n_samples])]# change 2 to what you need :-) 
+        # split
+        print(balanced_df.head())
+        balanced_g = balanced_df.groupby(['celldata_id', self.label_column])
+        g_keys = list(balanced_g.groups.keys())
+        print('key 1', g_keys[0])
+        example = balanced_g.get_group(g_keys[0])
+        print('EX 1', example)
+        shuf=np.arange(balanced_g.ngroups)
+        np.random.shuffle(shuf)
+        print('length of shuffle', len(shuf))
+        print(f'Balanced group length: {len(balanced_g)}')
+
+        train = balanced_df[balanced_g.ngroup().isin(shuf[:int(len(shuf) * .7)])]# change 2 to what you need :-) 
+        val = balanced_df[balanced_g.ngroup().isin(shuf[int(len(shuf) * .7):int(len(shuf) * .85)])]# change 2 to what you need :-) 
+        test = balanced_df[balanced_g.ngroup().isin(shuf[int(len(shuf) * .85):])]# change 2 to what you need :-) 
+
+        # train = balanced_df.sample(frac=0.7)
+        # valtest = balanced_df.drop(train.index)
+        # val = valtest.sample(frac=0.5)
+        # test = valtest.drop(val.index)
+        train_sizes = train.groupby(['celldata_id']).size()
+        val_sizes = val.groupby(['celldata_id']).size()
+        test_sizes = test.groupby(['celldata_id']).size()
+        print('Dataset sizes:')
+        print(f'Train {train_sizes}')
+        print(f'Val {val_sizes}')
+        print(f'Test {test_sizes}')
+        return train, val, test
+
     def run(self):
+        if torch.cuda.is_available():
+            self.device = 'cuda:0'
+        else:
+            self.device = 'cpu'
+        print(f'Device {self.device}')
+        assert self.device == 'cuda:0', 'gpu not used'
         df = self.get_classes()
-        trainset = ImageDataset(df, label_type=self.opt.label_type,
+        print('df channels', df.channel.unique())
+        train_df, val_df, test_df = self.train_val_test_split(df, balance_method='cutoff')
+        Early = EarlyStopper(patience=3, min_delta=0)
+        trainset = ImageDataset(train_df, label_type=self.opt.label_type,
                                 label_name=self.opt.label_name,
                                 transform=transform)
+        valset = ImageDataset(val_df, label_type=self.opt.label_type,
+                              label_name=self.opt.label_name,
+                              transform=transform)
+        assert trainset.num2label_dct == valset.num2label_dct, 'num2label dicts must be identical'
         num_classes = len(np.unique(self.classes))
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=self.opt.batch_size,
-                                                  shuffle=True, num_workers=2)
-
-        net = Net(num_classes=num_classes, h=300, w=300, num_channels=1)
+                                                  shuffle=True, num_workers=0,
+                                                  pin_memory=True)
+        valloader = torch.utils.data.DataLoader(valset, batch_size=self.opt.batch_size,
+                                                shuffle=False, num_workers=4,
+                                                pin_memory=True)
+        # TODO: detect height, width, channels
+        self.model = Net(num_classes=num_classes, h=300, w=300, num_channels=self.opt.num_channels)
+        self.model.to(self.device)
         modelpath = os.path.join(self.modeldir, 'net.pth')
         self.hyperparams['modelpath'] = modelpath
         if self.opt.use_wandb:
             wandb.config.update(self.opt)
-        criterion = nn.CrossEntropyLoss()
-        optimizer = optim.SGD(net.parameters(), lr=self.opt.learning_rate, momentum=self.opt.momentum)
+        self.Db.update('modeldata', 
+                       update_dct=dict(n_samples=self.opt.n_samples if self.opt.n_samples > 0 else len(trainset),
+                                                    num_channels=self.opt.num_channels,
+                                                    momentum=self.opt.momentum,
+                                                    learning_rate=self.opt.learning_rate,
+                                                    batch_size=self.opt.batch_size,
+                                                    epochs=self.opt.epochs,
+                                                    optimizer=self.opt.optimizer),
+                       kwargs=dict(id=self.model_id))
+        self.criterion = nn.CrossEntropyLoss()
+        if self.opt.optimizer == 'adam':
+            self.optimizer = optim.Adam(self.model.parameters(), lr=self.opt.learning_rate)
+        elif self.opt.optimizer == 'sgd':
+            self.optimizer = optim.SGD(self.model.parameters(), lr=self.opt.learning_rate, momentum=self.opt.momentum)
+        else:
+            assert 0, f'Optimizer not found {self.opt.optimizer}'
 
-        for epoch in range(self.opt.epochs):  # loop over the dataset multiple times
+        # train_opt = torch.compile(self.train_one_epoch, mode='reduce-overhead')
+        should_stop = False
+        for epoch in range(1, self.opt.epochs + 1):  # loop over the dataset multiple times
+            strt = time()
+            print(f'Epoch {epoch}')
+            train_loss, train_acc = self.train_one_epoch(trainloader, epoch, trainset.num2label_dct, should_stop)
+            print(f'Epoch time: {time() - strt:.2f}')
+            if self.opt.use_wandb:
+                wandb.log({"train_loss_epoch": train_loss})
+            if self.opt.use_wandb:
+                wandb.log({"train_acc_epoch": train_acc})
+            with torch.no_grad():
+                val_acc = 0
+                val_loss = 0
+                preddct = []
+                for j, (X, y, experimentdata_ids, welldata_ids, celldata_ids) in enumerate(valloader):
+                    X = X.to(self.device)
+                    y = y.to(self.device)
+                    # calculate outputs by running images through the network
+                    y_pred = self.model(X)
+                    val_loss_batch = self.criterion(y_pred, y)
+                    val_loss += val_loss_batch.item()
+                    # the class with the highest energy is what we choose as prediction
+                    y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
+                    val_acc += (y_pred_class == y).sum().item() / len(y_pred)
 
-            running_loss = 0.0
-            epoch_loss = 0.0
+                    if self.opt.use_wandb:
+                        wandb.log({"val_loss": val_loss_batch.item()})
 
-            for i, data in enumerate(trainloader):
-                # get the inputs; data is a list of [inputs, labels]
-                inputs, labels = data
+                    # Save to db
+                    if epoch == self.opt.epochs or should_stop:
+                        preddct = []
+                        np_y_pred_class = y_pred_class.detach().cpu().numpy()
+                        np_y = y.detach().cpu().numpy()
+                        np_y_pred = y_pred.detach().cpu().numpy()
+                        for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y, np_y_pred, np_y_pred_class, experimentdata_ids, welldata_ids, celldata_ids):
+                            preddct.append(dict(id=uuid.uuid4(),
+                                                model_id=self.model_id,
+                                                experimentdata_id=uuid.UUID(experimentdata_id),
+                                                welldata_id=uuid.UUID(welldata_id),
+                                                celldata_id=uuid.UUID(celldata_id),
+                                                stage='val',
+                                                prediction=float(_y_pred_class),
+                                                groundtruth=float(_y),
+                                                prediction_label=valset.num2label_dct[_y_pred_class],
+                                                groundtruth_label=valset.num2label_dct[_y]))
+                            preddct_check = dict(model_id=self.model_id, celldata_id=celldata_id)
+                            self.Db.delete_based_on_duplicate_name('modelcropdata', preddct_check)
+                        self.Db.add_row('modelcropdata', preddct)
 
-                # zero the parameter gradients
-                optimizer.zero_grad()
+                val_acc = val_acc / len(valloader)
+                val_loss = val_loss / len(valloader)
+                print(f'Accuracy of the network on validation images: {val_acc * 100:.2f} %')
+                print(f'Loss of the network on validation images: {val_loss:.2f}')
+                if should_stop:
+                    print(f'Stopping at epoch {epoch+1}')
+                    break
+                should_stop = Early.early_stop(val_loss)
+                print(f'Early Stopping: {should_stop}')
 
-                # forward + backward + optimize
-                outputs = net(inputs)
-                loss = criterion(outputs, labels)
-                loss.backward()
-                optimizer.step()
-
-                # print statistics
-                if self.opt.use_wandb: wandb.log({"loss": loss.item()})
-
-                running_loss += loss.item()
-                epoch_loss += outputs.shape[0] * loss.item()
-                if i % 2000 == 1999:  # print every 2000 mini-batches
-                    print(f'[{epoch + 1}, {i + 1:5d}] loss: {running_loss / 2000:.3f}')
-                    running_loss = 0.0
-            # print epoch loss
-            print(epoch + 1, epoch_loss / len(trainset))
-            if self.opt.use_wandb: wandb.log({"train_loss_epoch": epoch_loss / len(trainset)})
         print('Finished Training')
 
-        torch.save(net.state_dict(), modelpath)
+        torch.save(self.model.state_dict(), modelpath)
+        self.Db.update('modeldata', update_dct=dict(modelpath=modelpath,
+                                                    train_acc=train_acc,
+                                                    train_loss=train_loss,
+                                                    val_loss=val_loss,
+                                                    val_acc=val_acc),
+                       kwargs=dict(id=self.model_id))
         print('Saved model')
         if self.opt.use_wandb:
+            path_to_wandb = wandb.run.dir
+            wandbparent, _ = os.path.split(path_to_wandb)
+            wandbpath = os.path.join(wandbparent, f'run-{wandb.run.id}.wandb')
+            self.Db.update('modeldata', update_dct=dict(wandbpath=wandbpath),
+                           kwargs=dict(id=self.model_id))
+            print(f'Run: \n wandb sync -p galaxy {wandbpath}')
             wandb.finish()
         print('Done')
 
+    def train_one_epoch(self, trainloader, epoch=1, num2label_dct=None, should_stop=False):
+        self.model.train()
+        train_loss = 0.0
+        running_loss = 0.0
+        train_acc = 0.
+        for batch, (X, y, experimentdata_ids, welldata_ids, celldata_ids) in enumerate(trainloader):
+            X = X.to(self.device)
+            y = y.to(self.device)
+            # get the inputs; data is a list of [inputs, labels]
+            strt = time()
+            # zero the parameter gradients
+            self.optimizer.zero_grad()
 
-class Deploy:
-    def __init__(self, opt):
-        self.opt = opt
-        self.opt.batch_size = int(self.opt.batch_size)
-        self.opt.learning_rate = float(self.opt.learning_rate)
-        self.opt.momentum = float(self.opt.momentum)
+            # forward + backward + optimize
+            # with torch.autocast(device_type='cuda'):
+            y_pred = self.model(X)
+            # Calculate and accumulate accuracy metric across all batches
+            y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
+            train_acc += (y_pred_class == y).sum().item() / len(y_pred)
+            loss = self.criterion(y_pred, y)
+            loss.backward()
+            self.optimizer.step()
 
-    def check_image(self, testloader):
-        def imshow(img):
-            img = img / 2 + 0.5  # unnormalize
-            npimg = img.numpy()
-            plt.imshow(np.transpose(npimg, (1, 2, 0)))
-            plt.show()
-
-        dataiter = iter(testloader)
-        images, labels = next(dataiter)
-
-        # print images
-        imshow(torchvision.utils.make_grid(images))
-        print('GroundTruth: ', ' '.join(f'{self.opt.classes[labels[j]]:5s}' for j in range(4)))
-
-    def check_single_prediction(self, model, images):
-        outputs = model(images)
-
-        _, predicted = torch.max(outputs, 1)
-
-        print('Predicted: ', ' '.join(f'{self.opt.classes[predicted[j]]:5s}'
-                                      for j in range(4)))
-
-    def run(self):
-
-        testset = torchvision.datasets.CIFAR10(root='./data', train=False,
-                                               download=True, transform=transform)
-        testloader = torch.utils.data.DataLoader(testset, batch_size=self.opt.batch_size,
-                                                 shuffle=False, num_workers=2)
-        modelpath = './cifar_net.pth'
-        net = Net()
-        net.load_state_dict(torch.load(modelpath))
-
-        correct = 0
-        total = 0
-        # since we're not training, we don't need to calculate the gradients for our outputs
-        with torch.no_grad():
-            for data in testloader:
-                images, labels = data
-                # calculate outputs by running images through the network
-                outputs = net(images)
-                # the class with the highest energy is what we choose as prediction
-                _, predicted = torch.max(outputs.data, 1)
-                total += labels.size(0)
-                correct += (predicted == labels).sum().item()
-
-        print(f'Accuracy of the network on the 10000 test images: {100 * correct // total} %')
-
-        # prepare to count predictions for each class
-        correct_pred = {classname: 0 for classname in self.opt.classes}
-        total_pred = {classname: 0 for classname in self.opt.classes}
-
-        # again no gradients needed
-        with torch.no_grad():
-            for data in testloader:
-                images, labels = data
-                outputs = net(images)
-                _, predictions = torch.max(outputs, 1)
-                # collect the correct predictions for each class
-                for label, prediction in zip(labels, predictions):
-                    if label == prediction:
-                        correct_pred[self.opt.classes[label]] += 1
-                    total_pred[self.opt.classes[label]] += 1
-
-        # print accuracy for each class
-        for classname, correct_count in correct_pred.items():
-            accuracy = 100 * float(correct_count) / total_pred[classname]
-            print(f'Accuracy for class: {classname:5s} is {accuracy:.1f} %')
+            # print statistics
+            if self.opt.use_wandb:
+                wandb.log({"loss": loss.item()})
+            running_loss += loss.item()
+            train_loss += loss.item()
+            # print(f'loss: {loss.item()}')
+            # print(f'batch time: {time() - strt}')
+            if batch % 100 == 0:
+                print(f'Running loss: {running_loss / 100:.3f}')
+                running_loss = 0.0
+            if (epoch == self.opt.epochs or should_stop) and num2label_dct is not None:
+                # Save to db
+                preddct = []
+                np_y_pred_class = y_pred_class.detach().cpu().numpy()
+                np_y = y.detach().cpu().numpy()
+                np_y_pred = y_pred.detach().cpu().numpy()
+                for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y, np_y_pred, np_y_pred_class, experimentdata_ids, welldata_ids, celldata_ids):
+                    preddct.append(dict(id=uuid.uuid4(),
+                                        model_id=self.model_id,
+                                        experimentdata_id=uuid.UUID(experimentdata_id),
+                                        welldata_id=uuid.UUID(welldata_id),
+                                        celldata_id=uuid.UUID(celldata_id),
+                                        stage='train',
+                                        prediction=float(_y_pred_class),
+                                        groundtruth=float(_y),
+                                        prediction_label=num2label_dct[_y_pred_class],
+                                        groundtruth_label=num2label_dct[_y]))
+                    preddct_check = dict(model_id=self.model_id, celldata_id=celldata_id)
+                    self.Db.delete_based_on_duplicate_name('modelcropdata', preddct_check)
+                self.Db.add_row('modelcropdata', preddct)
+        # print epoch loss
+        train_loss = train_loss / len(trainloader)
+        train_acc = train_acc / len(trainloader)
+        print(f'Epoch Loss: {train_loss}')
+        print(f'Epoch Acc: {train_acc}')
+        return train_loss, train_acc
 
 
 if __name__ == '__main__':
@@ -311,10 +505,14 @@ if __name__ == '__main__':
     parser.add_argument('--classes', type=str, help="Comma separated list of classes. If all classes in experiment, leave blank.")
     parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
+    parser.add_argument('--num_channels', default=1)
+    parser.add_argument('--n_samples', default=1)
     parser.add_argument('--epochs', default=1)
     parser.add_argument('--batch_size', default=4)
     parser.add_argument('--learning_rate', default=1e-3)
     parser.add_argument('--momentum', default=0.9)
+    parser.add_argument('--optimizer', default='adam')
+
     parser.add_argument("--wells_toggle",
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle",

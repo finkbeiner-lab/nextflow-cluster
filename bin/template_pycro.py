@@ -19,6 +19,7 @@ class TemplateClass:
         self.exp = None
         self.timepoint = None
         self.microscope = None
+        self.platemap = None
         self.current_well = None
         self.current_tp = None
         self.current_hour = '0-0'  # todo: calculate hour imaged
@@ -141,6 +142,10 @@ class TemplateClass:
             self.plate = pd.read_excel(self.template, sheet_name='plate')
             self.timepoint = pd.read_excel(self.template, sheet_name='timepoint')
             self.microscope = pd.read_excel(self.template, sheet_name='microscope')
+            try:
+                self.platemap = pd.read_excel(self.template, sheet_name='platemap')
+            except:
+                print('In excel template, platemap sheet does not exist.')
 
             self.parent_dir = self.exp.ImageFolder.iloc[0]
             self.current_experiment = self.exp.ExperimentName.iloc[0]

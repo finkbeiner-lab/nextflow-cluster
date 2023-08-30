@@ -72,6 +72,14 @@ class TemplateQC:
             hour = row.Hour
             # estimatedDuration = row.estimatedDuration
 
+    def check_platemap_template(self):
+        df = pd.read_excel(self.template, sheet_name='platemap')
+        well_lst = df.well.tolist()
+        plate_df = pd.read_excel(self.template, sheet_name='plate')
+        for well in plate_df.Well:
+            assert well in well_lst, f'Well not in platemap {well}'
+
+
     def check_experiment_template(self):
         df = pd.read_excel(self.template, sheet_name='experiment')
         assert ~pd.isna(df.ExperimentName.iloc[0])
