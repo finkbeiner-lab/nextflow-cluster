@@ -47,7 +47,7 @@ class Database:
         #     port='5432',
         #     database="galaxy"
         # )
-        self.engine = create_engine(conn_string)
+        self.engine = create_engine(conn_string, future=True)
         self.meta = MetaData()
         self.meta.reflect(bind=self.engine)
 

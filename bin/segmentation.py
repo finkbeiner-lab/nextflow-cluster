@@ -6,10 +6,8 @@ from sql import Database
 from skimage import (
     color, feature, filters, measure, morphology, segmentation, util
 )
-import uuid
 import os
 import numpy as np
-import cv2
 import pandas as pd
 from db_util import Ops
 from normalization import Normalize
@@ -40,6 +38,7 @@ class Segmentation:
         self.opt = opt
         self.thread_lim = 4
         self.segmentation_method = opt.segmentation_method
+        assert len(self.opt.chosen_channels) > 0, 'Must select a channel for segmentation'
         logger.warn(f'Segmentation Method: {self.segmentation_method}')
         self.mask_folder_name = 'CellMasks'
         self.threshold_func = dict(sd_from_mean=self.sd_from_mean,
@@ -94,6 +93,7 @@ class Segmentation:
 
     def thresh_single(self, Db, df, well, timepoint):
         strt = time()
+        df.sort_values(by='tile', inplace=True)
         img, thresh, regions, masks = None, None, None, None
         print(f'Thresholding well {well} at timepoint {timepoint}')
         self.Norm.get_background_image(df, well, timepoint)
@@ -103,7 +103,7 @@ class Segmentation:
             img = imageio.imread(row.filename)  # TODO: is opencv faster/ more memory efficient?
 
             smoothed_im = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)
-            # smoothed_im = self.Norm.gaussian_filter(cleaned_im)
+            smoothed_im = self.Norm.gaussian_filter(smoothed_im)
             if self.segmentation_method=='manual':
                 thresh = self.opt.manual_thresh
             elif self.segmentation_method=='tryall':
@@ -137,11 +137,10 @@ class Segmentation:
                                                 )
             props_df = pd.DataFrame(props)
             props_df, masks = self.filter_by_area(props_df, masks)
-            props_df, masks = self.filter_by_intensity(props_df, masks)
 
-                # props['intensity_max'] *= 65535/255
-                # props['intensity_mean'] *= 65535/255
-                # props['intensity_min'] *= 65535/255
+            # props['intensity_max'] *= 65535/255
+            # props['intensity_mean'] *= 65535/255
+            # props['intensity_min'] *= 65535/255
             savedir = os.path.join(self.analysisdir, self.mask_folder_name, row.well)
             maskpath = save_mask(masks, row.filename, savedir)
             print(f'Saved {self.segmentation_method} segmentation mask to {maskpath}')
@@ -164,29 +163,24 @@ class Segmentation:
         print(f'Finished well + timepoint in {time() - strt:.2f}')
         
     def filter_by_area(self, props_df:pd.DataFrame, labelled_mask):
-        to_delete = []
-        for area, lbl in zip(props_df.area.tolist(), props_df.label.tolist()):
-            if (area < self.opt.lower_area_thresh) or (area > self.opt.upper_area_thresh):
-                to_delete.append(lbl)
-        print('num masks before area filters', len(np.unique(labelled_mask)))
+        props_df = props_df[(self.opt.upper_area_thresh > props_df.area) & (props_df.area > self.opt.lower_area_thresh) ]
+        filtered_labels = props_df.label.tolist()
+        all_labels = np.unique(labelled_mask)
+        print('num masks before area filters', len(all_labels))
+        # filtered_mask = np.zeros_like(labelled_mask)
+        # rows, cols = np.shape(labelled_mask)
+        # for i in range(rows):
+        #     for j in range(cols):
+        #         filtered_mask[i,j] = labelled_mask[i,j] if labelled_mask[i,j] in filtered_labels else 0
+
+        to_delete = list(set(all_labels) - set(props_df.label.tolist()))
         props_df = props_df[~props_df.label.isin(to_delete)]
         for lbl in to_delete:
             labelled_mask[labelled_mask == lbl] = 0
         print('num masks after area filters', len(np.unique(labelled_mask)))
         return props_df, labelled_mask
 
-    def filter_by_intensity(self, props_df:pd.DataFrame, labelled_mask):
-        to_delete = []
-        # filter small areas
-        for intensity, lbl in zip(props_df.intensity_mean.tolist(), props_df.label.tolist()):
-            if (intensity < self.opt.lower_intensity_thresh) or (intensity > self.opt.upper_intensity_thresh):
-                to_delete.append(lbl)
-        print('num masks before intensity filters', len(np.unique(labelled_mask)))
-        props_df = props_df[~props_df.label.isin(to_delete)]
-        for lbl in to_delete:
-            labelled_mask[labelled_mask == lbl] = 0
-        print('num masks after intensity filters', len(np.unique(labelled_mask)))
-        return props_df, labelled_mask
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -200,12 +194,13 @@ if __name__ == '__main__':
         help='Tiff image of last tile',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
-    parser.add_argument('--experiment', type=str)
 
-    parser.add_argument('--segmentation_method', choices=['sd_from_mean', 'minimum', 'yen', 'local', 'li', 'isodata', 'mean',
+    parser.add_argument('--experiment',default='20230807-KS1-neuron-optocrispr', type=str)
+
+    parser.add_argument('--segmentation_method', default='sd_from_mean', choices=['sd_from_mean', 'minimum', 'yen', 'local', 'li', 'isodata', 'mean',
                                                           'otsu', 'sauvola', 'triangle', 'manual', 'tryall'], type=str,
                         help='Auto segmentation method.')
-    parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
+    parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument('--lower_area_thresh', default=50, type=int, help="Lowerbound for cell area. Remove cells with area less than this value.")
     parser.add_argument('--upper_area_thresh', default=2500, type=int, help="Upperbound for cell area. Remove cells with area greater than this value.")
@@ -213,20 +208,20 @@ if __name__ == '__main__':
     parser.add_argument('--upper_intensity_thresh', default=2500, type=int, help="Upperbound for cell area. Remove cells with intensity greater than this value.")
     parser.add_argument('--sd_scale_factor', default=3.5, type=float, help="Standard Deviation (SD) scale factor if using sd_from_mean threshold.")
     parser.add_argument('--manual_thresh', default=0, type=int, help="Threshold if using manual threshold method.")
-    parser.add_argument("--wells_toggle",
+    parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include',
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+                        dest="chosen_wells", default='E7',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='T0',
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc",
-                        dest="chosen_channels",
+                        dest="chosen_channels", default='GFP-DMD1',
                         help="Specify channels to include or exclude.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()

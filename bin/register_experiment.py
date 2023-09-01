@@ -68,6 +68,12 @@ class Intro:
             files_df[['hours', 'burstindex']] = files_df['hours'].str.split('-', expand=True)
             files_df['zstep_size'] = files_df['zstep_size'].str.replace('.tif', '')
             files_df['timepoint'] = files_df['timepoint'].str.replace('T', '')
+            print(files_df)
+            print(files_df['timepoint']=='s8')
+            print(files_df['tile']=='s8')
+            print(files_df['burstindex']=='s8')
+            print(files_df['zstep']=='s8')
+
             files_df[['timepoint', 'tile', 'burstindex', 'zstep']] = files_df[['timepoint', 'tile', 'burstindex', 'zstep']].astype(int)
             files_df.sort_index(level=['well', 'timepoint', 'channel', 'tile', 'burstindex', 'zstep'], inplace=True)
         elif robo_num == 3:
@@ -175,8 +181,6 @@ class Intro:
             if File.platemap is not None:
                 mapdf = File.platemap
                 QC.check_platemap_template()
-            else:
-                mapdf = None
         else:
             File = None
             

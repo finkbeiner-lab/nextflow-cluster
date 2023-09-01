@@ -4,7 +4,7 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-import image_analysis_modules.utils as utils
+import utils as utils
 import pandas as pd
 import datetime
 import logging
@@ -14,7 +14,7 @@ logger_db = logging.getLogger("dbutil")
 now = datetime.datetime.now()
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
 print('Timestamp', TIMESTAMP)
-fink_log_dir = '/finkbeiner/imaging/work/metal3/galaxy/finkbeiner_logs'
+fink_log_dir = './finkbeiner_logs'
 if not os.path.exists(fink_log_dir):
     os.makedirs(fink_log_dir)
 logname = os.path.join(fink_log_dir, f'dbutil-log_{TIMESTAMP}.log')
@@ -31,11 +31,13 @@ class Ops:
     def get_raw_and_analysis_dir(self):
         Db = Database()
         # get imagedir and savedir
-        result = Db.get_table_cols(tablename='experimentdata', columns=['imagedir', 'analysisdir'],
-                                   kwargs=dict(experiment=self.experiment))
-        if result is None:
+        _analysisdir = Db.get_table_value(tablename='experimentdata', column='analysisdir', kwargs=dict(experiment=self.experiment))
+        _imagedir = Db.get_table_value(tablename='experimentdata', column='imagedir', kwargs=dict(experiment=self.experiment))
+
+        if _imagedir is None:
             raise Exception(f'Experiment name not found in database. {self.experiment}')
-        imagedir, analysisdir = result[0]
+        imagedir = _imagedir[0][0]
+        analysisdir = _analysisdir[0][0]
         return imagedir, analysisdir
 
     def get_well(self, uuid, Db=None):
