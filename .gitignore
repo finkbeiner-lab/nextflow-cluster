@@ -1,5 +1,6 @@
 work/
 .idea/
 .nextflow*
+.vscode/
 *.log
 /__pycache__

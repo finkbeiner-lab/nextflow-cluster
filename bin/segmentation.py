@@ -150,7 +150,8 @@ class Segmentation:
                                                                         welldata_id=row.welldata_id,
                                                                         channeldata_id=row.channeldata_id,
                                                                         tile=row.tile,
-                                                                        timepoint=row.timepoint))
+                                                                        timepoint=row.timepoint,
+                                                                        segmentationmethod=f'{self.segmentation_method}'))
             update_celldata_and_intensitycelldata(row, props_df, Db)
             print(f'Finished tile {row.tile} for well + timepoint in {time() - tile_strt:.2f}')
 

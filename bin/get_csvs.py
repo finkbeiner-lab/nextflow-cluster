@@ -58,7 +58,7 @@ class GetCSVS:
         intensitypunctadata.to_csv(os.path.join(savedir, 'intensitypunctadata.csv'))
         modeldata.to_csv(os.path.join(savedir, 'modeldata.csv'))
         modelcropdata.to_csv(os.path.join(savedir, 'modelcropdata.csv'))
-        logger.warn(f'Saved csvs to {savedir}.')
+        print(f'Saved csvs to {savedir}.')
 
 
 if __name__ == '__main__':

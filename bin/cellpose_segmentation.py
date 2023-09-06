@@ -1,6 +1,7 @@
 import argparse
 import os
 from glob import glob
+import numpy as np
 from cellpose import models
 from cellpose import plot
 from skimage import (
@@ -9,8 +10,6 @@ from skimage import (
 from segmentation_helper import save_mask, update_celldata_and_intensitycelldata
 from normalization import Normalize
 import pandas as pd
-import matplotlib.pyplot as plt
-import cv2
 import imageio
 from sql import Database
 from string import ascii_uppercase
@@ -36,6 +35,7 @@ class CellposeSegmentation:
     def __init__(self, opt):
         self.opt = opt
         self.experiment = opt.experiment
+        assert len(self.opt.chosen_channels) > 0, 'Channel must be selected'
         self.Norm = Normalize(self.opt)
         _, self.analysisdir = self.Norm.get_raw_and_analysis_dir()
         logger.warn(f'Save directory: {self.analysisdir}')
@@ -71,9 +71,9 @@ class CellposeSegmentation:
         #     plt.show()
         for i, row in df.iterrows():
             img = imageio.imread(row.filename)
-            cleaned_im = self.Norm.image_correction[self.opt.img_norm_name](img, row.tile)
-            smoothed_im = self.Norm.gaussian_filter(cleaned_im)
-            masks, props_df = self.cellpose_single_image(model, chan, smoothed_im)
+            # cleaned_im = self.Norm.image_correction[self.opt.img_norm_name](img, row.tile)
+            # smoothed_im = self.Norm.gaussian_filter(cleaned_im)
+            masks, props_df = self.cellpose_single_image(model, chan, img)
 
             savedir = os.path.join(self.analysisdir, self.mask_folder_name, row.well)
             maskpath = save_mask(masks, row.filename, savedir)
@@ -86,7 +86,8 @@ class CellposeSegmentation:
                                                                        welldata_id=row.welldata_id,
                                                                        channeldata_id=row.channeldata_id,
                                                                        tile=row.tile,
-                                                                       timepoint=row.timepoint))
+                                                                       timepoint=row.timepoint,
+                                                                       segmentationmethod='cellpose'))
             update_celldata_and_intensitycelldata(row, props_df, Db)
             logger.warn(f'Updated celldata and intensitycelldata for well {row.well} tile {row.tile}')
 
@@ -150,30 +151,28 @@ if __name__ == '__main__':
         help='path to save pickle file',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.pkl'
     )
-    parser.add_argument('--experiment', type=str)
-    parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
-                        help='Image normalization method using flatfield image.')
-    parser.add_argument('--batch_size', type=int)
-    parser.add_argument('--cell_diameter', type=int)
-    parser.add_argument('--flow_threshold', type=float)
-    parser.add_argument('--cell_probability', type=float)
-    parser.add_argument('--model_type', type=str)
-    parser.add_argument("--wells_toggle",
+    parser.add_argument('--experiment', default='20230126-MsNeuron-ADctrlEVS-sensorsMito', type=str)
+    parser.add_argument('--batch_size',default=1, type=int)
+    parser.add_argument('--cell_diameter', default=50, type=int)
+    parser.add_argument('--flow_threshold', default=.4, type=float)
+    parser.add_argument('--cell_probability',default=0.,  type=float)
+    parser.add_argument('--model_type',default='cyto2', type=str)
+    parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include',
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+                        dest="chosen_wells", default='H4',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='T0',
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc",
+    parser.add_argument("--chosen_channels", "-cc", default='Confocal-GFP16',
                         dest="chosen_channels",
                         help="Specify channels to include or exclude.")
-    parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
+    parser.add_argument('--tile', default=1, type=int, help="Select single tile to segment. Default is to segment all tiles.")
 
     args = parser.parse_args()
     print(args)
