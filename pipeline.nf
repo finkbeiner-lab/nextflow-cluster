@@ -4,10 +4,9 @@
  https://nextflow-io.github.io/patterns/conditional-process/
  */
 // Global variables
-params.chosen_wells = 'E7'
-params.chosen_timepoints = 'T0'
-params.experiment = '20230807-KS1-neuron-optocrispr'
-
+params.chosen_wells = 'all'
+params.chosen_timepoints = 'all'
+params.experiment = '20230828-2-msneuron-cry2'
 
 // Variables per module
 
@@ -35,12 +34,13 @@ params.distance_threshold = 300 // distance that a cell must be new
 params.voronoi_bool = true // distance that a cell must be new
 
 // INTENSITY
-params.DO_INTENSITY = false
-params.img_norm_for_intensity = 'identity'  // ['division', 'subtraction', 'identity']
-params.morphology_channel = 'GFP-DMD1'
+params.DO_INTENSITY = true
+params.img_norm_for_intensity = 'subtraction'  // ['division', 'subtraction', 'identity']
+params.target_channel = ['RFP1','YFP1', 'YFP2', 'RFP2']
+params.morphology_channel = 'RFP1'
 
 // GET CSVS
-params.DO_GET_CSVS = true
+params.DO_GET_CSVS = false
 
 
 
@@ -52,6 +52,8 @@ upper_ch = Channel.of(params.upper_area_thresh)
 sd_ch = Channel.of(params.sd_scale_factor)
 well_ch = Channel.of(params.chosen_wells)
 tp_ch = Channel.of(params.chosen_timepoints)
+target_channel_ch = Channel.from(params.target_channel)
+morphology_ch = Channel.of(params.morphology_channel)
 greeting_ch = Channel.of(params.greeting)
 
 include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
@@ -86,13 +88,31 @@ process SEGMENTATION {
     val chosen_wells
     val chosen_timepoints
 
-
     output: 
     stdout 
 
     script:
     """
     segmentation.py --experiment ${exp} --segmentation_method ${segmentation_method} --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} --sd_scale_factor ${sd_scale_factor}  --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints}
+    """
+}
+
+process INTENSITY {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    input:
+    val exp
+    val img_norm_name
+    val morphology_channel
+    each target_channel
+    val chosen_wells
+    val chosen_timepoints
+
+    output:
+    stdout
+
+    script:
+    """
+    intensity.py --experiment ${exp} --img_norm_name ${img_norm_name}  --chosen_channels ${morphology_channel} --target_channel ${target_channel} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints}
     """
 }
 
@@ -130,6 +150,10 @@ workflow {
     bashresults_ch.view{ it }
     if ( params.DO_SEGMENTATION ) {
         seg_ch = SEGMENTATION(experiment_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch, well_ch, tp_ch)
+        seg_ch.view{ it }
+    }
+    if ( params.DO_INTENSITY ) {
+        seg_ch = INTENSITY(experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch)
         seg_ch.view{ it }
     }
     if ( params.DO_GET_CSVS){

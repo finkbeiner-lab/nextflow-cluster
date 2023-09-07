@@ -62,7 +62,7 @@ class Ops:
         tiledata_df = Db.get_df_from_query('tiledata', dict(experimentdata_id=exp_uuid))
         tiledata_df = pd.merge(tiledata_df, welldata_df[['id', 'well', 'celltype']], left_on='welldata_id', right_on='id', how='left', suffixes=[None, '_dontuse'])
 
-        if self.opt.chosen_wells is not None and len(self.opt.chosen_wells) > 0:
+        if self.opt.chosen_wells is not None and len(self.opt.chosen_wells) > 0 and self.opt.chosen_wells.lower() !='all':
             selected_wells = utils.get_iter_from_user(self.opt.chosen_wells)
             print(f'Selected wells: {selected_wells}')
             welldata_df = self.filter_df(welldata_df, 'well', selected_wells, self.opt.wells_toggle)
@@ -76,7 +76,7 @@ class Ops:
             if not (len(channeldata_df)): 
                 print('Channeldata df is empty')
                 logger_db.warn('Channeldata df is empty')
-        if self.opt.chosen_timepoints is not None and len(self.opt.chosen_timepoints) > 0:
+        if self.opt.chosen_timepoints is not None and len(self.opt.chosen_timepoints) > 0 and self.opt.chosen_timepoints.lower() !='all':
             selected_timepoints = utils.get_iter_from_user(self.opt.chosen_timepoints)
             if len(selected_timepoints) and len(selected_timepoints[0]) > 1 and selected_timepoints[0][0]=='T':
                 selected_timepoints = [t[1:] for t in selected_timepoints]

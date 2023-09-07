@@ -1,3 +1,4 @@
+#!/opt/conda/bin/python
 """Montage images or masks"""
 from db_util import Ops
 from normalization import Normalize
@@ -14,7 +15,7 @@ logger = logging.getLogger("Intensity")
 now = datetime.datetime.now()
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
 print('Timestamp', TIMESTAMP)
-fink_log_dir = '/finkbeiner/imaging/work/metal3/galaxy/finkbeiner_logs'
+fink_log_dir = './finkbeiner_logs'
 if not os.path.exists(fink_log_dir):
     os.makedirs(fink_log_dir)
 logname = os.path.join(fink_log_dir, f'Intensity-log_{TIMESTAMP}.log')
@@ -69,7 +70,7 @@ class Intensity:
             for i, row in df.iterrows():
                 # offset channel?
                 # print('row', row)
-                print('randomcellid', row.randomcellid)
+                # print('randomcellid', row.randomcellid)
                 if row.randomcellid not in labelled_mask:
                     raise Exception(f'Cellid not in mask {row.cellid} in {maskpath}')
                 logger.warn(f'randomcellid {row.randomcellid}')
@@ -107,25 +108,25 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--experiment', type=str)
-    parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
+    parser.add_argument('--experiment', default = '20230828-2-msneuron-cry2', type=str)
+    parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
-    parser.add_argument("--wells_toggle",
+    parser.add_argument("--wells_toggle", default='include', 
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include',
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+                        dest="chosen_wells", default='E7',
                         help="Specify wells to include or exclude")
-    parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+    parser.add_argument("--chosen_timepoints", "-ct", default='T0',
+                        dest="chosen_timepoints", 
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc",
+    parser.add_argument("--chosen_channels", "-cc", default='RFP1',
                         dest="chosen_channels",
                         help="Morphology Channel")
-    parser.add_argument("--target_channel",
+    parser.add_argument("--target_channel", default='YFP1',
                         dest="target_channel",
                         help="Get intensity of this channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
