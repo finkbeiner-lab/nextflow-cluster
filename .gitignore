@@ -4,3 +4,5 @@ work/
 .vscode/
 *.log
 /__pycache__
+*.html
+*.txt
