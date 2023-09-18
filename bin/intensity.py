@@ -17,12 +17,12 @@ logger = logging.getLogger("Intensity")
 now = datetime.datetime.now()
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
 print('Timestamp', TIMESTAMP)
-fink_log_dir = './finkbeiner_logs'
+fink_log_dir = '/home/jlamstein/PycharmProjects/datastudy/finkbeiner_logs'
 if not os.path.exists(fink_log_dir):
     os.makedirs(fink_log_dir)
 logname = os.path.join(fink_log_dir, f'Intensity-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
-# fh.setLevel(logging.DEBUG)
+fh.setLevel(20)
 logger.addHandler(fh)
 logger.warn('Running Intensity from Database.')
 
@@ -44,13 +44,17 @@ class Intensity:
 
         for (well, timepoint), df in g:
             logger.info(f'Getting intensity well {well} at timepoint {timepoint}')
+            if df.maskpath.iloc[0] is None:
+                print(f'{well} T{timepoint} has null maskpath. Skipping. Check morphology channel.')
+                continue
             self.Norm.get_background_image(df, well, timepoint)
             welldata_id = df.welldata_id.iloc[0]
             target_channel_uuid = Db.get_table_uuid('channeldata', dict(channel=self.opt.target_channel, welldata_id=welldata_id))
 
             for i, row in df.iterrows():  # df contains same well and timepoint, different tiles
                 tile_strt = time()
-                logger.info('row', row)
+                logger.warning('row', row)
+                print('maskpath', row.maskpath)
                 labelled_mask = imageio.v3.imread(row.maskpath)  # TODO: is opencv faster/ more memory efficient?
                 filename = Db.get_table_value('tiledata', column='filename', kwargs=dict(welldata_id=welldata_id,
                                                                           channeldata_id=target_channel_uuid,

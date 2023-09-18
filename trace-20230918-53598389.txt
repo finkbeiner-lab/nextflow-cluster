@@ -1,0 +1,4 @@
+task_id	hash	native_id	name	status	exit	submit	duration	realtime	%cpu	peak_rss	peak_vmem	rchar	wchar
+1	23/e0eaf7	71457	BASHEX (Bash Script Test)	COMPLETED	0	2023-09-18 14:53:19.910	1.3s	19ms	69.8%	0	0	79.7 KB	228 B
+2	db/3a4316	71490	INTENSITY (1)	FAILED	1	2023-09-18 14:53:19.937	12.9s	12.8s	-	-	-	-	-
+3	79/343cf7	71476	INTENSITY (2)	ABORTED	-	2023-09-18 14:53:19.928	-	-	-	-	-	-	-
