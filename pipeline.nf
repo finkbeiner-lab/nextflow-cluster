@@ -99,9 +99,17 @@ params.outdir = "results"
 log.info """\
     ANALYSIS DATASTUDY PIPELINE!
     ===================================
-    python input : ${params.experiment}
-    greeting     : ${params.greeting}
-    outdir       : ${params.outdir}
+    experiment : ${params.experiment}
+    wells     : ${params.chosen_wells}
+    timepoints       : ${params.chosen_timepoints}
+    channels       : ${params.chosen_channels}
+    Register Experiment: ${params.DO_REGISTER_EXPERIMENT}
+    Segmentation: ${params.DO_SEGMENTATION}
+    Tracking: ${params.DO_TRACKING}
+    Intensity: ${params.DO_INTENSITY}
+    Montage: ${params.DO_MONTAGE}
+    Plate Montage: ${params.DO_PLATEMONTAGE}
+    Get CSVS: ${params.DO_GET_CSVS}
     """
     .stripIndent()
 
