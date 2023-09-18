@@ -399,9 +399,9 @@ if __name__ == '__main__':
         default=DEBUG,
         type=int,
         dest='DEBUG')
-    parser.add_argument("--wells_toggle",
+    parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include',
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")

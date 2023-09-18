@@ -4,8 +4,8 @@
  https://nextflow-io.github.io/patterns/conditional-process/
  */
 // Global variables
-params.experiment = '20230828-2-msneuron-cry2'
-params.csvdir = '/gladstone/finkbeiner/robodata/ThinkingMicroscope-DB/GXYTMP_20230828-2-msneuron-cry2/CSVS'
+params.experiment = '20230807-KS1-neuron-optocrispr'
+params.csvdir = '/gladstone/finkbeiner/robodata/ThinkingMicroscope-DB/GXYTMP_' + params.experiment + '/CSVS'
 
 // Variables per module
 
@@ -18,20 +18,14 @@ params.DO_COPY = true
 
 experiment_ch = Channel.of(params.experiment)
 csvdir_ch = Channel.of(params.csvdir)
-greeting_ch = Channel.of(params.greeting)
-
-include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
-
-
 
 params.outdir = "results"
 
 log.info """\
     COPY DATABASE TABLES FROM CSV
     ===================================
-    python input : ${params.experiment}
-    greeting     : ${params.greeting}
-    outdir       : ${params.outdir}
+    experiment name : ${params.experiment}
+    csv directory   : ${params.csvdir}
     """
     .stripIndent()
 

@@ -112,7 +112,7 @@ if __name__ == '__main__':
                         help='Montage image, binary mask, or tracked mask.')
     parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
-    parser.add_argument('--montage_pattern', help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
+    parser.add_argument('--montage_pattern', choices=['standard', 'legacy'], help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
     parser.add_argument("--wells_toggle",
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle",

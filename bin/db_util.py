@@ -21,7 +21,7 @@ logname = os.path.join(fink_log_dir, f'dbutil-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger_db.addHandler(fh)
-logger_db.warn('Running Segmentation from Database.')
+logger_db.info('Running Segmentation from Database.')
 
 class Ops:
     def __init__(self, opt):
@@ -68,14 +68,14 @@ class Ops:
             welldata_df = self.filter_df(welldata_df, 'well', selected_wells, self.opt.wells_toggle)
             if not(len(welldata_df)): 
                 print('Welldata df is empty.')
-                logger_db.warn('Welldata df is empty.')
-        if self.opt.chosen_channels is not None and len(self.opt.chosen_channels) > 0:
+                logger_db.info('Welldata df is empty.')
+        if self.opt.chosen_channels is not None and len(self.opt.chosen_channels) > 0and self.opt.chosen_channels.lower() !='all':
             selected_channels = self.opt.chosen_channels.strip(' ').split(',')
             print(f'Selected channels {selected_channels}')
             channeldata_df = self.filter_df(channeldata_df, 'channel', selected_channels, self.opt.channels_toggle)
             if not (len(channeldata_df)): 
                 print('Channeldata df is empty')
-                logger_db.warn('Channeldata df is empty')
+                logger_db.info('Channeldata df is empty')
         if self.opt.chosen_timepoints is not None and len(self.opt.chosen_timepoints) > 0 and self.opt.chosen_timepoints.lower() !='all':
             selected_timepoints = utils.get_iter_from_user(self.opt.chosen_timepoints)
             if len(selected_timepoints) and len(selected_timepoints[0]) > 1 and selected_timepoints[0][0]=='T':
@@ -83,10 +83,10 @@ class Ops:
             if len(selected_timepoints) and selected_timepoints[0].isnumeric():
                 selected_timepoints = [int(t) for t in selected_timepoints]
             print(f'Selected timepoints {selected_timepoints}')
-            logger_db.warn(f'Selected timepoints {selected_timepoints}')
+            logger_db.info(f'Selected timepoints {selected_timepoints}')
             tiledata_df = self.filter_df(tiledata_df, 'timepoint', selected_timepoints, self.opt.timepoints_toggle)
             if not (len(tiledata_df)): 
-                logger_db.warn('Timepoint df is empty')
+                logger_db.info('Timepoint df is empty')
                 print('Timepoint df is empty')
 
 
@@ -96,7 +96,7 @@ class Ops:
             tiledata_df = self.filter_df_by_tile(tiledata_df, self.opt.tile)
         if not len(tiledata_df):
             print('Dataframe is empty after filtering. Check your selected wells, timepoints, channels.')
-        logger_db.warn(f'Length of tiledata df {len(tiledata_df)}')
+        logger_db.info(f'Length of tiledata df {len(tiledata_df)}')
         print(f'Length of tiledata df {len(tiledata_df)}')
         return tiledata_df
 

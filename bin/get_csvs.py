@@ -64,7 +64,7 @@ class GetCSVS:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        '--input_dict',
+        '--input_dict', 
         help='path to pickle, used to link modules in galaxy',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp.pkl'
     )
@@ -73,7 +73,7 @@ if __name__ == '__main__':
         help='Tiff image of last tile',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
-    parser.add_argument('--experiment', type=str)
+    parser.add_argument('--experiment', default='20230828-2-msneuron-cry2',type=str)
     args = parser.parse_args()
     print(args)
     GC = GetCSVS(args)
