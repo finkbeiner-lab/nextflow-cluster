@@ -8,13 +8,13 @@ params.wells_toggle = 'include' // ['include', 'exclude']
 params.chosen_wells = 'F1'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
 
 params.timepoints_toggle = 'include' // ['include', 'exclude']
-params.chosen_timepoints = 'T0-T7'  // 'T0', 'T0-T7', or 'all'
+params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20230828-2-msneuron-cry2'  // Experiment name
-params.morphology_channel = 'RFP1'  // Your morphology channel
+params.experiment = '20230901-KS-HEK-minisog'  // Experiment name
+params.morphology_channel = 'GFP-DMD1'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
 
@@ -23,6 +23,7 @@ params.DO_REGISTER_EXPERIMENT = false
 params.DO_SEGMENTATION = false
 params.DO_TRACKING = false
 params.DO_INTENSITY = true
+params.DO_CROP = false
 params.DO_MONTAGE = false
 params.DO_PLATEMONTAGE = false
 params.DO_GET_CSVS = false
@@ -57,10 +58,12 @@ params.distance_threshold = 300 // distance that a cell must be new
 params.voronoi_bool = true // distance that a cell must be new
 
 // INTENSITY
-params.target_channel = ['RFP1','YFP1']  // List of channels. Run in parallel.
+params.target_channel = ['RFP1','GFP-DMD1']  // List of channels. Run in parallel.
 
 // CROP
 params.crop_size = 300
+params.target_channel_crop = ['RFP1','YFP1']  // List of channels. Run in parallel.
+
 
 // MONTAGE and PLATEMONTAGE
 params.tiletype = 'filename'  // ['filename', 'maskpath', 'trackedmaskpath']
@@ -87,6 +90,7 @@ well_toggle_ch = Channel.of(params.wells_toggle)
 tp_toggle_ch = Channel.of(params.timepoints_toggle)
 channel_toggle_ch = Channel.of(params.channels_toggle)
 target_channel_ch = Channel.from(params.target_channel)
+target_channel_crop_ch = Channel.from(params.target_channel_crop)
 morphology_ch = Channel.of(params.morphology_channel)
 distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
@@ -128,11 +132,11 @@ process REGISTER_EXPERIMENT {
     val ixm_hts_file
     val robo_num
     val chosen_wells
-    val chosen_channels
     val chosen_timepoints
+    val chosen_channels
     val wells_toggle
-    val channels_toggle
     val timepoints_toggle
+    val channels_toggle
 
     output:
     val true
@@ -239,8 +243,8 @@ process TRACKING {
     val distance_threshold
     val voronoi_bool
     val chosen_wells
-    val chosen_channels
     val chosen_timepoints
+    val morphology_channel
     val wells_toggle
     val timepoints_toggle
 
@@ -259,6 +263,8 @@ process TRACKING {
 
 process INTENSITY {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    memory '2 GB'
+    cpus 6
     input:
     val ready
     val exp
@@ -271,7 +277,7 @@ process INTENSITY {
     val timepoints_toggle
 
     output:
-    stdout
+    val true
 
     script:
     """
@@ -284,25 +290,28 @@ process INTENSITY {
 
 process CROP {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    memory '1 GB'
+    cpus 2
     input:
     val ready
     val exp
-    val img_norm_name
-    val_crop_size
-    val chosen_channels
+    each target_channel
+    val morphology_channel
+    val crop_size
     val chosen_wells
     val chosen_timepoints
     val wells_toggle
-    val channels_toggle
     val timepoints_toggle
 
+
     output:
-    stdout
+    val true
 
     script:
     """
-    crop.py --experiment ${exp} --img_norm_name ${img_norm_name} --crop_size ${crop_size} \
-    --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
+    crop.py --experiment ${exp} --crop_size ${crop_size} \
+    --target_channel ${target_channel_crop}
+    --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
     """
 }
@@ -314,12 +323,12 @@ process MONTAGE {
     val exp
     val tiletype
     val montage_pattern
-    val chosen_channels
     val chosen_wells
     val chosen_timepoints
+    val chosen_channels
     val wells_toggle
-    val channels_toggle
     val timepoints_toggle
+    val channels_toggle
 
     output:
     stdout
@@ -339,12 +348,13 @@ process PLATEMONTAGE {
     val exp
     val tiletype
     val montage_pattern
-    val chosen_channels
     val chosen_wells
     val chosen_timepoints
+    val chosen_channels
     val wells_toggle
-    val channels_toggle
     val timepoints_toggle
+    val channels_toggle
+
 
     output:
     stdout
@@ -364,12 +374,12 @@ process CNN {
     val exp
     val tiletype
     val montage_pattern
-    val chosen_channels
     val chosen_wells
     val chosen_timepoints
+    val chosen_channels
     val wells_toggle
-    val channels_toggle
     val timepoints_toggle
+    val channels_toggle
 
     output:
     stdout
@@ -379,8 +389,8 @@ process CNN {
     cnn.py --experiment ${exp} --label_type ${label_type} --label_name ${label_name} --classes ${classes} \
     --img_norm_name ${img_norm_name} --num_channels ${num_channels} --n_samples ${n_samples} --epochs ${epochs} \
     --batch_size ${batch_size} --learning_rate ${learning_rate} --momentum ${momentum} --optimizer
-    --chosen_channels ${chosen_channels} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
+    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} --chosen_channels ${chosen_channels}\
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --channels_toggle ${channels_toggle}
     """
 }
 
@@ -418,14 +428,15 @@ workflow {
     bashresults_ch.view{ it }
     if (params.DO_REGISTER_EXPERIMENT){
         REGISTER_EXPERIMENT(input_path_ch, output_path_ch, template_path_ch, platemap_path_ch, ixm_hts_file_ch, robo_num_ch,
-        well_ch, chosen_channels_for_register_exp_ch, tp_ch)
+        well_ch, tp_ch,chosen_channels_for_register_exp_ch, well_toggle_ch, tp_toggle_ch, channels_toggle)
         register_result = REGISTER_EXPERIMENT.out
     }
     else {
         register_result = true
     }
     if ( params.DO_SEGMENTATION ) {
-        seg_ch = SEGMENTATION(register_result, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch, well_ch, tp_ch)
+        seg_ch = SEGMENTATION(register_result, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
+        well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         seg_ch.view{ it }
         seg_result = SEGMENTATION.out
     }
@@ -433,7 +444,8 @@ workflow {
         seg_result = true
     }
     if (params.DO_TRACKING){
-        track_ch = TRACKING(seg_result, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, morphology_ch, tp_ch)
+        track_ch = TRACKING(seg_result, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch,tp_ch, morphology_ch,
+        well_toggle_ch, tp_toggle_ch)
         track_result = TRACKING.out
 
     }
@@ -441,9 +453,18 @@ workflow {
     track_result = true
     }
     if ( params.DO_INTENSITY ) {
-        seg_ch = INTENSITY(track_result, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch,well_toggle_ch, tp_toggle_ch)
-        seg_ch.view{ it }
+        int_ch = INTENSITY(track_result, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch,well_toggle_ch, tp_toggle_ch)
+        intensity_result = INTENSITY.out
+        int_ch.view{ it }
     }
+    else{
+    intensity_result = true
+    }
+    if ( params.DO_CROP ) {
+        crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, target_channel_ch, well_ch, tp_ch,well_toggle_ch, tp_toggle_ch)
+        crop_ch.view{ it }
+    }
+
     if ( params.DO_GET_CSVS){
         csv_ch = GETCSVS(experiment_ch)
         csv_ch.view{ it }

@@ -48,6 +48,9 @@ class CopyCSVStoDB:
                                     row[key] = filepath
                         
                         dcts.append(row.to_dict())
+                        if len(dcts) > 1000:
+                            Db.add_row(tablename, dcts)
+                            dcts = []
                         # Db.add_row(tablename, row.to_dict())
 
                     Db.add_row(tablename, dcts)

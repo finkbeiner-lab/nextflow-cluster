@@ -131,10 +131,7 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
     parser.add_argument('--experiment', type=str)
-    parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
-                        help='Image normalization method using flatfield image.')
     parser.add_argument('--crop_size', default=0, type=int, help="Side length of square")
-
     parser.add_argument("--wells_toggle",
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle",
