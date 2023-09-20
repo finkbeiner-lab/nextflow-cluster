@@ -13,17 +13,17 @@ params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20230807-KS1-neuron-optocrispr'  // Experiment name
-params.morphology_channel = 'GFP-DMD1'  // Your morphology channel
+params.experiment = '20230901-3-msneuron-cry2-KS4'  // Experiment name
+params.morphology_channel = 'RFP1'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
-params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
+params.img_norm_name = 'identity' // ['identity', 'subtraction', 'division']
 
 // SELECT MODULES
 params.DO_REGISTER_EXPERIMENT = false
 params.DO_SEGMENTATION = false
 params.DO_TRACKING = false
-params.DO_INTENSITY = true
-params.DO_CROP = false
+params.DO_INTENSITY = false
+params.DO_CROP = true
 params.DO_MONTAGE = false
 params.DO_PLATEMONTAGE = false
 params.DO_GET_CSVS = false
@@ -62,7 +62,7 @@ params.target_channel = ['RFP1','GFP-DMD1']  // List of channels. Run in paralle
 
 // CROP
 params.crop_size = 300
-params.target_channel_crop = ['RFP1','GFP-DMD1']  // List of channels. Run in parallel.
+params.target_channel_crop = ['RFP1', 'RFP2', 'YFP1', 'YFP2']  // List of channels. Run in parallel.
 
 
 // MONTAGE and PLATEMONTAGE
@@ -95,7 +95,6 @@ morphology_ch = Channel.of(params.morphology_channel)
 distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
 crop_size_ch = Channel.of(params.crop_size)
-greeting_ch = Channel.of(params.greeting)
 
 include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
 

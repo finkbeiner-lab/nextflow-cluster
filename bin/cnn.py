@@ -21,6 +21,7 @@ from time import time
 from sql import Database
 import uuid
 import wandb
+
 os.environ["WANDB_SILENT"] = "true"
 
 transform = transforms.Compose(
@@ -204,20 +205,22 @@ class Train:
             if self.opt.classes is None:
                 # use all classes
                 # TODO: make case insensitive
-                classes = self.Db.get_table_value('dosagedata', self.opt.label_type, dict(experimentdata_id=experimentdata_id,
-                                                                                          kind=self.opt.label_name))  # inhibitor, treatment, antibody
+                classes = self.Db.get_table_value('dosagedata', self.opt.label_type,
+                                                  dict(experimentdata_id=experimentdata_id,
+                                                       kind=self.opt.label_name))  # inhibitor, treatment, antibody
                 classes = np.unique(classes)
             else:
                 classes = self.opt.classes.split(',')
                 # assert len(classes) > 1, 'must have multiple classes if training'
             print('classes', classes)
             self.classes = classes
-            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'dosagedata', 'channeldata'])  #'dosagedata', 'channeldata'
+            df = self.Dbops.get_df_for_training(
+                ['celldata', 'cropdata', 'dosagedata', 'channeldata'])  # 'dosagedata', 'channeldata'
             _g = df.groupby(['celldata_id'])
             g_keys = list(_g.groups.keys())
             print('key 0', g_keys[0])
             example = _g.get_group(g_keys[0])
-            print('EX 0', example)           
+            print('EX 0', example)
             df = df[df['name'].isin(self.classes)]
             self.label_column = 'name'
 
@@ -235,9 +238,29 @@ class Train:
             print('columns', df.columns)
             df = df[df['celltype'].isin(self.classes)]
             self.label_column = 'celltype'
+        elif self.opt.label_type == 'stimulate':
+            if self.opt.classes is None:
+                # use all classes
+                classes = np.unique([True, False])
+            else:
+                classes = self.opt.classes.split(',')
+            print('classes', classes)
+            self.classes = classes
+            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'channeldata'])
+            print('columns', df.columns)
+            df = df[df['stimulate'].isin(self.classes)]
+            self.label_column = 'celltype'
+
         else:
             assert 0, f'label type {self.opt.label_type} not in selection'
         print('label column', self.label_column)
+        return df
+
+    def apply_filters(self, df):
+        """Apply filters"""
+        for col, val in self.opt.filters:
+            print(col, val)
+            df = df.loc[df[col] == val]
         return df
 
     def train_val_test_split(self, df, balance_method='cutoff'):
@@ -252,22 +275,22 @@ class Train:
             dfs = []
             for name, _df in label_group:
                 g = _df.groupby('celldata_id')
-                shuf=np.arange(g.ngroups)
+                shuf = np.arange(g.ngroups)
                 np.random.shuffle(shuf)
-                dfs.append(_df[g.ngroup().isin(shuf[:cutoff])]) 
+                dfs.append(_df[g.ngroup().isin(shuf[:cutoff])])
             balanced_df = pd.concat(dfs)
             _sizes = balanced_df.groupby(self.label_column).size()
             for _s in _sizes:
-                print(_s//self.opt.num_channels, cutoff)
-                assert _s//self.opt.num_channels == cutoff, 'class size not what was intended'
+                print(_s // self.opt.num_channels, cutoff)
+                assert _s // self.opt.num_channels == cutoff, 'class size not what was intended'
         else:
             balanced_df = df
-        if self.opt.n_samples > 0: # randomly sample from groupby
+        if self.opt.n_samples > 0:  # randomly sample from groupby
             g = balanced_df.groupby(['celldata_id', self.label_column])
             print(f'Grouped data length: {len(g)}')
-            shuf=np.arange(g.ngroups)
+            shuf = np.arange(g.ngroups)
             np.random.shuffle(shuf)
-            balanced_df = balanced_df[g.ngroup().isin(shuf[:self.opt.n_samples])]# change 2 to what you need :-) 
+            balanced_df = balanced_df[g.ngroup().isin(shuf[:self.opt.n_samples])]  # change 2 to what you need :-)
         # split
         print(balanced_df.head())
         balanced_g = balanced_df.groupby(['celldata_id', self.label_column])
@@ -275,14 +298,15 @@ class Train:
         print('key 1', g_keys[0])
         example = balanced_g.get_group(g_keys[0])
         print('EX 1', example)
-        shuf=np.arange(balanced_g.ngroups)
+        shuf = np.arange(balanced_g.ngroups)
         np.random.shuffle(shuf)
         print('length of shuffle', len(shuf))
         print(f'Balanced group length: {len(balanced_g)}')
 
-        train = balanced_df[balanced_g.ngroup().isin(shuf[:int(len(shuf) * .7)])]# change 2 to what you need :-) 
-        val = balanced_df[balanced_g.ngroup().isin(shuf[int(len(shuf) * .7):int(len(shuf) * .85)])]# change 2 to what you need :-) 
-        test = balanced_df[balanced_g.ngroup().isin(shuf[int(len(shuf) * .85):])]# change 2 to what you need :-) 
+        train = balanced_df[balanced_g.ngroup().isin(shuf[:int(len(shuf) * .7)])]  # change 2 to what you need :-)
+        val = balanced_df[
+            balanced_g.ngroup().isin(shuf[int(len(shuf) * .7):int(len(shuf) * .85)])]  # change 2 to what you need :-)
+        test = balanced_df[balanced_g.ngroup().isin(shuf[int(len(shuf) * .85):])]  # change 2 to what you need :-)
 
         # train = balanced_df.sample(frac=0.7)
         # valtest = balanced_df.drop(train.index)
@@ -305,6 +329,7 @@ class Train:
         print(f'Device {self.device}')
         assert self.device == 'cuda:0', 'gpu not used'
         df = self.get_classes()
+        df = self.apply_filters(df)
         print('df channels', df.channel.unique())
         train_df, val_df, test_df = self.train_val_test_split(df, balance_method='cutoff')
         Early = EarlyStopper(patience=3, min_delta=0)
@@ -329,14 +354,14 @@ class Train:
         self.hyperparams['modelpath'] = modelpath
         if self.opt.use_wandb:
             wandb.config.update(self.opt)
-        self.Db.update('modeldata', 
+        self.Db.update('modeldata',
                        update_dct=dict(n_samples=self.opt.n_samples if self.opt.n_samples > 0 else len(trainset),
-                                                    num_channels=self.opt.num_channels,
-                                                    momentum=self.opt.momentum,
-                                                    learning_rate=self.opt.learning_rate,
-                                                    batch_size=self.opt.batch_size,
-                                                    epochs=self.opt.epochs,
-                                                    optimizer=self.opt.optimizer),
+                                       num_channels=self.opt.num_channels,
+                                       momentum=self.opt.momentum,
+                                       learning_rate=self.opt.learning_rate,
+                                       batch_size=self.opt.batch_size,
+                                       epochs=self.opt.epochs,
+                                       optimizer=self.opt.optimizer),
                        kwargs=dict(id=self.model_id))
         self.criterion = nn.CrossEntropyLoss()
         if self.opt.optimizer == 'adam':
@@ -381,7 +406,12 @@ class Train:
                         np_y_pred_class = y_pred_class.detach().cpu().numpy()
                         np_y = y.detach().cpu().numpy()
                         np_y_pred = y_pred.detach().cpu().numpy()
-                        for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y, np_y_pred, np_y_pred_class, experimentdata_ids, welldata_ids, celldata_ids):
+                        for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y,
+                                                                                                           np_y_pred,
+                                                                                                           np_y_pred_class,
+                                                                                                           experimentdata_ids,
+                                                                                                           welldata_ids,
+                                                                                                           celldata_ids):
                             preddct.append(dict(id=uuid.uuid4(),
                                                 model_id=self.model_id,
                                                 experimentdata_id=uuid.UUID(experimentdata_id),
@@ -401,7 +431,7 @@ class Train:
                 print(f'Accuracy of the network on validation images: {val_acc * 100:.2f} %')
                 print(f'Loss of the network on validation images: {val_loss:.2f}')
                 if should_stop:
-                    print(f'Stopping at epoch {epoch+1}')
+                    print(f'Stopping at epoch {epoch + 1}')
                     break
                 should_stop = Early.early_stop(val_loss)
                 print(f'Early Stopping: {should_stop}')
@@ -465,7 +495,11 @@ class Train:
                 np_y_pred_class = y_pred_class.detach().cpu().numpy()
                 np_y = y.detach().cpu().numpy()
                 np_y_pred = y_pred.detach().cpu().numpy()
-                for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y, np_y_pred, np_y_pred_class, experimentdata_ids, welldata_ids, celldata_ids):
+                for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y, np_y_pred,
+                                                                                                   np_y_pred_class,
+                                                                                                   experimentdata_ids,
+                                                                                                   welldata_ids,
+                                                                                                   celldata_ids):
                     preddct.append(dict(id=uuid.uuid4(),
                                         model_id=self.model_id,
                                         experimentdata_id=uuid.UUID(experimentdata_id),
@@ -487,6 +521,14 @@ class Train:
         return train_loss, train_acc
 
 
+def filter_parser(s):
+    try:
+        x, y = map(str, s.split(','))
+        return x, y
+    except:
+        raise argparse.ArgumentTypeError("Must be of format columnname,value")
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -501,10 +543,15 @@ if __name__ == '__main__':
     )
     parser.add_argument('--experiment', type=str)
     parser.add_argument('--label_type', type=str, choices=['celltype', 'name'], help="Column name in database")
-    parser.add_argument('--label_name', type=str, help="Match the kind of dosage added. Treatment, Antibody, Inhibitor, etc.")
-    parser.add_argument('--classes', type=str, help="Comma separated list of classes. If all classes in experiment, leave blank.")
+    parser.add_argument('--label_name', type=str,
+                        help="Match the kind of dosage added. Treatment, Antibody, Inhibitor, etc.")
+    parser.add_argument('--classes', type=str,
+                        help="Comma separated list of classes. If all classes in experiment, leave blank.")
     parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
+    parser.add_argument('--filters', help="Filter based on columnname, filtername, i.e. name,cry2mscarlet",
+                        dest="filters", type=filter_parser, nargs=2)
+
     parser.add_argument('--num_channels', default=1)
     parser.add_argument('--n_samples', default=1)
     parser.add_argument('--epochs', default=1)
@@ -528,7 +575,8 @@ if __name__ == '__main__':
     parser.add_argument("--chosen_channels", "-cc",
                         dest="chosen_channels",
                         help="Morphology Channel")
-    parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
+    parser.add_argument('--tile', default=0, type=int,
+                        help="Select single tile to segment. Default is to segment all tiles.")
     parser.add_argument('--use_wandb', default=1, type=int, help="Log training with wandb.")
     args = parser.parse_args()
     print(args)
