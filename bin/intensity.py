@@ -53,7 +53,7 @@ class Intensity:
 
             for i, row in df.iterrows():  # df contains same well and timepoint, different tiles
                 tile_strt = time()
-                logger.warning('row', row)
+                logger.warning(f'row {row}')
                 print('maskpath', row.maskpath)
                 labelled_mask = imageio.v3.imread(row.maskpath)  # TODO: is opencv faster/ more memory efficient?
                 filename = Db.get_table_value('tiledata', column='filename', kwargs=dict(welldata_id=welldata_id,
@@ -61,7 +61,10 @@ class Intensity:
                                                                           tile=int(row.tile),
                                                                           timepoint=int(timepoint)
                                                                           ))
-                if filename is None: raise Exception(f'Filename for channel {self.opt.target_channel} is not found.')
+                # if filename is None: raise Exception(f'Filename for channel {self.opt.target_channel} is not found.')
+                if filename is None: 
+                    logger.warning(f'Filename for channel {self.opt.target_channel} is not found.')
+                    continue
                 logger.info(f'filename {filename}')
                 img = imageio.v3.imread(filename[0][0])
                 img = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)
@@ -97,10 +100,10 @@ class Intensity:
                 # Clears intensity for cell in the tile with the selected channel
                 Db.delete_based_on_duplicate_name(tablename='intensitycelldata', kwargs=check_celldata_dct)
                 Db.add_row(tablename='intensitycelldata', dct=intensitycelldata_dcts)
-
-            with open(self.opt.outfile, 'w') as f:
-                f.write(f'Updated intensity {self.opt.chosen_channels} in intensitycelldata database.')
-            print('Done.')        # read data
+            del self.Norm.backgrounds[well][timepoint]
+            # with open(self.opt.outfile, 'w') as f:
+                # f.write(f'Updated intensity {self.opt.chosen_channels} in intensitycelldata database.')
+        print('Done.')        # read data
 
 
 

@@ -64,7 +64,7 @@ class Montage:
                 # overlap = row.overlap
                 if not savepath:
                     name = os.path.basename(f)
-                    name = name.split('.')[0] + '_MONTAGE.tif'
+                    name = name.split('.t')[0] + '_MONTAGE.tif'
                     welldir = os.path.join(self.montagedir, row.well)
                     if not os.path.exists(welldir):
                         os.makedirs(welldir)
@@ -78,7 +78,7 @@ class Montage:
         side = int(np.sqrt(num_tiles))
         if num_tiles:
             h, w = np.shape(images[0])
-            mont = np.zeros((int(h * side), int(w * side)), dtype=images[0].dtype)
+            mont = np.zeros((int(h * side), int(w * side)), dtype=np.uint16)
             for i in range(side):
                 for j in range(side):
                     #TODO: map montages for legacy montage, new montages, and ixm montages

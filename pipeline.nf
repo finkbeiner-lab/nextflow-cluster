@@ -263,8 +263,7 @@ process TRACKING {
 
 process INTENSITY {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    memory '2 GB'
-    cpus 6
+    cpus 4
     input:
     val ready
     val exp
