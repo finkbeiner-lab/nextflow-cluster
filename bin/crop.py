@@ -1,3 +1,4 @@
+#!/opt/conda/bin/python
 """Get cell crops"""
 
 import imageio
@@ -20,7 +21,7 @@ class Crop:
         self.cropdir = os.path.join(self.analysisdir, 'CroppedImages')
         self.experimentdata_id = self.Db.get_table_uuid('experimentdata',
                                                         dict(experiment=self.opt.experiment))
-        self.thread_lim = 4
+        self.thread_lim = 2
 
     def run(self):
         celldata = self.Dbops.get_celldata_df()  # get crops from morphology channel
@@ -61,7 +62,7 @@ class Crop:
             filename = filename[0][0]
             print(f'Running {well} for tile {df.tile.iloc[0]} for channel {self.opt.target_channel}')
             print(f'Running {filename}')
-            img = imageio.imread(filename)
+            img = imageio.v3.imread(filename)
             sh = img.shape
             cropdcts = []
             for i, row in df.iterrows():
@@ -71,8 +72,6 @@ class Crop:
                     cellid = row.randomcellid
                     # centroids from morphology channel
                 xi, xf, yi, yf = self.get_coords(sh, row)
-                print('coords', xi, xf, yi, yf)
-                print('row', row.centroid_x, row.centroid_y, self.opt.crop_size)
                 crop = img[yi:yf, xi:xf]
                 name = os.path.basename(filename)
                 name = name.split('.t')[0]
@@ -81,8 +80,6 @@ class Crop:
                 if not os.path.exists(welldir):
                     os.makedirs(welldir)
                 croppath = os.path.join(welldir, name)
-                print('cropname', croppath)
-                print('crop', crop)
                 imageio.v3.imwrite(croppath, crop)
                 check_cropdct = dict(experimentdata_id=self.experimentdata_id,
                                          welldata_id=df.welldata_id.iloc[0],
@@ -94,7 +91,7 @@ class Crop:
                                          channeldata_id=target_channeldata_id,
                                          celldata_id=row.id,
                                          croppath=croppath))
-                self.Db.delete_based_on_duplicate_name(tablename='cropdata', kwargs=check_cropdct)
+            self.Db.delete_based_on_duplicate_name(tablename='cropdata', kwargs=check_cropdct)
 
             self.Db.add_row('cropdata', cropdcts)
 
@@ -130,25 +127,25 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--experiment', type=str)
-    parser.add_argument('--crop_size', default=0, type=int, help="Side length of square")
-    parser.add_argument("--wells_toggle",
+    parser.add_argument('--experiment', default='20230807-KS1-neuron-optocrispr', type=str)
+    parser.add_argument('--crop_size', default=300, type=int, help="Side length of square")
+    parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include',
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+                        dest="chosen_wells", default='F2',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='T0',
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc",
-                        dest="chosen_channels",
+                        dest="chosen_channels", default='GFP-DMD1',
                         help="Morphology Channel")
     parser.add_argument("--target_channel",
-                        dest="target_channel",
+                        dest="target_channel", default='GFP-DMD1',
                         help="Get intensity of this channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()

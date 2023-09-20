@@ -13,7 +13,7 @@ params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20230901-KS-HEK-minisog'  // Experiment name
+params.experiment = '20230807-KS1-neuron-optocrispr'  // Experiment name
 params.morphology_channel = 'GFP-DMD1'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
@@ -62,7 +62,7 @@ params.target_channel = ['RFP1','GFP-DMD1']  // List of channels. Run in paralle
 
 // CROP
 params.crop_size = 300
-params.target_channel_crop = ['RFP1','YFP1']  // List of channels. Run in parallel.
+params.target_channel_crop = ['RFP1','GFP-DMD1']  // List of channels. Run in parallel.
 
 
 // MONTAGE and PLATEMONTAGE
@@ -94,6 +94,7 @@ target_channel_crop_ch = Channel.from(params.target_channel_crop)
 morphology_ch = Channel.of(params.morphology_channel)
 distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
+crop_size_ch = Channel.of(params.crop_size)
 greeting_ch = Channel.of(params.greeting)
 
 include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
@@ -103,14 +104,15 @@ params.outdir = "results"
 log.info """\
     ANALYSIS DATASTUDY PIPELINE!
     ===================================
-    experiment : ${params.experiment}
-    wells     : ${params.chosen_wells}
-    timepoints       : ${params.chosen_timepoints}
-    channels       : ${params.chosen_channels}
+    experiment: ${params.experiment}
+    wells: ${params.chosen_wells}
+    timepoints: ${params.chosen_timepoints}
+    channels: ${params.chosen_channels}
     Register Experiment: ${params.DO_REGISTER_EXPERIMENT}
     Segmentation: ${params.DO_SEGMENTATION}
     Tracking: ${params.DO_TRACKING}
     Intensity: ${params.DO_INTENSITY}
+    Crop: ${params.DO_CROP}
     Montage: ${params.DO_MONTAGE}
     Plate Montage: ${params.DO_PLATEMONTAGE}
     Get CSVS: ${params.DO_GET_CSVS}
@@ -289,12 +291,12 @@ process INTENSITY {
 
 process CROP {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    memory '1 GB'
-    cpus 2
+    memory '2 GB'
+    cpus 4
     input:
     val ready
     val exp
-    each target_channel
+    each target_channel_crop
     val morphology_channel
     val crop_size
     val chosen_wells
@@ -302,16 +304,15 @@ process CROP {
     val wells_toggle
     val timepoints_toggle
 
-
     output:
     val true
 
     script:
     """
     crop.py --experiment ${exp} --crop_size ${crop_size} \
-    --target_channel ${target_channel_crop}
+    --target_channel ${target_channel_crop} \
     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
     """
 }
 
@@ -460,7 +461,7 @@ workflow {
     intensity_result = true
     }
     if ( params.DO_CROP ) {
-        crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, target_channel_ch, well_ch, tp_ch,well_toggle_ch, tp_toggle_ch)
+        crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, crop_size_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         crop_ch.view{ it }
     }
 
