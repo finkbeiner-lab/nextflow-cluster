@@ -46,6 +46,7 @@ class GetCSVS:
         intensitypunctadata = Db.get_df_from_query('intensitypunctadata', dict(experimentdata_id=exp_uuid))
         modeldata = Db.get_df_from_query('modeldata', dict(experimentdata_id=exp_uuid))
         modelcropdata = Db.get_df_from_query('modelcropdata', dict(experimentdata_id=exp_uuid))
+        cropdata = Db.get_df_from_query('cropdata', dict(experimentdata_id=exp_uuid))
 
         experimentdata.to_csv(os.path.join(savedir, 'experimentdata.csv'))
         welldata.to_csv(os.path.join(savedir, 'welldata.csv'))
@@ -58,6 +59,7 @@ class GetCSVS:
         intensitypunctadata.to_csv(os.path.join(savedir, 'intensitypunctadata.csv'))
         modeldata.to_csv(os.path.join(savedir, 'modeldata.csv'))
         modelcropdata.to_csv(os.path.join(savedir, 'modelcropdata.csv'))
+        cropdata.to_csv(os.path.join(savedir, 'cropdata.csv'))
         print(f'Saved csvs to {savedir}.')
 
 

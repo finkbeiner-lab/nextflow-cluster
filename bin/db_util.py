@@ -69,7 +69,7 @@ class Ops:
             if not(len(welldata_df)): 
                 print('Welldata df is empty.')
                 logger_db.info('Welldata df is empty.')
-        if self.opt.chosen_channels is not None and len(self.opt.chosen_channels) > 0and self.opt.chosen_channels.lower() !='all':
+        if self.opt.chosen_channels is not None and len(self.opt.chosen_channels) > 0 and self.opt.chosen_channels.lower() !='all':
             selected_channels = self.opt.chosen_channels.strip(' ').split(',')
             print(f'Selected channels {selected_channels}')
             channeldata_df = self.filter_df(channeldata_df, 'channel', selected_channels, self.opt.channels_toggle)
@@ -123,12 +123,14 @@ class Ops:
         Db = Database()
         exp_uuid = Db.get_table_uuid('experimentdata', dict(experiment=self.experiment))
         for tablename in tablenames:
+            df = df.loc[:, ~df.columns.str.contains('_dontuse')]
             table_df = Db.get_df_from_query(tablename, dict(experimentdata_id=exp_uuid))
-            if tablename=='celldata':  # celldata is based on morphology channel
+            if tablename=='celldata':  # celldata is based on morphology channel. Outer join includes all
                 df = pd.merge(df, table_df, on='tiledata_id', how='inner', suffixes=[None, '_dontuse'])
                 df.rename(columns={'id': 'celldata_id'}, inplace=True)
             if tablename=='cropdata':  # can have multiple channels per cell
-                df = pd.merge(df, table_df, on='celldata_id', how='inner', suffixes=[None, '_dontuse'])
+                df = pd.merge(table_df, df, on='celldata_id', how='inner', suffixes=[None, '_dontuse'])
+                df.rename(columns={'id': 'cropdata_id'}, inplace=True)
             if tablename=='dosagedata':
                 df = pd.merge(df, table_df, on='welldata_id', how='inner', suffixes=[None, '_dontuse'])
             if tablename=='channeldata':

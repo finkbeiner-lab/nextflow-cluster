@@ -4,8 +4,8 @@
  https://nextflow-io.github.io/patterns/conditional-process/
  */
 // Global variables
-// params.experiment = ['20230807-KS1-neuron-optocrispr','20230901-KS-HEK-minisog', '20230828-2-msneuron-cry2', '20230816-KS3-gedi']
-params.experiment = '20230816-KS3-gedi'
+// params.experiment = ['20230807-KS1-neuron-optocrispr','20230901-KS-HEK-minisog', '20230828-2-msneuron-cry2', '20230816-KS3-gedi', '20230901-1-msneuron-chr2-cry2tdp43-KS2']
+params.experiment = '20230901-1-msneuron-chr2-cry2tdp43-KS2'
 params.csvdir = '/gladstone/finkbeiner/robodata/ThinkingMicroscope-DB/GXYTMP_' + params.experiment + '/CSVS'
 
 // Variables per module

@@ -59,12 +59,15 @@ class Crop:
                                                         channeldata_id=target_channeldata_id,
                                                         timepoint=int(df.timepoint.iloc[0]),
                                                         tile=int(df.tile.iloc[0])))
+            if filename is None:
+                return
             filename = filename[0][0]
             print(f'Running {well} for tile {df.tile.iloc[0]} for channel {self.opt.target_channel}')
             print(f'Running {filename}')
             img = imageio.v3.imread(filename)
             sh = img.shape
             cropdcts = []
+            check_cropdcts = []
             for i, row in df.iterrows():
                 if row.cellid is not None and row.cellid > 0:
                     cellid = row.cellid
@@ -91,7 +94,7 @@ class Crop:
                                          channeldata_id=target_channeldata_id,
                                          celldata_id=row.id,
                                          croppath=croppath))
-            self.Db.delete_based_on_duplicate_name(tablename='cropdata', kwargs=check_cropdct)
+                self.Db.delete_based_on_duplicate_name(tablename='cropdata', kwargs=check_cropdct)
 
             self.Db.add_row('cropdata', cropdcts)
 

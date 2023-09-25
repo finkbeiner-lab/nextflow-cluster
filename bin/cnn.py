@@ -1,20 +1,17 @@
+#!/opt/conda/bin/python
+
 """Basic CNN for classification."""
 
-import torch.nn.functional as F
-import matplotlib.pyplot as plt
 import numpy as np
 from glob import glob
 import torch
 import torch.optim as optim
-import torchvision
 import torch.nn as nn
 import torchvision.transforms as transforms
-from torchvision.io import read_image
 from PIL import Image
 from torch.utils.data import Dataset
 import pandas as pd
 import os
-import stat
 import argparse
 from db_util import Ops
 from time import time
@@ -22,7 +19,9 @@ from sql import Database
 import uuid
 import wandb
 
-os.environ["WANDB_SILENT"] = "true"
+# os.environ["WANDB_SILENT"] = "true"
+os.environ["WANDB_CONFIG_DIR"] = '/gladstone/finkbeiner/lab/GALAXY_INFO/.config'
+os.environ["WANDB_CACHE_DIR"] = '/gladstone/finkbeiner/lab/GALAXY_INFO/.cache'
 
 transform = transforms.Compose(
     # [transforms.ToTensor(),
@@ -102,7 +101,7 @@ class EarlyStopper:
 
 
 class ImageDataset(Dataset):
-    def __init__(self, df: pd.DataFrame, label_type, label_name=None, transform=None, target_transform=None):
+    def __init__(self, df: pd.DataFrame, label_type, transform=None, target_transform=None):
         """
         celldata: Dataframe from database with image names and classes
         class_labels: str, column name from df
@@ -122,7 +121,7 @@ class ImageDataset(Dataset):
         # label mapping
         unique_lbls = np.unique(df[self.label_type])
         self.label2num_dct = {lbl: i for i, lbl in enumerate(unique_lbls)}
-        self.num2label_dct = {i: lbl for lbl, i in self.label2num_dct.items()}
+        self.num2label_dct = {i: str(lbl) for lbl, i in self.label2num_dct.items()}
 
         self.transform = transform
         self.target_transform = target_transform
@@ -181,7 +180,7 @@ class Train:
         if self.opt.use_wandb:
             if not os.path.exists(self.wandbdir):
                 os.mkdir(self.wandbdir)
-            os.chmod(self.wandbdir, 0o0777)
+            # os.chmod(self.wandbdir, 0o0777)
             wandb.init("CNN", mode='offline', dir=self.wandbdir)
         self.model_id = uuid.uuid4()
         self.Db.add_row('modeldata', dict(id=self.model_id,
@@ -234,7 +233,7 @@ class Train:
                 classes = self.opt.classes.split(',')
             print('classes', classes)
             self.classes = classes
-            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'channeldata'])
+            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'channeldata', 'dosagedata'])
             print('columns', df.columns)
             df = df[df['celltype'].isin(self.classes)]
             self.label_column = 'celltype'
@@ -246,10 +245,10 @@ class Train:
                 classes = self.opt.classes.split(',')
             print('classes', classes)
             self.classes = classes
-            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'channeldata'])
+            df = self.Dbops.get_df_for_training(['celldata', 'cropdata', 'channeldata', 'dosagedata'])
             print('columns', df.columns)
             df = df[df['stimulate'].isin(self.classes)]
-            self.label_column = 'celltype'
+            self.label_column = 'stimulate'
 
         else:
             assert 0, f'label type {self.opt.label_type} not in selection'
@@ -258,6 +257,7 @@ class Train:
 
     def apply_filters(self, df):
         """Apply filters"""
+        print(self.opt.filters)
         for col, val in self.opt.filters:
             print(col, val)
             df = df.loc[df[col] == val]
@@ -265,6 +265,10 @@ class Train:
 
     def train_val_test_split(self, df, balance_method='cutoff'):
         """Split data into train, validation, testing dataframes"""
+        # Number of samples is by celldata_id (training per cell) and the classification
+
+        # If the morphology channel images, but other channels didn't, filter out
+        df = df.groupby('celldata_id').filter(lambda x: len(x)==self.opt.num_channels)
 
         sizes = df.groupby(self.label_column).size()
         cutoff = min(sizes) // self.opt.num_channels
@@ -316,9 +320,9 @@ class Train:
         val_sizes = val.groupby(['celldata_id']).size()
         test_sizes = test.groupby(['celldata_id']).size()
         print('Dataset sizes:')
-        print(f'Train {train_sizes}')
-        print(f'Val {val_sizes}')
-        print(f'Test {test_sizes}')
+        print(f'Train {len(train_sizes)}')
+        print(f'Val {len(val_sizes)}')
+        print(f'Test {len(test_sizes)}')
         return train, val, test
 
     def run(self):
@@ -331,13 +335,12 @@ class Train:
         df = self.get_classes()
         df = self.apply_filters(df)
         print('df channels', df.channel.unique())
+        df = df.drop_duplicates(subset=['croppath'])  # TODO: duplicate croppaths
         train_df, val_df, test_df = self.train_val_test_split(df, balance_method='cutoff')
         Early = EarlyStopper(patience=3, min_delta=0)
         trainset = ImageDataset(train_df, label_type=self.opt.label_type,
-                                label_name=self.opt.label_name,
                                 transform=transform)
         valset = ImageDataset(val_df, label_type=self.opt.label_type,
-                              label_name=self.opt.label_name,
                               transform=transform)
         assert trainset.num2label_dct == valset.num2label_dct, 'num2label dicts must be identical'
         num_classes = len(np.unique(self.classes))
@@ -418,11 +421,11 @@ class Train:
                                                 welldata_id=uuid.UUID(welldata_id),
                                                 celldata_id=uuid.UUID(celldata_id),
                                                 stage='val',
-                                                prediction=float(_y_pred_class),
-                                                groundtruth=float(_y),
+                                                prediction=float(_y_pred_class.item()),
+                                                groundtruth=float(_y.item()),
                                                 prediction_label=valset.num2label_dct[_y_pred_class],
                                                 groundtruth_label=valset.num2label_dct[_y]))
-                            preddct_check = dict(model_id=self.model_id, celldata_id=celldata_id)
+                            preddct_check = dict(model_id=self.model_id, celldata_id=uuid.UUID(celldata_id))
                             self.Db.delete_based_on_duplicate_name('modelcropdata', preddct_check)
                         self.Db.add_row('modelcropdata', preddct)
 
@@ -506,11 +509,11 @@ class Train:
                                         welldata_id=uuid.UUID(welldata_id),
                                         celldata_id=uuid.UUID(celldata_id),
                                         stage='train',
-                                        prediction=float(_y_pred_class),
-                                        groundtruth=float(_y),
+                                        prediction=float(_y_pred_class.item()),
+                                        groundtruth=float(_y.item()),
                                         prediction_label=num2label_dct[_y_pred_class],
                                         groundtruth_label=num2label_dct[_y]))
-                    preddct_check = dict(model_id=self.model_id, celldata_id=celldata_id)
+                    preddct_check = dict(model_id=self.model_id, celldata_id=uuid.UUID(celldata_id))
                     self.Db.delete_based_on_duplicate_name('modelcropdata', preddct_check)
                 self.Db.add_row('modelcropdata', preddct)
         # print epoch loss
@@ -541,38 +544,38 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--experiment', type=str)
-    parser.add_argument('--label_type', type=str, choices=['celltype', 'name'], help="Column name in database")
-    parser.add_argument('--label_name', type=str,
+    parser.add_argument('--experiment', default = '20230901-3-msneuron-cry2-KS4', type=str)
+    parser.add_argument('--label_type', type=str, default='stimulate', choices=['celltype', 'name', 'stimulate'], help="Column name in database")
+    parser.add_argument('--label_name', type=str, default=None,
                         help="Match the kind of dosage added. Treatment, Antibody, Inhibitor, etc.")
-    parser.add_argument('--classes', type=str,
+    parser.add_argument('--classes', type=str, default=None,
                         help="Comma separated list of classes. If all classes in experiment, leave blank.")
-    parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
+    parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], default='identity', type=str,
                         help='Image normalization method using flatfield image.')
-    parser.add_argument('--filters', help="Filter based on columnname, filtername, i.e. name,cry2mscarlet",
-                        dest="filters", type=filter_parser, nargs=2)
+    parser.add_argument('--filters', default=[['name', 'cry2mscarlet']], help="Filter based on columnname, filtername, i.e. name,cry2mscarlet",
+                        dest="filters", type=list, nargs='+')
 
-    parser.add_argument('--num_channels', default=1)
-    parser.add_argument('--n_samples', default=1)
-    parser.add_argument('--epochs', default=1)
-    parser.add_argument('--batch_size', default=4)
-    parser.add_argument('--learning_rate', default=1e-3)
+    parser.add_argument('--num_channels', default=2)
+    parser.add_argument('--n_samples', default=0)
+    parser.add_argument('--epochs', default=100)
+    parser.add_argument('--batch_size', default=32)
+    parser.add_argument('--learning_rate', default=1e-4)
     parser.add_argument('--momentum', default=0.9)
     parser.add_argument('--optimizer', default='adam')
 
-    parser.add_argument("--wells_toggle",
+    parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include',
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+                        dest="chosen_wells", default='all',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='all',
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc",
+    parser.add_argument("--chosen_channels", "-cc", default='RFP1,RFP2',
                         dest="chosen_channels",
                         help="Morphology Channel")
     parser.add_argument('--tile', default=0, type=int,

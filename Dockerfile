@@ -6,10 +6,12 @@ LABEL image.author.email "josh.lamstein@gladstone.ucsf.edu"
 # opencv dependency
 RUN apt-get update && apt-get install ffmpeg libsm6 libxext6  -y
 RUN apt-get install git -y
+RUN apt-get install wget
 
 RUN conda install pandas imageio psycopg2 scikit-image
 RUN conda install -c conda-forge 'sqlalchemy>=2.0.4'
-RUN conda install -c conda-forge opencv
+RUN python -m pip install opencv-python
+RUN python -m pip install wandb
 RUN python -m pip install cellpose
 
 RUN apt install dirmngr gnupg apt-transport-https ca-certificates software-properties-common -y
@@ -40,6 +42,8 @@ RUN apt-get update && \
 # Setup JAVA_HOME -- useful for docker commandline
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 RUN export JAVA_HOME
+
+RUN wget "https://wsr.imagej.net/jars/ij.jar"
 
 ENV GUROBI_HOME="/opt/gurobi1002/linux64"
 ENV PATH="${PATH}:${GUROBI_HOME}/bin"
