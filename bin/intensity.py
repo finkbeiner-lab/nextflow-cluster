@@ -17,7 +17,7 @@ logger = logging.getLogger("Intensity")
 now = datetime.datetime.now()
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
 print('Timestamp', TIMESTAMP)
-fink_log_dir = '/home/jlamstein/PycharmProjects/datastudy/finkbeiner_logs'
+fink_log_dir = '/home/jlamstein/datastudy/finkbeiner_logs'
 if not os.path.exists(fink_log_dir):
     os.makedirs(fink_log_dir)
 logname = os.path.join(fink_log_dir, f'Intensity-log_{TIMESTAMP}.log')
@@ -179,7 +179,7 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--experiment', default = '20230901-KS-HEK-minisog', type=str)
+    parser.add_argument('--experiment', default = '20231002-1-MSN-taueos', type=str)
     parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument("--wells_toggle", default='include', 
@@ -189,7 +189,7 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='F1',
+                        dest="chosen_wells", default='B3',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct", default='T0',
                         dest="chosen_timepoints", 
@@ -197,7 +197,7 @@ if __name__ == '__main__':
     parser.add_argument("--chosen_channels", "-cc", default='GFP-DMD1',
                         dest="chosen_channels",
                         help="Morphology Channel")
-    parser.add_argument("--target_channel", default='GFP-DMD1',
+    parser.add_argument("--target_channel", default='RFP1',
                         dest="target_channel",
                         help="Get intensity of this channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")

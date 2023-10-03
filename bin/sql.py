@@ -1,6 +1,6 @@
 """Database handler"""
 
-from sqlalchemy import create_engine, MetaData, ForeignKey, Table, Column, Integer, String, Float, select, update, func, delete, UniqueConstraint
+from sqlalchemy import create_engine, and_, MetaData, ForeignKey, Table, Column, Integer, String, Float, select, update, func, delete, UniqueConstraint
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import functions
 from sqlalchemy.dialects.postgresql import UUID
@@ -357,6 +357,48 @@ class Database:
         with self.engine.connect() as connection:
             ins = update(self.meta.tables[tablename]).filter_by(**kwargs).values(update_dct)
             db = connection.execute(ins)
+            connection.commit()
+            
+    def update_prefix_path(self, tablename:str,exp_uuid, old_string:str, new_string:str):
+        with self.engine.connect() as connection:
+            update_stmt1 = (
+                update(self.meta.tables[tablename]).
+                where(and_(
+                    self.meta.tables[tablename].c.experimentdata_id==exp_uuid,
+                    self.meta.tables[tablename].c.filename.contains(old_string))).
+                values(filename=func.replace(self.meta.tables[tablename].c.filename, old_string, new_string))
+            )
+            print('stmt1', update_stmt1)
+            connection.execute(update_stmt1)
+            update_stmt2 = (
+                update(self.meta.tables[tablename]).
+                where(and_(
+                    self.meta.tables[tablename].c.experimentdata_id==exp_uuid,
+                    self.meta.tables[tablename].c.maskpath.contains(old_string))).
+                values(maskpath=func.replace(self.meta.tables[tablename].c.maskpath, old_string, new_string))
+            )
+            connection.execute(update_stmt2)
+            update_stmt3 = (
+                update(self.meta.tables[tablename]).
+                where(and_(
+                    self.meta.tables[tablename].c.experimentdata_id==exp_uuid,
+                    self.meta.tables[tablename].c.trackedmaskpath.contains(old_string))).
+                values(trackedmaskpath=func.replace(self.meta.tables[tablename].c.trackedmaskpath, old_string, new_string))
+            )
+            connection.execute(update_stmt3)
+            connection.commit()
+        
+            
+    def update_slashes(self, tablename: str, exp_uuid):
+        with self.engine.connect() as connection:
+            update_stmt = (
+                update(self.meta.tables[tablename]).
+                where(self.meta.tables['experimentdata'].c.id==exp_uuid).
+                values(filename=func.replace(self.meta.tables[tablename].c.filename, '\\', '/'),
+                       maskpath=func.replace(self.meta.tables[tablename].c.maskpath, '\\', '/'),
+                       trackedmaskpath=func.replace(self.meta.tables[tablename].c.trackedmaskpath, '\\', '/'))
+        )
+            db = connection.execute(update_stmt)
             connection.commit()
 
     def get_table_uuid(self, tablename: str, kwargs):

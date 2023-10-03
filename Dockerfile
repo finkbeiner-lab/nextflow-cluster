@@ -39,6 +39,8 @@ RUN apt-get update && \
     apt-get clean && \
     update-ca-certificates -f;
 
+RUN conda install matplotlib
+
 # Setup JAVA_HOME -- useful for docker commandline
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 RUN export JAVA_HOME

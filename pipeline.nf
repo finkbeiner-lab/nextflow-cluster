@@ -5,7 +5,7 @@
  */
 // SHARED VARIABLES
 params.wells_toggle = 'include' // ['include', 'exclude']
-params.chosen_wells = 'B2-B4'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
+params.chosen_wells = 'all'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
 
 params.timepoints_toggle = 'include' // ['include', 'exclude']
 params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
@@ -13,8 +13,8 @@ params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20230901-1-msneuron-chr2-cry2tdp43-KS2'  // Experiment name
-params.morphology_channel = 'RFP1'  // Your morphology channel
+params.experiment = '20231002-1-MSN-taueos'  // Experiment name
+params.morphology_channel = 'GFP-DMD1'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'identity' // ['identity', 'subtraction', 'division']
 
@@ -59,7 +59,7 @@ params.distance_threshold = 300 // distance that a cell must be new
 params.voronoi_bool = true // distance that a cell must be new
 
 // INTENSITY
-params.target_channel = ['RFP1','GFP-DMD1']  // List of channels. Run in parallel.
+params.target_channel = ['RFP1', 'RFP2']  // List of channels. Run in parallel.
 
 // CROP
 params.crop_size = 300
@@ -541,6 +541,11 @@ workflow {
     cnn_result = true
     }
 //     MULT(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)
+    csv_ready = collect(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)
+//     csv_channel = Channel
+//         .of(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result )
+//         .max()
+//         .view { "Max value is $it" }
     csv_ready = true
     if ( params.DO_GET_CSVS){
         csv_ch = GETCSVS(csv_ready, experiment_ch)

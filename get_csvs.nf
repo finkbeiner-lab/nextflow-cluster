@@ -59,11 +59,7 @@ process BASHEX {
 }
 
 workflow {
-    letters_ch = SPLITLETTERS(greeting_ch)
-    results_ch = CONVERTTOUPPER(letters_ch.flatten())
-    results_ch.view{ it }
-    bashresults_ch = BASHEX(experiment_ch)
-    bashresults_ch.view{ it }
+
     pyresults_ch = GETCSVS(experiment_ch)
     pyresults_ch.view{ it }
 }

@@ -8,7 +8,10 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 import torchvision.transforms as transforms
+from torchvision import models
+
 from PIL import Image
+import imageio
 from torch.utils.data import Dataset
 import pandas as pd
 import os
@@ -18,17 +21,23 @@ from time import time
 from sql import Database
 import uuid
 import wandb
+import datetime
+from tqdm import tqdm
+
+now = datetime.datetime.now()
+TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
 
 # os.environ["WANDB_SILENT"] = "true"
 os.environ["WANDB_CONFIG_DIR"] = '/gladstone/finkbeiner/lab/GALAXY_INFO/.config'
 os.environ["WANDB_CACHE_DIR"] = '/gladstone/finkbeiner/lab/GALAXY_INFO/.cache'
 
-transform = transforms.Compose(
-    # [transforms.ToTensor(),
-    # [transforms.Lambda(lambda image: torch.from_numpy(np.array(image).astype(np.float32)).unsqueeze(0)),
-    [transforms.Lambda(lambda image: torch.from_numpy(image.astype(np.float32))),
-     transforms.Resize((224, 224), antialias=True),
-     transforms.Normalize((0.5,), (0.5,))])
+# transform = transforms.Compose(
+#     # [transforms.ToTensor(),
+#     # [transforms.Lambda(lambda image: torch.from_numpy(np.array(image).astype(np.float32)).unsqueeze(0)),
+#     [transforms.Lambda(lambda image: torch.from_numpy(image.astype(np.float32))),
+#      transforms.Resize((224, 224), antialias=True),
+#      transforms.RandomHorizontalFlip(),
+#      transforms.Normalize((0.5,), (0.5,))])
 #  transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 print(f'CUDA Available: {torch.cuda.is_available()}')
 
@@ -36,7 +45,28 @@ print(f'CUDA Available: {torch.cuda.is_available()}')
 def collate_fn(batch):
     return tuple(zip(*batch))
 
-
+class BuildTransform:
+    def __init__(self, target_image_size:tuple, num_channels:int, imagenet:bool):
+        
+        if imagenet:
+            norm = [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]]
+            if num_channels < 3:
+                norm = [norm[0][:num_channels], norm[1][:num_channels]]
+        else:
+            norm = [[0.5]*num_channels, [0.5]*num_channels]
+        
+        self.train_transform = transforms.Compose(
+            [transforms.Lambda(lambda image: torch.from_numpy(image.astype(np.float32))),
+            transforms.Resize(target_image_size, antialias=True),
+            transforms.RandomHorizontalFlip(),
+            transforms.Normalize(norm[0], norm[1])])
+        
+        self.eval_transform = transforms.Compose(
+            [transforms.Lambda(lambda image: torch.from_numpy(image.astype(np.float32))),
+            transforms.Resize(target_image_size, antialias=True),
+            transforms.Normalize(norm[0], norm[1])])
+        
+    
 class Net(nn.Module):
     def __init__(self, num_classes, h, w, num_channels):
         super().__init__()
@@ -52,38 +82,118 @@ class Net(nn.Module):
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=0)
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2, 2)
-        self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(128 * 26 * 26, 100)
-        self.fc2 = nn.Linear(100, num_classes)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc1 = nn.Linear(128, num_classes)
 
     def forward(self, x):
         x = self.pool(self.relu(self.conv1(x)))
         x = self.pool(self.relu(self.conv2(x)))
         x = self.pool(self.relu(self.conv3(x)))
-        x = self.flatten(x)
-        x = self.relu(self.fc1(x))
-        x = self.fc2(x)
-        # x = self.pool(F.relu(self.conv1(x)))
-        # # print(x.size())
-        # x = self.pool(F.relu(self.conv2(x)))
-        # # print(x.size())
-
-        # x = torch.flatten(x, 1)  # flatten all dimensions except batch
-        # # print(x.size())
-
-        # x = F.relu(self.fc1(x))
-        # # print(x.size())
-
-        # x = F.relu(self.fc2(x))
-        # # print(x.size())
-
-        # x = self.fc3(x)
-
+        x = self.global_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc1(x)
         return x
+    
+class NetBN(nn.Module):
+    def __init__(self, num_classes, h, w, num_channels):
+        super().__init__()
+        # Output height = (Input height + padding height top + padding height bottom - kernel height) / (stride height) + 1.
+        # self.conv1 = nn.Conv2d(num_channels, 6, 5)
+        # self.pool = nn.MaxPool2d(2, 2)
+        # self.conv2 = nn.Conv2d(6, 16, 5)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.bn2 = nn.BatchNorm2d(64)
+        self.bn3 = nn.BatchNorm2d(128)
+        self.conv1 = nn.Conv2d(num_channels, 32, kernel_size=3, padding=0)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=0)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=0)
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, padding=0)
+        self.relu = nn.ReLU()
+        self.pool = nn.MaxPool2d(2, 2)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc1 = nn.Linear(256, num_classes)
+
+    def forward(self, x):
+        x = self.pool(self.relu(self.conv1(x)))
+        x = self.bn1(x)
+        x = self.pool(self.relu(self.conv2(x)))
+        x = self.bn2(x)
+        x = self.pool(self.relu(self.conv3(x)))
+        x = self.bn3(x)
+        x = self.pool(self.relu(self.conv4(x)))
+        x = self.global_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.fc1(x)
+        return x
+    
+class NetDropout(nn.Module):
+    def __init__(self, num_classes, h, w, num_channels):
+        super().__init__()
+        # Output height = (Input height + padding height top + padding height bottom - kernel height) / (stride height) + 1.
+        # self.dropout1 = nn.Dropout2d(p=0.2)
+        # self.dropout2 = nn.Dropout2d(p=0.3)
+        # self.dropout3 = nn.Dropout2d(p=0.4)
+        self.dropout = nn.Dropout(p=0.4)
+        self.conv1 = nn.Conv2d(num_channels, 32, kernel_size=3, padding=0)
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=0)
+        self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=0)
+        self.conv4 = nn.Conv2d(128, 256, kernel_size=3, padding=0)
+        self.relu = nn.ReLU()
+        self.pool = nn.MaxPool2d(2, 2)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc1 = nn.Linear(256, 256)
+        self.fc2 = nn.Linear(256, num_classes)
+
+    def forward(self, x):
+        x = self.pool(self.relu(self.conv1(x)))
+        x = self.pool(self.relu(self.conv2(x)))
+        x = self.pool(self.relu(self.conv3(x)))
+        x = self.pool(self.relu(self.conv4(x)))
+        x = self.global_pool(x)
+        x = x.view(x.size(0), -1)
+        x = self.relu(self.fc1(x))
+        x = self.dropout(x)
+        x = self.fc2(x)
+        return x
+    
+class ResNet:
+    def __init__(self, num_classes, num_channels):
+        model_ft = models.resnet18(weights='IMAGENET1K_V1')
+        for param in model_ft.parameters():  # freeze weights
+            param.requires_grad = False
+        num_ftrs = model_ft.fc.in_features
+        model_ft.fc = nn.Linear(num_ftrs, num_classes)
+        if num_channels != 3:
+            layer = model_ft.conv1
+            
+            # Creating new Conv2d layer
+            new_layer = nn.Conv2d(in_channels=num_channels, 
+                            out_channels=layer.out_channels, 
+                            kernel_size=layer.kernel_size, 
+                            stride=layer.stride, 
+                            padding=layer.padding,
+                            bias=layer.bias)
+
+            copy_weights = 0 # Here will initialize the weights from new channel with the red channel weights
+
+            #Copying the weight of the `copy_weights` channel of the old layer to the extra channels of the new layer
+            if num_channels > 3:
+                # Copying the weights from the old to the new layer
+                new_layer.weight[:, :layer.in_channels, :, :] = layer.weight.clone()
+
+                for i in range(num_channels - layer.in_channels):
+                    channel = layer.in_channels + i
+                    new_layer.weight.data[:, channel:channel+1, :, :] = layer.weight.data[:, copy_weights:copy_weights+1, : :].clone()
+                
+            else:
+                new_layer.weight.data[:, :num_channels, :, :] = layer.weight.data[:, :num_channels, :, :].clone()
+            new_layer.weight = nn.Parameter(new_layer.weight)
+            model_ft.conv1 = new_layer
+        self.model= model_ft
 
 
 class EarlyStopper:
-    def __init__(self, patience=1, min_delta=0):
+    def __init__(self, patience=3, min_delta=0):
         self.patience = patience
         self.min_delta = min_delta
         self.counter = 0
@@ -143,6 +253,7 @@ class ImageDataset(Dataset):
         for i, row in df.iterrows():
             image = Image.open(row.croppath)
             images.append(np.array(image))
+        
         img = np.stack(images, axis=0)
 
         if self.transform:
@@ -162,6 +273,8 @@ class Train:
         self.opt.momentum = float(self.opt.momentum)
         self.opt.use_wandb = int(self.opt.use_wandb)
         self.opt.num_channels = int(self.opt.num_channels)
+        self.opt.target_image_size = (int(self.opt.target_image_size), int(self.opt.target_image_size))
+        self.opt.use_imagenet = bool(self.opt.use_imagenet)
         self.opt.n_samples = int(self.opt.n_samples)
         self.Dbops = Ops(opt)
         self.Db = Database()
@@ -175,8 +288,11 @@ class Train:
         experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
         self.wandbdir = os.path.join(self.analysisdir, 'wandb')
         self.modeldir = os.path.join(self.analysisdir, 'Models')
+        self.checkimagedir = os.path.join(self.analysisdir, 'CheckModelImages')
         if not os.path.exists(self.modeldir):
             os.makedirs(self.modeldir)
+        if not os.path.exists(self.checkimagedir):
+            os.makedirs(self.checkimagedir)
         if self.opt.use_wandb:
             if not os.path.exists(self.wandbdir):
                 os.mkdir(self.wandbdir)
@@ -338,22 +454,35 @@ class Train:
         df = df.drop_duplicates(subset=['croppath'])  # TODO: duplicate croppaths
         train_df, val_df, test_df = self.train_val_test_split(df, balance_method='cutoff')
         Early = EarlyStopper(patience=3, min_delta=0)
+        Tran = BuildTransform(self.opt.target_image_size, self.opt.num_channels, imagenet=self.opt.use_imagenet)
         trainset = ImageDataset(train_df, label_type=self.opt.label_type,
-                                transform=transform)
+                                transform=Tran.train_transform)
         valset = ImageDataset(val_df, label_type=self.opt.label_type,
-                              transform=transform)
+                              transform=Tran.eval_transform)
         assert trainset.num2label_dct == valset.num2label_dct, 'num2label dicts must be identical'
         num_classes = len(np.unique(self.classes))
         trainloader = torch.utils.data.DataLoader(trainset, batch_size=self.opt.batch_size,
-                                                  shuffle=True, num_workers=0,
+                                                  shuffle=True, num_workers=4,
                                                   pin_memory=True)
         valloader = torch.utils.data.DataLoader(valset, batch_size=self.opt.batch_size,
                                                 shuffle=False, num_workers=4,
                                                 pin_memory=True)
         # TODO: detect height, width, channels
-        self.model = Net(num_classes=num_classes, h=300, w=300, num_channels=self.opt.num_channels)
+        if self.opt.model_type == 'resnet':
+            Res = ResNet(num_classes=num_classes, num_channels=self.opt.num_channels)
+            self.model = Res.model
+        elif self.opt.model_type == 'cnn':
+            self.model = Net(num_classes=num_classes, h=300, w=300,num_channels=self.opt.num_channels)
+        elif self.opt.model_type == 'cnn_with_bn':
+            self.model = NetBN(num_classes=num_classes, h=300, w=300, num_channels=self.opt.num_channels)
+        elif self.opt.model_type=='cnn_with_dropout':
+            self.model = NetDropout(num_classes=num_classes, h=300, w=300, num_channels=self.opt.num_channels)
+        else:
+            self.model=None
+            assert 0, f'Model type {self.opt.model_type} not found'
+                        
         self.model.to(self.device)
-        modelpath = os.path.join(self.modeldir, 'net.pth')
+        modelpath = os.path.join(self.modeldir, f'model_{TIMESTAMP}.pth')
         self.hyperparams['modelpath'] = modelpath
         if self.opt.use_wandb:
             wandb.config.update(self.opt)
@@ -363,6 +492,7 @@ class Train:
                                        momentum=self.opt.momentum,
                                        learning_rate=self.opt.learning_rate,
                                        batch_size=self.opt.batch_size,
+                                       modeltype=self.opt.model_type,
                                        epochs=self.opt.epochs,
                                        optimizer=self.opt.optimizer),
                        kwargs=dict(id=self.model_id))
@@ -375,6 +505,32 @@ class Train:
             assert 0, f'Optimizer not found {self.opt.optimizer}'
 
         # train_opt = torch.compile(self.train_one_epoch, mode='reduce-overhead')
+        if self.opt.check_images:
+            # save images
+            i = 0
+            
+            for x in trainloader:
+                print('labels', x[1])
+                for im, lbl in zip(x[0], x[1]):
+                    lbl = lbl.detach().cpu().numpy()
+                    i += 1
+                    im = im.detach().cpu().numpy()
+                    im = np.moveaxis(im, 0, -1)
+                    
+                    im -= np.min(im)
+                    im = im * (255 / np.max(im))
+                    im = np.uint8(im)
+                    blank = np.zeros_like(im)[..., 0]
+                    
+                    im = np.dstack((im, blank))
+                    savepath = os.path.join(self.checkimagedir, f'checkimage-{i}-lbl-{lbl}.png')
+                    imageio.v3.imwrite(savepath, im)
+                print(f'Saved to {self.checkimagedir}')
+                if i > 100:
+                    exit(0)
+                        
+                        
+
         should_stop = False
         for epoch in range(1, self.opt.epochs + 1):  # loop over the dataset multiple times
             strt = time()
@@ -385,58 +541,65 @@ class Train:
                 wandb.log({"train_loss_epoch": train_loss})
             if self.opt.use_wandb:
                 wandb.log({"train_acc_epoch": train_acc})
+            self.model.eval()
             with torch.no_grad():
                 val_acc = 0
                 val_loss = 0
                 preddct = []
-                for j, (X, y, experimentdata_ids, welldata_ids, celldata_ids) in enumerate(valloader):
-                    X = X.to(self.device)
-                    y = y.to(self.device)
-                    # calculate outputs by running images through the network
-                    y_pred = self.model(X)
-                    val_loss_batch = self.criterion(y_pred, y)
-                    val_loss += val_loss_batch.item()
-                    # the class with the highest energy is what we choose as prediction
-                    y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
-                    val_acc += (y_pred_class == y).sum().item() / len(y_pred)
+                with tqdm(total=len(valloader), desc=f'Validation: Epoch {epoch+1}') as pbar:
+                
+                    for j, (X, y, experimentdata_ids, welldata_ids, celldata_ids) in enumerate(valloader):
+                        X = X.to(self.device)
+                        y = y.to(self.device)
+                        # calculate outputs by running images through the network
+                        y_pred = self.model(X)
+                        val_loss_batch = self.criterion(y_pred, y)
+                        val_loss += val_loss_batch.item()
+                        # the class with the highest energy is what we choose as prediction
+                        _, y_pred_class = torch.max(y_pred, 1)
+                        batch_acc = (y_pred_class == y).sum().item() / len(y_pred)
+                        val_acc += batch_acc
 
-                    if self.opt.use_wandb:
-                        wandb.log({"val_loss": val_loss_batch.item()})
+                        if self.opt.use_wandb:
+                            wandb.log({"val_loss": val_loss_batch.item()})
 
-                    # Save to db
-                    if epoch == self.opt.epochs or should_stop:
-                        preddct = []
-                        np_y_pred_class = y_pred_class.detach().cpu().numpy()
-                        np_y = y.detach().cpu().numpy()
-                        np_y_pred = y_pred.detach().cpu().numpy()
-                        for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y,
-                                                                                                           np_y_pred,
-                                                                                                           np_y_pred_class,
-                                                                                                           experimentdata_ids,
-                                                                                                           welldata_ids,
-                                                                                                           celldata_ids):
-                            preddct.append(dict(id=uuid.uuid4(),
-                                                model_id=self.model_id,
-                                                experimentdata_id=uuid.UUID(experimentdata_id),
-                                                welldata_id=uuid.UUID(welldata_id),
-                                                celldata_id=uuid.UUID(celldata_id),
-                                                stage='val',
-                                                prediction=float(_y_pred_class.item()),
-                                                groundtruth=float(_y.item()),
-                                                prediction_label=valset.num2label_dct[_y_pred_class],
-                                                groundtruth_label=valset.num2label_dct[_y]))
-                            preddct_check = dict(model_id=self.model_id, celldata_id=uuid.UUID(celldata_id))
-                            self.Db.delete_based_on_duplicate_name('modelcropdata', preddct_check)
-                        self.Db.add_row('modelcropdata', preddct)
+                        # Save to db
+                        if epoch == self.opt.epochs or should_stop:
+                            preddct = []
+                            np_y_pred_class = y_pred_class.detach().cpu().numpy()
+                            np_y = y.detach().cpu().numpy()
+                            np_y_pred = y_pred.detach().cpu().numpy()
+                            for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y,
+                                                                                                            np_y_pred,
+                                                                                                            np_y_pred_class,
+                                                                                                            experimentdata_ids,
+                                                                                                            welldata_ids,
+                                                                                                            celldata_ids):
+                                preddct.append(dict(id=uuid.uuid4(),
+                                                    model_id=self.model_id,
+                                                    experimentdata_id=uuid.UUID(experimentdata_id),
+                                                    welldata_id=uuid.UUID(welldata_id),
+                                                    celldata_id=uuid.UUID(celldata_id),
+                                                    stage='val',
+                                                    prediction=float(_y_pred_class.item()),
+                                                    groundtruth=float(_y.item()),
+                                                    prediction_label=valset.num2label_dct[_y_pred_class],
+                                                    groundtruth_label=valset.num2label_dct[_y]))
+                                preddct_check = dict(model_id=self.model_id, celldata_id=uuid.UUID(celldata_id))
+                                self.Db.delete_based_on_duplicate_name('modelcropdata', preddct_check)
+                            self.Db.add_row('modelcropdata', preddct)
+                        pbar.set_postfix(loss=val_loss_batch.item(), accuracy=100. * batch_acc)
+                        pbar.update(1)
 
                 val_acc = val_acc / len(valloader)
                 val_loss = val_loss / len(valloader)
-                print(f'Accuracy of the network on validation images: {val_acc * 100:.2f} %')
+                print(f'Accuracy of the network on validation images: {val_acc:.2f}')
                 print(f'Loss of the network on validation images: {val_loss:.2f}')
                 if should_stop:
                     print(f'Stopping at epoch {epoch + 1}')
                     break
                 should_stop = Early.early_stop(val_loss)
+                should_stop = False
                 print(f'Early Stopping: {should_stop}')
 
         print('Finished Training')
@@ -464,63 +627,68 @@ class Train:
         train_loss = 0.0
         running_loss = 0.0
         train_acc = 0.
-        for batch, (X, y, experimentdata_ids, welldata_ids, celldata_ids) in enumerate(trainloader):
-            X = X.to(self.device)
-            y = y.to(self.device)
-            # get the inputs; data is a list of [inputs, labels]
-            strt = time()
-            # zero the parameter gradients
-            self.optimizer.zero_grad()
+        with tqdm(total=len(trainloader), desc=f'Training: Epoch {epoch+1}') as pbar:
+        
+            for batch, (X, y, experimentdata_ids, welldata_ids, celldata_ids) in enumerate(trainloader):
+                X = X.to(self.device)
+                y = y.to(self.device)
+                # get the inputs; data is a list of [inputs, labels]
+                strt = time()
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
 
-            # forward + backward + optimize
-            # with torch.autocast(device_type='cuda'):
-            y_pred = self.model(X)
-            # Calculate and accumulate accuracy metric across all batches
-            y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
-            train_acc += (y_pred_class == y).sum().item() / len(y_pred)
-            loss = self.criterion(y_pred, y)
-            loss.backward()
-            self.optimizer.step()
+                # forward + backward + optimize
+                # with torch.autocast(device_type='cuda'):
+                y_pred = self.model(X)
+                # Calculate and accumulate accuracy metric across all batches
+                _, y_pred_class = torch.max(y_pred, 1)
+                batch_acc = (y_pred_class == y).sum().item() / len(y_pred)
+                train_acc += batch_acc
+                loss = self.criterion(y_pred, y)
+                loss.backward()
+                self.optimizer.step()
 
-            # print statistics
-            if self.opt.use_wandb:
-                wandb.log({"loss": loss.item()})
-            running_loss += loss.item()
-            train_loss += loss.item()
-            # print(f'loss: {loss.item()}')
-            # print(f'batch time: {time() - strt}')
-            if batch % 100 == 0:
-                print(f'Running loss: {running_loss / 100:.3f}')
-                running_loss = 0.0
-            if (epoch == self.opt.epochs or should_stop) and num2label_dct is not None:
-                # Save to db
-                preddct = []
-                np_y_pred_class = y_pred_class.detach().cpu().numpy()
-                np_y = y.detach().cpu().numpy()
-                np_y_pred = y_pred.detach().cpu().numpy()
-                for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y, np_y_pred,
-                                                                                                   np_y_pred_class,
-                                                                                                   experimentdata_ids,
-                                                                                                   welldata_ids,
-                                                                                                   celldata_ids):
-                    preddct.append(dict(id=uuid.uuid4(),
-                                        model_id=self.model_id,
-                                        experimentdata_id=uuid.UUID(experimentdata_id),
-                                        welldata_id=uuid.UUID(welldata_id),
-                                        celldata_id=uuid.UUID(celldata_id),
-                                        stage='train',
-                                        prediction=float(_y_pred_class.item()),
-                                        groundtruth=float(_y.item()),
-                                        prediction_label=num2label_dct[_y_pred_class],
-                                        groundtruth_label=num2label_dct[_y]))
-                    preddct_check = dict(model_id=self.model_id, celldata_id=uuid.UUID(celldata_id))
-                    self.Db.delete_based_on_duplicate_name('modelcropdata', preddct_check)
-                self.Db.add_row('modelcropdata', preddct)
+                # print statistics
+                if self.opt.use_wandb:
+                    wandb.log({"loss": loss.item()})
+                running_loss += loss.item()
+                train_loss += loss.item()
+                # print(f'loss: {loss.item()}')
+                # print(f'batch time: {time() - strt}')
+                if batch % 100 == 0:
+                    # print(f'Running loss: {running_loss / 100:.3f}')
+                    running_loss = 0.0
+                if (epoch == self.opt.epochs or should_stop) and num2label_dct is not None:
+                    # Save to db
+                    preddct = []
+                    np_y_pred_class = y_pred_class.detach().cpu().numpy()
+                    np_y = y.detach().cpu().numpy()
+                    np_y_pred = y_pred.detach().cpu().numpy()
+                    for _y, _y_pred, _y_pred_class, experimentdata_id, welldata_id, celldata_id in zip(np_y, np_y_pred,
+                                                                                                    np_y_pred_class,
+                                                                                                    experimentdata_ids,
+                                                                                                    welldata_ids,
+                                                                                                    celldata_ids):
+                        preddct.append(dict(id=uuid.uuid4(),
+                                            model_id=self.model_id,
+                                            experimentdata_id=uuid.UUID(experimentdata_id),
+                                            welldata_id=uuid.UUID(welldata_id),
+                                            celldata_id=uuid.UUID(celldata_id),
+                                            stage='train',
+                                            prediction=float(_y_pred_class.item()),
+                                            groundtruth=float(_y.item()),
+                                            prediction_label=num2label_dct[_y_pred_class],
+                                            groundtruth_label=num2label_dct[_y]))
+                        preddct_check = dict(model_id=self.model_id, celldata_id=uuid.UUID(celldata_id))
+                        self.Db.delete_based_on_duplicate_name('modelcropdata', preddct_check)
+                    self.Db.add_row('modelcropdata', preddct)
+                pbar.set_postfix(loss=loss.item(), accuracy=100. * batch_acc)
+                pbar.update(1)
         # print epoch loss
         train_loss = train_loss / len(trainloader)
         train_acc = train_acc / len(trainloader)
-        print(f'Epoch Loss: {train_loss}')
-        print(f'Epoch Acc: {train_acc}')
+        print(f'Epoch Acc: {train_acc:.2f}')
+        print(f'Epoch Loss: {train_loss:.2f}')
         return train_loss, train_acc
 
 
@@ -555,13 +723,17 @@ if __name__ == '__main__':
     parser.add_argument('--filters', default=[['name', 'cry2mscarlet']], help="Filter based on columnname, filtername, i.e. name,cry2mscarlet",
                         dest="filters", type=list, nargs='+')
 
+    parser.add_argument('--model_type', default='cnn_with_dropout', choices=['cnn', 'cnn_with_bn', 'cnn_with_dropout', 'resnet'])
+    parser.add_argument('--target_image_size', default=224)
+    parser.add_argument('--use_imagenet', default=1)
     parser.add_argument('--num_channels', default=2)
-    parser.add_argument('--n_samples', default=0)
-    parser.add_argument('--epochs', default=100)
+    parser.add_argument('--n_samples', default=2000)
+    parser.add_argument('--epochs', default=150)
     parser.add_argument('--batch_size', default=32)
-    parser.add_argument('--learning_rate', default=1e-4)
+    parser.add_argument('--learning_rate', default=1e-3)
     parser.add_argument('--momentum', default=0.9)
     parser.add_argument('--optimizer', default='adam')
+    parser.add_argument('--check_images', default=0)
 
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
@@ -573,7 +745,7 @@ if __name__ == '__main__':
                         dest="chosen_wells", default='all',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='all',
+                        dest="chosen_timepoints", default='T0',
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc", default='RFP1,RFP2',
                         dest="chosen_channels",

@@ -21,7 +21,7 @@ class Normalize(Ops):
                                      rollingball=self.rolling_ball)
         self.image_bg_correction = dict(division=self.division_bg,
                                         subtraction=self.subtract_bg,
-                                        identity=self.identity)
+                                        identity=self.identity_bg)
 
     def test(self):
         _, analysisdir = self.get_raw_and_analysis_dir()

@@ -16,6 +16,7 @@ import os
 import stat
 import argparse
 from time import time
+from tqdm import tqdm
 import wandb
 # os.environ["WANDB_SILENT"] = "true"
 
@@ -25,7 +26,7 @@ transform = transforms.Compose(
     [transforms.Lambda(lambda image: torch.from_numpy(image.astype(np.float32))),
      transforms.Resize(size=(224, 224), antialias=True),
      #  transforms.Normalize((0.5,), (0.5,))])
-     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
+     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])])
 print(f'CUDA Available: {torch.cuda.is_available()}')
 
 
@@ -34,7 +35,7 @@ def collate_fn(batch):
 
 
 class Net(nn.Module):
-    def __init__(self, num_classes, h, w, num_channels):
+    def __init__(self, num_classes, input_size, num_channels):
         super().__init__()
         # Output height = (Input height + padding height top + padding height bottom - kernel height) / (stride height) + 1.
         # self.conv1 = nn.Conv2d(num_channels, 6, 5)
@@ -43,22 +44,31 @@ class Net(nn.Module):
         # self.fc1 = nn.Linear(16 * 72 * 72, 120)
         # self.fc2 = nn.Linear(120, 84)
         # self.fc3 = nn.Linear(84, num_classes)
+        
+        # output_size = (((input_size - filter_size + 2 * 0)/1) + 1)
         self.conv1 = nn.Conv2d(num_channels, 32, kernel_size=3, padding=0)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=0)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=0)
         self.relu = nn.ReLU()
         self.pool = nn.MaxPool2d(2, 2)
         self.flatten = nn.Flatten()
-        self.fc1 = nn.Linear(128 * 26 * 26, 100)
-        self.fc2 = nn.Linear(100, num_classes)
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc1 = nn.Linear(128, 128)
+        self.fc2 = nn.Linear(128, num_classes)
+        self.dropout = nn.Dropout(p=0.4)
+        # self.fc2 = nn.Linear(100, num_classes)
 
     def forward(self, x):
         x = self.pool(self.relu(self.conv1(x)))
         x = self.pool(self.relu(self.conv2(x)))
         x = self.pool(self.relu(self.conv3(x)))
-        x = self.flatten(x)
+        # x = self.flatten(x)
+        x = self.global_pool(x)
+        x = x.view(x.size(0), -1)
         x = self.relu(self.fc1(x))
+        x = self.dropout(x)
         x = self.fc2(x)
+        # x = self.fc2(x)
         # x = self.pool(F.relu(self.conv1(x)))
         # # print(x.size())
         # x = self.pool(F.relu(self.conv2(x)))
@@ -135,12 +145,14 @@ class Train:
         self.opt.use_wandb = int(self.opt.use_wandb)
         self.opt.num_channels = int(self.opt.num_channels)
         self.opt.n_samples = int(self.opt.n_samples)
+        
         self.classes = None
         self.device = None
         self.model = None
         self.optimizer = None
         self.criterion = None
         self.label_column = None
+        
         self.wandbdir = os.path.join(self.opt.savedir, 'wandb')
         self.modeldir = os.path.join(self.opt.savedir, 'Models')
         if not os.path.exists(self.modeldir):
@@ -173,7 +185,7 @@ class Train:
                                                 shuffle=False, num_workers=4,
                                                 pin_memory=True)
         # TODO: detect height, width, channels
-        self.model = Net(num_classes=num_classes, h=300, w=300, num_channels=self.opt.num_channels)
+        self.model = Net(num_classes=num_classes, input_size=300, num_channels=self.opt.num_channels)
         self.model.to(self.device)
         # self.model = torch.compile(net, mode='reduce-overhead')
         modelpath = os.path.join(self.modeldir, 'net.pth')
@@ -185,29 +197,36 @@ class Train:
         # optimizer = optim.SGD(net.parameters(), lr=self.opt.learning_rate, momentum=self.opt.momentum)
         # train_opt = torch.compile(self.train_one_epoch, mode='reduce-overhead')
         for epoch in range(self.opt.epochs):  # loop over the dataset multiple times
-            epoch_loss, train_acc = self.train_one_epoch(trainloader,)
+            epoch_loss, train_acc = self.train_one_epoch(epoch, trainloader,)
 
             if self.opt.use_wandb:
                 wandb.log({"train_loss_epoch": epoch_loss})
                 wandb.log({"train_acc_epoch": train_acc})
+            self.model.eval()
             with torch.no_grad():
                 val_acc = 0
                 val_epoch_loss = 0
-                for j, (X, y) in enumerate(valloader):
-                    X = X.to(self.device)
-                    y = y.to(self.device)
-                    # calculate outputs by running images through the network
-                    y_pred = self.model(X)
-                    valloss = self.criterion(y_pred, y)
-                    val_epoch_loss += valloss.item()
-                    # the class with the highest energy is what we choose as prediction
-                    y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
-                    val_acc += (y_pred_class == y).sum().item() / len(y_pred)
+                with tqdm(total=len(valloader), desc=f'Validation: Epoch {epoch+1}', unit='batch') as pbar:
+                    for j, (X, y) in enumerate(valloader):
+                        X = X.to(self.device)
+                        y = y.to(self.device)
+                        # calculate outputs by running images through the network
+                        y_pred = self.model(X)
+                        valloss = self.criterion(y_pred, y)
+                        val_epoch_loss += valloss.item()
+                        # the class with the highest energy is what we choose as prediction
+                        # y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
+                        _, y_pred_class = torch.max(y_pred, 1)
+                        batch_acc = (y_pred_class == y).sum().item() / len(y_pred)
+                        val_acc += batch_acc
 
-                    if self.opt.use_wandb: wandb.log({"val_loss": valloss.item()})
+                        if self.opt.use_wandb: wandb.log({"val_loss": valloss.item()})
+                        pbar.set_postfix(loss=valloss.item(), accuracy=100. * batch_acc)
+                        
+                        pbar.update(1)
                 val_acc = val_acc / len(valloader)
                 val_epoch_loss = val_epoch_loss / len(valloader)
-                print(f'Accuracy of the network on validation images: {val_acc * 100:.2} %')
+                print(f'Accuracy of the network on validation images: {val_acc:.2}')
                 print(f'Loss of the network on validation images: {val_epoch_loss:.3f}')
 
         print('Finished Training')
@@ -218,45 +237,49 @@ class Train:
             wandb.finish()
         print('Done')
 
-    def train_one_epoch(self, trainloader):
+    def train_one_epoch(self, epoch, trainloader):
         self.model.train()
         epoch_loss = 0.0
         running_loss = 0.0
         train_acc = 0.
-        for batch, (X, y) in enumerate(trainloader):
-            print(f'Batch {batch}')
-            X = X.to(self.device)
-            y = y.to(self.device)
-            # get the inputs; data is a list of [inputs, labels]
-            strt = time()
-            # zero the parameter gradients
-            self.optimizer.zero_grad()
+        
+        with tqdm(total=len(trainloader), desc=f'Training: Epoch {epoch+1}', unit='batch') as pbar:
+            for batch, (X, y) in enumerate(trainloader):
+                X = X.to(self.device)
+                y = y.to(self.device)
+                # get the inputs; data is a list of [inputs, labels]
+                strt = time()
+                # zero the parameter gradients
+                self.optimizer.zero_grad()
 
-            # forward + backward + optimize
-            # with torch.autocast(device_type='cuda'):
-            y_pred = self.model(X)
-            # Calculate and accumulate accuracy metric across all batches
-            y_pred_class = torch.argmax(torch.softmax(y_pred, dim=1), dim=1)
-            train_acc += (y_pred_class == y).sum().item() / len(y_pred)
-            loss = self.criterion(y_pred, y)
-            loss.backward()
-            self.optimizer.step()
+                # forward + backward + optimize
+                # with torch.autocast(device_type='cuda'):
+                y_pred = self.model(X)
+                # Calculate and accumulate accuracy metric across all batches
+                _, y_pred_class = torch.max(y_pred, 1)
+                batch_acc = (y_pred_class == y).sum().item() / len(y_pred)
+                train_acc += batch_acc
+                loss = self.criterion(y_pred, y)
+                loss.backward()
+                self.optimizer.step()
 
-            # print statistics
-            if self.opt.use_wandb:
-                wandb.log({"loss": loss.item()})
-            running_loss += loss.item()
-            epoch_loss += loss.item()
-            print(f'loss: {loss.item()}')
-            # print(f'batch time: {time() - strt}')
-            if batch % 100 == 0:
-                print(f'[{batch + 1:5d}] loss: {running_loss / 100:.3f}')
-                running_loss = 0.0
-            # print epoch loss
+                # print statistics
+                if self.opt.use_wandb:
+                    wandb.log({"loss": loss.item()})
+                running_loss += loss.item()
+                epoch_loss += loss.item()
+                # print(f'batch time: {time() - strt}')
+                if batch % 100 == 0:
+                    # print(f'[{batch + 1:5d}] loss: {running_loss / 100:.3f}')
+                    running_loss = 0.0
+                pbar.set_postfix(loss=loss.item(), accuracy=100. * batch_acc)
+                    
+                pbar.update(1)
+                # print epoch loss
         epoch_loss = epoch_loss / len(trainloader)
         train_acc = train_acc / len(trainloader)
-        print(f'Epoch Loss: {epoch_loss}')
-        print(f'Epoch Acc: {train_acc}')
+        print(f'Epoch Acc: {train_acc:.2f}')
+        print(f'Epoch Loss: {epoch_loss:.2f}')
         return epoch_loss, train_acc
 
 
@@ -272,15 +295,17 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--traindir', type=str)
-    parser.add_argument('--savedir', type=str)
-    parser.add_argument('--num_channels', default=1)
-    parser.add_argument('--n_samples', default=1)
-    parser.add_argument('--epochs', default=1)
-    parser.add_argument('--batch_size', default=16)
+    parser.add_argument('--traindir', default='/gladstone/finkbeiner/linsley/josh/dogs_vs_cats/train/S_folder',
+                        type=str)
+    parser.add_argument('--savedir',default='/gladstone/finkbeiner/linsley/josh/dogs_vs_cats/train',
+                        type=str)
+    parser.add_argument('--num_channels', default=3)
+    parser.add_argument('--n_samples', default=10000)
+    parser.add_argument('--epochs', default=100)
+    parser.add_argument('--batch_size', default=32)
     parser.add_argument('--learning_rate', default=1e-3)
     parser.add_argument('--momentum', default=0.9)
-    parser.add_argument('--use_wandb', default=1, type=int, help="Log training with wandb.")
+    parser.add_argument('--use_wandb', default=0, type=int, help="Log training with wandb.")
     args = parser.parse_args()
     print(args)
     Tr = Train(args)
