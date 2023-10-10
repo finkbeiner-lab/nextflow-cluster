@@ -438,7 +438,7 @@ process CNN {
 }
 
 process GETCSVS {
-    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata"
+    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata --mount type=bind,src=/Volumes/Finkbeiner-Linsley,target=/gladstone/finkbeiner/linsley"
     input:
     val ready
     val exp
