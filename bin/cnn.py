@@ -24,6 +24,10 @@ import wandb
 import datetime
 from tqdm import tqdm
 
+__author__ = 'Josh Lamstein'
+__copyright__ = 'Gladstone Institutes 2023'
+
+
 now = datetime.datetime.now()
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
 

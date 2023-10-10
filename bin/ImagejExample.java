@@ -3,7 +3,7 @@ import ij.process.ImageProcessor;
 import ij.process.ImageConverter;
 import ij.io.Opener;
 
-public class ImageJExample {
+public class ImagejExample {
     public static void main(String[] args) {
         // Load an image using ImageJ
         Opener opener = new Opener();
