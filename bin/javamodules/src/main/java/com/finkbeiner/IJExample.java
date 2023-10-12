@@ -1,13 +1,15 @@
+package com.finkbeiner;
+
 import ij.ImagePlus;
 import ij.process.ImageProcessor;
 import ij.process.ImageConverter;
 import ij.io.Opener;
 
-public class ImagejExample {
+public class IJExample {
     public static void main(String[] args) {
         // Load an image using ImageJ
         Opener opener = new Opener();
-        ImagePlus imagePlus = opener.openImage("path/to/your/image.jpg");
+        ImagePlus imagePlus = opener.openImage("/workspace/finkbeiner-profile.jpg");
 
         // Convert the image to grayscale
         ImageConverter converter = new ImageConverter(imagePlus);
@@ -20,9 +22,8 @@ public class ImagejExample {
         processor.invert();
 
         // Save the processed image
-        imagePlus.saveAs("path/to/your/processed_image.jpg");
+        ij.IJ.save(imagePlus, "/gladstone/finkbeiner/lab/finkbeiner-profile-grayscale.jpg");
 
-        // Display the processed image
-        imagePlus.show();
     }
 }
+

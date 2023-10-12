@@ -45,7 +45,16 @@ RUN conda install matplotlib
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 RUN export JAVA_HOME
 
+RUN wget https://dlcdn.apache.org/maven/maven-3/3.9.5/binaries/apache-maven-3.9.5-bin.tar.gz
+RUN tar -xvf apache-maven-3.9.5-bin.tar.gz
+RUN mv apache-maven-3.9.5 /opt/
+ENV M2_HOME='/opt/apache-maven-3.9.5'
+ENV PATH="$M2_HOME/bin:$PATH"
+RUN export PATH
+RUN wget 'https://gladstone.org/sites/default/files/styles/investigator_list/public/user-pics/investigators/finkbeiner-profile.jpg'
 RUN wget "https://wsr.imagej.net/jars/ij.jar"
+RUN mvn -version
+RUN mvn install:install-file -Dfile=/workspace/ij.jar -DgroupId=com.finkbeiner -DartifactId=ij -Dversion=1.0 -Dpackaging=jar
 
 ENV GUROBI_HOME="/opt/gurobi1002/linux64"
 ENV PATH="${PATH}:${GUROBI_HOME}/bin"

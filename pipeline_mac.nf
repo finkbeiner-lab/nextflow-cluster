@@ -268,7 +268,7 @@ process PUNCTA {
 }
 
 process TRACKING {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata --mount type=bind,src=/Volumes/Finkbeiner-Linsley,target=/gladstone/finkbeiner/linsley"
     input:
     val ready
     val exp
@@ -320,7 +320,7 @@ process INTENSITY {
 }
 
 process CROP {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata --mount type=bind,src=/Volumes/Finkbeiner-Linsley,target=/gladstone/finkbeiner/linsley"
     memory '2 GB'
     cpus 4
     input:
@@ -347,7 +347,7 @@ process CROP {
 }
 
 process MONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata --mount type=bind,src=/Volumes/Finkbeiner-Linsley,target=/gladstone/finkbeiner/linsley"
     input:
     val ready
     val exp
@@ -372,7 +372,7 @@ process MONTAGE {
 }
 
 process PLATEMONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata --mount type=bind,src=/Volumes/Finkbeiner-Linsley,target=/gladstone/finkbeiner/linsley"
     input:
     val ready
     val exp
@@ -398,7 +398,7 @@ process PLATEMONTAGE {
 }
 
 process CNN {
-    containerOptions "--gpus all --mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata --mount type=bind,src=/Volumes/Finkbeiner-Linsley,target=/gladstone/finkbeiner/linsley"
     maxForks = 1
 
     input:
