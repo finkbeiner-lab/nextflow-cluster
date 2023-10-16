@@ -16,7 +16,10 @@ opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
 args = commandArgs(trailingOnly=TRUE)
 
-query = "SELECT DISTINCT experimentdata.experiment, experimentdata.id, channeldata.channel, welldata.well, dosagedata.name, celldata.stimulate
+experiment = opt$exp
+
+query <- sprintf("SELECT DISTINCT experimentdata.experiment, experimentdata.id, channeldata.channel, 
+welldata.well, dosagedata.name, celldata.stimulate, modelcropdata.prediction, modelcropdata.groundtruth, modelcropdata.stage
     from experimentdata
     inner join channeldata
         on channeldata.experimentdata_id = experimentdata.id
@@ -24,24 +27,18 @@ query = "SELECT DISTINCT experimentdata.experiment, experimentdata.id, channelda
         on welldata.id=channeldata.welldata_id
     inner join tiledata
     on tiledata.welldata_id = welldata.id
-    inner join intensitycelldata
-        on intensitycelldata.channeldata_id=channeldata.id
     inner join celldata
         on celldata.id=intensitycelldata.celldata_id
+    inner join modelcropdata
+        on modelcropdata.celldata_id=celldata.id
     inner join dosagedata
     on dosagedata.welldata_id=welldata.id
-    where experimentdata.experiment='20230901-3-msneuron-cry2-KS4' and dosagedata.name='cry2mscarlet' and welldata.well='A1' and tiledata.timepoint=0;"
+    where experimentdata.experiment=%s and welldata.well=%s and tiledata.timepoint=%d;",experiment, well, timepoint)
 
-df <- get_df("celldata", "SELECT * FROM CELLDATA")
-
-survcsv<-file.path(args[1], 'survival_data.csv')
-if (!file.exists(survcsv)){
-  errorCondition(paste0("File does not exist: ", survcsv))
-}
+df <- get_df(query)
 
 # exp_dir <- "/gladstone/finkbeiner/elia/BiancaB/Imaging_Experiments/iMG_cocultures/GXYTMP/IMG-coculture-2-061522-Th3"
-df <- read.csv(survcsv)
-df$label <- as.factor(df$label)
+df$label <- as.factor(df$groundtruth)
 df$condition <- as.factor(df$condition)
 
 df.KM<-survfit(Surv(time_of_death, is_dead) ~ condition, data=df, type="kaplan-meier")

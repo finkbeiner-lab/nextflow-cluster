@@ -19,36 +19,39 @@ add_row <- function(tablename, dct, con) {
   # In this version, we assume the caller manages the connection (including commits and rollbacks)
 }
 
-get_df <- function(tablename, sql_query) {
+get_df <- function(sql_query) {
+  creds <- read.csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
+  pw <- creds[1, "pw"]
   con <- dbConnect(RPostgres::Postgres(), dbname = 'galaxy', host = 'fb-postgres01.gladstone.internal', port = 5432, user = 'postgres', password = pw)
-  qry <- dbSendQuery(con, sql_query)
-  df <- dbFetch(res)
+  df <- dbGetQuery(con, sql_query)
   dbDisconnect(con)
-  return df
+  return (df)
 }
 
-get_row <- function(tablename, condition, con) {
+get_row <- function(tablename, condition) {
   # Create the SQL select statement
+  creds <- read.csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
+  pw <- creds[1, "pw"]
+  con <- dbConnect(RPostgres::Postgres(), dbname = 'galaxy', host = 'fb-postgres01.gladstone.internal', port = 5432, user = 'postgres', password = pw)
   sql <- paste0("SELECT * FROM ", tablename, " WHERE ", condition, " LIMIT 1")
-  
   # Execute the query and fetch the result
   result <- dbGetQuery(con, sql)
   
   return(result)
 }
 
-# Usage example
-creds <- read.csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
-print(creds)
-pw <- creds[1, "pw"]
-print(pw)
-con <- dbConnect(RPostgres::Postgres(), dbname = 'galaxy', host = 'fb-postgres01.gladstone.internal', port = 5432, user = 'postgres', password = pw)
+# # Usage example
+# creds <- read.csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
+# print(creds)
+# pw <- creds[1, "pw"]
+# print(pw)
+# con <- dbConnect(RPostgres::Postgres(), dbname = 'galaxy', host = 'fb-postgres01.gladstone.internal', port = 5432, user = 'postgres', password = pw)
 
-# Example to get a row where "column1" is "value1"
-row_data <- get_row("experimentdata", "experiment = '20231002-1-MSN-taueos'", con)
-print(row_data)
+# # Example to get a row where "column1" is "value1"
+# row_data <- get_row("experimentdata", "experiment = '20231002-1-MSN-taueos'", con)
+# print(row_data)
 
-dbDisconnect(con)
+# dbDisconnect(con)
 
 # # Usage example
 # con <- dbConnect(RPostgres::Postgres(), dbname = 'galaxy', host = 'fb-postgres01.gladstone.internal:5432', port = 5432, user = 'postgres', password = 'your_password')
