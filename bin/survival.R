@@ -4,7 +4,7 @@ library(survival)
 library(ggplot2)
 library(ggfortify)
 library(optparse)
-library(RPostgreSQL)
+source("rsql.R")
 
 option_list = list(
   make_option(c("-exp", "--exp"), type="character", default=NULL, 
@@ -16,11 +16,23 @@ opt_parser = OptionParser(option_list=option_list);
 opt = parse_args(opt_parser);
 args = commandArgs(trailingOnly=TRUE)
 
+query = "SELECT DISTINCT experimentdata.experiment, experimentdata.id, channeldata.channel, welldata.well, dosagedata.name, celldata.stimulate
+    from experimentdata
+    inner join channeldata
+        on channeldata.experimentdata_id = experimentdata.id
+    inner join welldata
+        on welldata.id=channeldata.welldata_id
+    inner join tiledata
+    on tiledata.welldata_id = welldata.id
+    inner join intensitycelldata
+        on intensitycelldata.channeldata_id=channeldata.id
+    inner join celldata
+        on celldata.id=intensitycelldata.celldata_id
+    inner join dosagedata
+    on dosagedata.welldata_id=welldata.id
+    where experimentdata.experiment='20230901-3-msneuron-cry2-KS4' and dosagedata.name='cry2mscarlet' and welldata.well='A1' and tiledata.timepoint=0;"
 
-drv <- dbDriver("PostgreSQL")
-con <- d:Connect(drv, host="fb-postgres01.gladstone.internal", user="postgres", password="mysecretpassword", dbname="galaxy", port="5432")
-rs <- dbSendQuery(con, "select * celldata"); 
-df <- fetch(rs)
+df <- get_df("celldata", "SELECT * FROM CELLDATA")
 
 survcsv<-file.path(args[1], 'survival_data.csv')
 if (!file.exists(survcsv)){
@@ -38,10 +50,7 @@ png(file=file.path(args[1], "km_R.png"), width=800, height=800)
 autoplot(df.KM)
 dev.off()
 
-
 # plot(df.KM, col=c(2,4,6), xlab="Days", ylab="Survival", main="Kaplan Meier")
-
-
 
 cox = coxph(Surv(time_of_death, is_dead) ~ condition, data=df)
 summary(cox)
