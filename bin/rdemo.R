@@ -7,7 +7,7 @@
 library("optparse")
  
 option_list = list(
-  make_option(c("-t", "--txt"), type="character", default="yosup", 
+  make_option(c("-t", "--txt"), type="character", default="Hi I'm Josh", 
               help="dataset file name", metavar="character"),
     make_option(c("-o", "--out"), type="character", default="out.txt", 
               help="output file name [default= %default]", metavar="character")
