@@ -26,7 +26,8 @@ args = commandArgs(trailingOnly=TRUE)
 
 experiment = opt$exp
 print(experiment)
-query <- sprintf("SELECT DISTINCT experimentdata.experiment, experimentdata.id, tiledata.timepoint,
+query <- sprintf("SELECT DISTINCT experimentdata.experiment, experimentdata.id, celldata.cellid, 
+celldata.randomcellid, tiledata.tile, tiledata.timepoint,
 intensitycelldata.celldata_id, intensitycelldata.intensity_max, intensitycelldata.intensity_mean, 
 channeldata.channel, welldata.well, dosagedata.name, celldata.stimulate
     from experimentdata
@@ -49,30 +50,69 @@ exp_row = get_row('experimentdata', sprintf("experiment=\'%s\'", opt$exp))
 analysisdir = exp_row[1, 'analysisdir']
 data <- get_df(query)
 
-# Calculate ratio
+group_counts <- data %>%
+  group_by(cellid, well, tile) %>%
+  filter(any(timepoint==0)) %>%
+  tally()
+
 df <- data %>%
-  group_by(celldata_id) %>%
-  mutate(ratio = if_else(channel == opt$channel1, intensity_mean / intensity_mean[channel == opt$channel2], NA_real_)) %>%
+  group_by(cellid, well, tile) %>%
+  filter(any(timepoint==0)) %>%
   ungroup()
 
-print(df)
+# Calculate ratio
+df <- df %>%
+  group_by(celldata_id) %>%
+  mutate(ratio = if_else(channel == opt$channel2, intensity_mean[channel == opt$channel1]/intensity_mean,  NA_real_)) %>%
+  filter(channel == opt$channel2)
+print('Calculated Ratio')
+# drop nan
+# df <- df %>%
+#   filter(!is.na(ratio))
+# print('Filtered Nan')
+# Threshold gedi ratio
 gedi_threshold=2
 df <- df %>%
   mutate(is_dead = ratio > gedi_threshold)
+print('Thresholded gedi ratio.')
+# Reduce tracks to summarise time of death
+first_group <- df %>%
+  group_by(cellid, well, tile) %>%
+  filter(n() > 1) %>% 
+  mutate(group_id = cur_group_id()) %>%
+  filter(group_id == 1) %>%
+  ungroup() %>%
+  select(-group_id)
 
+survival_df_tst <- first_group %>%
+  group_by(cellid, well, tile) %>%
+  filter(n() > 1) %>% 
+  arrange(timepoint) %>%
+  filter(if (any(is_dead == TRUE)) is_dead == TRUE else row_number() == n()) %>%
+  slice(1) %>%
+    ungroup()
+
+survival_df <- df %>%
+  group_by(cellid, well, tile) %>%
+  filter(n() > 1) %>% 
+  arrange(timepoint) %>%
+  filter(if (any(is_dead == TRUE)) is_dead == TRUE else row_number() == n()) %>%
+  slice(1) %>%
+    ungroup()
+print('Reduced tracks')
 # exp_dir <- "/gladstone/finkbeiner/elia/BiancaB/Imaging_Experiments/iMG_cocultures/GXYTMP/IMG-coculture-2-061522-Th3"
-df$is_dead <- as.factor(df$is_dead)
-df$stimulate <- as.factor(df$stimulate)
+# survival_df$is_dead <- as.factor(survival_df$is_dead)
+# survival_df$stimulate <- as.factor(survival_df$stimulate)
 
-df.KM<-survfit(Surv(timepoint, is_dead) ~ stimulate, data=df, type="kaplan-meier")
-png(file=file.path(analysisdir, "km_R.png"), width=800, height=800)
+survival_df.KM<-survfit(Surv(timepoint, is_dead) ~ stimulate, data=survival_df, type="kaplan-meier")
+png(file=file.path(analysisdir, "kaplanmeier.png"), width=800, height=800)
+print(paste0("Saved kaplanmeier.png to ", analysisdir))
+autoplot(survival_df.KM)
 
-autoplot(df.KM)
+plot(survival_df.KM, col=c(2,4,6), xlab="Days", ylab="Survival", main=sprintf("Kaplan Meier %s", opt$exp))
 dev.off()
 
-# plot(df.KM, col=c(2,4,6), xlab="Days", ylab="Survival", main="Kaplan Meier")
-
-cox = coxph(Surv(timepoint, is_dead) ~ stimulate, data=df)
+cox = coxph(Surv(timepoint, is_dead) ~ stimulate, data=survival_df)
 summary(cox)
 savepath <- file.path(analysisdir, "coxph.csv")
 summ<-summary(cox)
