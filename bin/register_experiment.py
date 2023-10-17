@@ -37,7 +37,7 @@ logger = logging.getLogger("Folder2Db")
 now = datetime.datetime.now()
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
 print('Timestamp', TIMESTAMP)
-fink_log_dir = '/finkbeiner/imaging/work/metal3/galaxy/finkbeiner_logs'
+fink_log_dir = './finkbeiner_logs'
 if not os.path.exists(fink_log_dir):
     os.makedirs(fink_log_dir)
 logname = os.path.join(fink_log_dir, f'Folder2Db-log_{TIMESTAMP}.log')

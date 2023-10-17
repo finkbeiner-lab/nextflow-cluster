@@ -13,12 +13,13 @@ params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20231002-1-MSN-taueos'  // Experiment name
+params.experiment = '20231005-MS-10-minisog-IF'  // Experiment name
 params.morphology_channel = 'GFP-DMD1'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'identity' // ['identity', 'subtraction', 'division']
 
 // SELECT MODULES
+params.DO_UPDATEPATHS = true
 params.DO_REGISTER_EXPERIMENT = false
 params.DO_SEGMENTATION = false
 params.DO_TRACKING = false
@@ -27,7 +28,7 @@ params.DO_CROP = false
 params.DO_MONTAGE = false
 params.DO_PLATEMONTAGE = false
 params.DO_CNN = false
-params.DO_GET_CSVS = true
+params.DO_GET_CSVS = false
 
 // Variables per module
 
@@ -64,7 +65,6 @@ params.target_channel = ['RFP1', 'RFP2']  // List of channels. Run in parallel.
 // CROP
 params.crop_size = 300
 params.target_channel_crop = ['RFP1', 'RFP2']  // List of channels. Run in parallel.
-
 
 // MONTAGE and PLATEMONTAGE
 params.tiletype = 'filename'  // ['filename', 'maskpath', 'trackedmaskpath']
@@ -125,10 +125,12 @@ learning_rate_ch = Channel.of(params.learning_rate)
 momentum_ch = Channel.of(params.momentum)
 optimizer_ch = Channel.of(params.optimizer)
 
+include { REGISTER_EXPERIMENT; SEGMENTATION;
+    CELLPOSE; PUNCTA; TRACKING; INTENSITY;
+    CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; MULT; BASHEX;UPDATEPATHS;
+    SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
 
-include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
-
-params.outdir = "results"
+params.outdir = 'results'
 
 log.info """\
     ANALYSIS DATASTUDY PIPELINE!
@@ -149,347 +151,16 @@ log.info """\
     """
     .stripIndent()
 
-/*
- * define the `index` process that creates a binary index
- * given the transcriptome file
- */
-
-process REGISTER_EXPERIMENT {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val input_path
-    val output_path
-    val template_path
-    val platemap_path
-    val ixm_hts_file
-    val robo_num
-    val chosen_wells
-    val chosen_timepoints
-    val chosen_channels
-    val wells_toggle
-    val timepoints_toggle
-    val channels_toggle
-
-    output:
-    val true
-
-    script:
-    """
-    register_experiment.py --input_path ${input_path} --output_path ${output_path} --template_path ${template_path} \
-    --platemap_path ${platemap_path} --ixm_hts_file ${ixm_hts_file} --robo_num ${robo_num} \
-     --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
-     --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-
-}
-
-process SEGMENTATION {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val ready
-    val exp
-    val morphology_channel
-    val segmentation_method
-    val img_norm_name
-    val lower_area_thresh
-    val upper_area_thresh
-    val sd_scale_factor
-    val chosen_wells
-    val chosen_timepoints
-    val wells_toggle
-    val timepoints_toggle
-
-    output: 
-    val true
-
-    script:
-    """
-    segmentation.py --experiment ${exp} --chosen_channels ${morphology_channel} --segmentation_method ${segmentation_method} \
-    --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
-    --sd_scale_factor ${sd_scale_factor} \
-    --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-}
-
-process CELLPOSE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val ready
-    val exp
-    val morphology_channel
-    val segmentation_method
-    val img_norm_name
-    val lower_area_thresh
-    val upper_area_thresh
-    val sd_scale_factor
-    val chosen_wells
-    val chosen_timepoints
-    val wells_toggle
-    val timepoints_toggle
-
-    output:
-    val true
-
-    script:
-    """
-    cellpose_segmentation.py --experiment ${exp} --batch_size ${batch_size} --cell_diameter ${cell_diameter} --flow_threshold ${flow_threshold} \
-    --cell_probabililty ${cell_probability} --model_type ${model_type} \
-    --chosen_channels ${morphology_channel} \
-    --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-}
-
-process PUNCTA {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val ready
-    val exp
-    val morphology_channel
-    val segmentation_method
-    val lower_area_thresh
-    val chosen_wells
-    val chosen_timepoints
-    val wells_toggle
-    val timepoints_toggle
-
-    output:
-    val true
-
-    script:
-    """
-    puncta.py --experiment ${exp} --segmentation_method ${segmentation_method} \
-    --chosen_channels ${morphology_channel} --target_channel ${target_channel} \
-    --area_thresh ${lower_area_thresh} \
-    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-}
-
-process TRACKING {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val ready
-    val exp
-    val distance_threshold
-    val voronoi_bool
-    val chosen_wells
-    val chosen_timepoints
-    val morphology_channel
-    val wells_toggle
-    val timepoints_toggle
-
-    output:
-    val true
-
-    script:
-    """
-    tracking.py --experiment ${exp} --distance_threshold ${distance_threshold} --VORONOI_BOOL ${voronoi_bool} \
-    --chosen_channels ${morphology_channel} \
-    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-}
-
-
-process INTENSITY {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    cpus 4
-    input:
-    val ready
-    val exp
-    val img_norm_name
-    val morphology_channel
-    each target_channel
-    val chosen_wells
-    val chosen_timepoints
-    val wells_toggle
-    val timepoints_toggle
-
-    output:
-    val true
-
-    script:
-    """
-    intensity.py --experiment ${exp} --img_norm_name ${img_norm_name}  \
-    --chosen_channels ${morphology_channel} --target_channel ${target_channel} \
-    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-}
-
-process CROP {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    memory '2 GB'
-    cpus 4
-    input:
-    val ready
-    val exp
-    each target_channel_crop
-    val morphology_channel
-    val crop_size
-    val chosen_wells
-    val chosen_timepoints
-    val wells_toggle
-    val timepoints_toggle
-
-    output:
-    val true
-
-    script:
-    """
-    crop.py --experiment ${exp} --crop_size ${crop_size} \
-    --target_channel ${target_channel_crop} \
-    --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-}
-
-process MONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val ready
-    val exp
-    val tiletype
-    val montage_pattern
-    val chosen_wells
-    val chosen_timepoints
-    val chosen_channels
-    val wells_toggle
-    val timepoints_toggle
-    val channels_toggle
-
-    output:
-    stdout
-
-    script:
-    """
-    montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
-    --chosen_channels ${chosen_channels} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-}
-
-process PLATEMONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val ready
-    val exp
-    val tiletype
-    val montage_pattern
-    val chosen_wells
-    val chosen_timepoints
-    val chosen_channels
-    val wells_toggle
-    val timepoints_toggle
-    val channels_toggle
-
-
-    output:
-    stdout
-
-    script:
-    """
-    plate_montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
-    --chosen_channels ${chosen_channels} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
-    """
-}
-
-process CNN {
-    containerOptions "--gpus all --mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    maxForks = 1
-
-    input:
-    val ready
-    val exp
-    val label_type
-    val label_name
-    val classes
-    val img_norm_name
-    val filters
-    val num_channels
-    val n_samples
-    val epochs
-    val batch_size
-    val learning_rate
-    val momentum
-    val optimizer
-    val chosen_wells
-    val chosen_timepoints
-    val chosen_channels
-    val wells_toggle
-    val timepoints_toggle
-    val channels_toggle
-
-    output:
-    val true
-
-    script:
-    """
-    cnn.py --experiment ${exp} --label_type ${label_type} --label_name ${label_name} --classes ${classes} \
-    --img_norm_name ${img_norm_name} --filters ${filters} --num_channels ${num_channels} --n_samples ${n_samples} \
-    --epochs ${epochs} --batch_size ${batch_size} --learning_rate ${learning_rate} \
-    --momentum ${momentum} --optimizer ${optimizer} \
-    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} --chosen_channels ${chosen_channels}\
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --channels_toggle ${channels_toggle}
-    """
-}
-
-process GETCSVS {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val ready
-    val exp
-
-    output:
-    val true
-
-    script:
-    """
-    get_csvs.py --experiment ${exp}
-    """
-}
-
-process MULT {
-    input:
-    val register_result
-    val seg_result
-    val track_result
-    val intensity_result
-    val crop_result
-    val cnn_result
-
-    output:
-    val mult_result
-
-    script:
-    """
-    mult_result = register_result * seg_result * track_result * intensity_result * crop_result * cnn_result
-    echo "Ready to Get CSVS ($mult_result)"
-    """
-}
-
-process BASHEX {
-    tag "Bash Script Test"
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/lab/GALAXY_INFO,target=/gladstone/finkbeiner/lab/GALAXY_INFO"
-    input:
-    val x
-
-    output:
-    stdout
-    
-    script:
-    """
-    ls '/gladstone/finkbeiner/lab/GALAXY_INFO/'
-    """
-}
-
 workflow {
-    bashresults_ch = BASHEX(experiment_ch)
-    bashresults_ch.view{ it }
-    if (params.DO_REGISTER_EXPERIMENT){
+    if (params.DO_UPDATEPATHS && !params.DO_REGISTER_EXPERIMENT){
+        updatepath_ch = UPDATEPATHS(experiment_ch)
+        updatepath_ch.view { it }
+        updatepaths_result= UPDATEPATHS.out
+    }
+    else{
+        updatepaths_result = true
+    }
+    if (params.DO_REGISTER_EXPERIMENT) {
         REGISTER_EXPERIMENT(input_path_ch, output_path_ch, template_path_ch, platemap_path_ch, ixm_hts_file_ch, robo_num_ch,
         well_ch, tp_ch,chosen_channels_for_register_exp_ch, well_toggle_ch, tp_toggle_ch, channels_toggle)
         register_result = REGISTER_EXPERIMENT.out
@@ -497,62 +168,61 @@ workflow {
     else {
         register_result = true
     }
-    if ( params.DO_SEGMENTATION ) {
+    if (params.DO_SEGMENTATION) {
         seg_ch = SEGMENTATION(register_result, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
-        seg_ch.view{ it }
+        seg_ch.view { it }
         seg_result = SEGMENTATION.out
     }
-    else{
+    else {
         seg_result = true
     }
-    if (params.DO_TRACKING){
-        track_ch = TRACKING(seg_result, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch,tp_ch, morphology_ch,
+    if (params.DO_TRACKING) {
+        track_ch = TRACKING(seg_result, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, tp_ch, morphology_ch,
         well_toggle_ch, tp_toggle_ch)
         track_result = TRACKING.out
-
     }
-    else{
-    track_result = true
+    else {
+        track_result = true
     }
-    if ( params.DO_INTENSITY ) {
-        int_ch = INTENSITY(track_result, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch,well_toggle_ch, tp_toggle_ch)
+    if (params.DO_INTENSITY) {
+        int_ch = INTENSITY(track_result, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         intensity_result = INTENSITY.out
-        int_ch.view{ it }
+        int_ch.view { it }
     }
-    else{
-    intensity_result = true
+    else {
+        intensity_result = true
     }
-    if ( params.DO_CROP ) {
+    if (params.DO_CROP) {
         crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, crop_size_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
-        crop_ch.view{ it }
+        crop_ch.view { it }
         crop_result = CROP.out
     }
-    else{
+    else {
         crop_result = true
     }
-    if (params.DO_CNN){
+    if (params.DO_CNN) {
         cnn_ch = CNN(crop_result, experiment_ch, label_type_ch, label_name_ch, classes_ch, img_norn_name_cnn_ch, filters_ch, num_channels_ch, n_samples_ch,
         epochs_ch, batch_size_ch, learning_rate_ch, momentum_ch, optimizer_ch, well_ch, tp_ch, chosen_channels_for_cnn_ch,
         well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
         cnn_result = CNN.out
     }
-    else{
-    cnn_result = true
+    else {
+        cnn_result = true
     }
-//     MULT(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)
+    //     MULT(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)
     csv_ready = collect(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)
-//     csv_channel = Channel
-//         .of(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result )
-//         .max()
-//         .view { "Max value is $it" }
+    //     csv_channel = Channel
+    //         .of(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result )
+    //         .max()
+    //         .view { "Max value is $it" }
     csv_ready = true
-    if ( params.DO_GET_CSVS){
+    if (params.DO_GET_CSVS) {
         csv_ch = GETCSVS(csv_ready, experiment_ch)
-        csv_ch.view{ it }
+        csv_ch.view { it }
     }
 }
 
 workflow.onComplete {
-    log.info ( workflow.success ? "\nDone! Open the following report in your browser --> $params.outdir/pyexample_report.html\n" : "Oops .. something went wrong" )
+    log.info(workflow.success ? "\nDone! Open the following report in your browser --> $params.outdir/pyexample_report.html\n" : 'Oops .. something went wrong')
 }
