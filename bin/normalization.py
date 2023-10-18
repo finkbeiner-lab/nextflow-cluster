@@ -15,26 +15,33 @@ class Normalize(Ops):
         super().__init__(opt)
         self.flatfields = {}
         self.backgrounds = {}
-        self.image_correction = dict(division=self.division_flatfield,
-                                     subtraction=self.subtract_flatfield,
-                                     identity=self.identity,
-                                     rollingball=self.rolling_ball)
+        # self.image_correction = dict(division=self.division_flatfield,
+        #                              subtraction=self.subtract_flatfield,
+        #                              identity=self.identity,
+        #                              rollingball=self.rolling_ball)
         self.image_bg_correction = dict(division=self.division_bg,
                                         subtraction=self.subtract_bg,
                                         identity=self.identity_bg)
 
     def test(self):
+        """Save background corrected images for viewing"""
         _, analysisdir = self.get_raw_and_analysis_dir()
         savedir = os.path.join(analysisdir, 'NormalizedImages')
         if not os.path.exists(savedir):
             os.makedirs(savedir)
-        df = self.get_flatfields()
-        for i, row in df.iterrows():
-            print('row', row)
-            img = imageio.imread(row.filename)
-            img = np.uint16(self.image_correction[self.opt.img_norm_name](img, row.tile))
-            normpath = self.save_norm(img, row.filename, savedir)
-            print('normpath', normpath)
+        tiledata_df = self.get_tiledata_df()
+        tiledata_df.rename(columns={'id': 'tiledata_id'}, inplace=True)
+        g = tiledata_df.groupby(['well', 'timepoint'])
+        for (well, timepoint), df in g:
+            self.get_background_image(df, well, timepoint)
+            
+            for i, row in df.iterrows():
+                # print('row', row)
+                
+                img = imageio.imread(row.filename)
+                img = np.uint16(self.image_bg_correction[self.opt.img_norm_name](img, well, timepoint))
+                normpath = self.save_norm(img, row.filename, savedir)
+                print('normpath', normpath)
 
     def to_eight_bit(self, target):
         return np.uint8(target / np.max(target) * 255)
@@ -95,11 +102,12 @@ class Normalize(Ops):
             # Different timepoint, same tile
             filenames = df.loc[df.tile == i, 'filename'].tolist()
             random.seed(121)
-            if len(filenames):
+            if not len(filenames):
+                print(filenames)
                 print('ONLY ONE FILE: TOO FEW FOR BACKGROUND SUBTRACTION/DIVISION')
             filenames = random.sample(filenames, min(20, len(filenames)))
             for f in filenames:
-                img = imageio.imread(f)
+                img = imageio.v3.imread(f)
                 img_lst.append(img)
             flat = np.median(img_lst, axis=0)
             flat[flat < 1] = 1
@@ -147,7 +155,7 @@ class Normalize(Ops):
         img_lst = []
         filenames = df.filename.tolist()
         for f in filenames:
-            img = imageio.imread(f)
+            img = imageio.v3.imread(f)
             img_lst.append(img)
         bg = np.median(img_lst, axis=0)
         bg[bg < 1] = 1
@@ -193,7 +201,7 @@ class Normalize(Ops):
         name = name.split('.t')[0]  # split by tiff suffix
         if not os.path.exists(savedir):
             os.makedirs(savedir)
-        savepath = os.path.join(savedir, name + '_NORM.tif')
+        savepath = os.path.join(savedir, name + '_' + self.opt.img_norm_name + '-NORM.tif')
         cv2.imwrite(savepath, normed_image)
         return savepath
 
@@ -205,22 +213,22 @@ if __name__ == '__main__':
         help='Tiff image of last tile',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
-    parser.add_argument('--experiment', type=str)
-    parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity', 'rollingball'], type=str,
+    parser.add_argument('--experiment', default='20231005-MS-10-minisog-IF', type=str)
+    parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity', 'rollingball'], type=str,
                         help='Image normalization method using flatfield image.')
-    parser.add_argument("--wells_toggle",
+    parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include', 
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
-    parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+    parser.add_argument("--chosen_wells", "-cw", 
+                        dest="chosen_wells", default='A3',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='T0',
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc",
+    parser.add_argument("--chosen_channels", "-cc",default='RFP1',
                         dest="chosen_channels",
                         help="Specify channels to include or exclude.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")

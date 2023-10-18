@@ -7,16 +7,14 @@ library(optparse)
 source("rsql.R")
 
 option_list = list(
-    make_option(c("--exp"), type="character", default='20230807-KS1-neuron-optocrispr', 
+    make_option(c("--exp"), type="character", default='20231005-MS-10-minisog-IF', 
                 help="Experiment name", metavar="character"),
         make_option(c("--channel1"), type="character", default='RFP1', 
-    help="Well", metavar="character"),
+    help="Channel 1, numerator", metavar="character"),
         make_option(c("--channel2"), type="character", default='GFP-DMD1', 
+    help="Channel 2, denominator", metavar="character"),
+        make_option(c("--well"), type="character", default='A3', 
     help="Well", metavar="character"),
-        make_option(c("--well"), type="character", default='A4', 
-    help="Well", metavar="character"),
-    make_option(c("--timepoint"), type="integer", default=8, 
-    help="Well", metavar="integer"),
     make_option(c("-o", "--out"), type="character", default="survival.csv", 
                 help="output file name [default= %default]", metavar="character")
 ); 
@@ -59,6 +57,19 @@ df <- data %>%
   group_by(cellid, well, tile) %>%
   filter(any(timepoint==0)) %>%
   ungroup()
+
+# Create a jittered scatter plot
+channel1_df <- df %>% filter(channel==opt$channel1)
+channel2_df <- df %>% filter(channel==opt$channel2)
+
+ggplot(channel1_df, aes(x=timepoint, y=intensity_mean)) + 
+  geom_jitter(width=0.2) +  # The width argument controls the amount of jittering on the x-axis
+  labs(title=paste0(opt$channel1, ' ', opt$exp), x="Timepoint", y=opt$channel1) 
+
+
+ggplot(channel2_df, aes(x=timepoint, y=intensity_mean)) + 
+  geom_jitter(width=0.2) +  # The width argument controls the amount of jittering on the x-axis
+  labs(title=paste0(opt$channel2, ' ', opt$exp), x="Timepoint", y=opt$channel2) 
 
 # Calculate ratio
 df <- df %>%
@@ -111,6 +122,8 @@ autoplot(survival_df.KM)
 
 plot(survival_df.KM, col=c(2,4,6), xlab="Days", ylab="Survival", main=sprintf("Kaplan Meier %s", opt$exp))
 dev.off()
+
+
 
 cox = coxph(Surv(timepoint, is_dead) ~ stimulate, data=survival_df)
 summary(cox)

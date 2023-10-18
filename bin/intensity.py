@@ -31,31 +31,32 @@ class Intensity:
         self.opt = opt
         self.Norm = Normalize(self.opt)
         self.Op = Ops(self.opt)
+        
 
     def run(self):
         Db = Database()
-        # celldata_df = self.Op.get_celldata_df()
-        # print(f'Number of cells to start: {len(celldata_df)}')
-        # logger.warn(f'Number of cells to start: {len(celldata_df)}')
+        tiledata_df = self.Norm.get_df_for_training(['channeldata'])
+        morph_df = tiledata_df[tiledata_df.channel==self.opt.morphology_channel]  # select morphology channel
+        target_df = tiledata_df[tiledata_df.channel==self.opt.target_channel]  # select target channel
+        morph_group = morph_df.groupby(['well', 'timepoint'])  # group based on well and timepoint
+        target_group = target_df.groupby(['well', 'timepoint'])
 
-        tiledata_df = self.Norm.get_tiledata_df()
-        tiledata_df.rename(columns={'id': 'tiledata_id'}, inplace=True)
-        g = tiledata_df.groupby(['well', 'timepoint'])
-
-        for (well, timepoint), df in g:
+        for (well, timepoint), df in morph_group:
+            tdf = target_group.get_group((well, timepoint))  # get target df for well and timepoint
             logger.info(f'Getting intensity well {well} at timepoint {timepoint}')
             if df.maskpath.iloc[0] is None:
                 print(f'{well} T{timepoint} has null maskpath. Skipping. Check morphology channel.')
                 continue
-            self.Norm.get_background_image(df, well, timepoint)
-            welldata_id = df.welldata_id.iloc[0]
-            target_channel_uuid = Db.get_table_uuid('channeldata', dict(channel=self.opt.target_channel, welldata_id=welldata_id))
+            self.Norm.get_background_image(tdf, well, timepoint)  # get background image for well and timepoint based on target channel
+            welldata_id = df.welldata_id.iloc[0]  # get uuid for welldata
+            target_channel_uuid = Db.get_table_uuid('channeldata', dict(channel=self.opt.target_channel, welldata_id=welldata_id))  # get target channel uuid
 
-            for i, row in df.iterrows():  # df contains same well and timepoint, different tiles
+            for i, row in df.iterrows():  # df contains morphology maskpath. 
                 tile_strt = time()
                 logger.warning(f'row {row}')
                 print('maskpath', row.maskpath)
-                labelled_mask = imageio.v3.imread(row.maskpath)  # TODO: is opencv faster/ more memory efficient?
+                labelled_mask = imageio.v3.imread(row.maskpath)  
+                # Get filename of target channel tile
                 filename = Db.get_table_value('tiledata', column='filename', kwargs=dict(welldata_id=welldata_id,
                                                                           channeldata_id=target_channel_uuid,
                                                                           tile=int(row.tile),
@@ -66,25 +67,26 @@ class Intensity:
                     logger.warning(f'Filename for channel {self.opt.target_channel} is not found.')
                     continue
                 logger.info(f'filename {filename}')
-                img = imageio.v3.imread(filename[0][0])
-                img = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)
+                img = imageio.v3.imread(filename[0][0])  # read target tile
+                img = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)  # background correction
+                # celldata df for this tile
                 celldata_df = Db.get_df_from_query('celldata', dict(tiledata_id=row.tiledata_id))
-                celldata_df = pd.merge(tiledata_df, celldata_df, on='tiledata_id', how='inner', suffixes=[None, '_dontuse'])
-                if celldata_df.empty: continue
+                # Merge tiledata df for morphology with celldata (also for morphology)
+                celldata_df = pd.merge(celldata_df, morph_df, on='tiledata_id', how='inner', suffixes=[None, '_dontuse'])
+                if celldata_df.empty: continue  # if no cells found go to next tile
 
                 intensitycelldata_dcts = []
                 check_celldata_dct = dict(tiledata_id=row.tiledata_id,  # morphology tiledata_id
                                             channeldata_id=target_channel_uuid)
                 logger.info(f'Number of cells: {len(celldata_df)}')
-                z = set(celldata_df.randomcellid).symmetric_difference(np.unique(labelled_mask))
+                # Use untracked randomcellids with labelled mask to calculate intensity. This way tracking isn't needed.
+                z = set(celldata_df.randomcellid).symmetric_difference(np.unique(labelled_mask))  # check df has same randomcellids as labelled mask
                 for i, crow in celldata_df.iterrows():
-                    # offset channel?
-                    # print('row', row)
-                    # print('randomcellid', row.randomcellid)
                     if crow.randomcellid not in labelled_mask:
                         raise Exception(f'Cellid not in mask {crow.cellid} in {maskpath}')
-                    cell = img[labelled_mask == crow.randomcellid]
-                    intensity_max = float(np.max(cell))
+                    cell = img[labelled_mask == crow.randomcellid]  # array of intensity values for cell in target channel
+                    intensity_max = float(np.max(cell)) 
+
                     intensity_mean = float(np.sum(cell) / np.count_nonzero(cell))
                     nonzero_arr = cell[cell!=0]
                     intensity_min = float(np.min(nonzero_arr)) if len(nonzero_arr) else 0
@@ -107,66 +109,6 @@ class Intensity:
 
 
 
-        ###############################
-        
-        # for (welldata_id, tile, timepoint), df in groups:
-        #     target_channel_uuid = Db.get_table_uuid('channeldata', dict(channel=self.opt.target_channel, welldata_id=welldata_id))
-        #     print(f'tile: {tile} timepoint {timepoint}')
-        #     logger.info(f'tile: {tile} timepoint {timepoint}')
-        #     # trackedmaskpath = df.trackedmaskpath.iloc[0]
-        #     maskpath = df.maskpath.iloc[0]
-
-        #     print(f'maskpath {maskpath}')
-        #     labelled_mask = imageio.v3.imread(maskpath)
-        #     # labelled_mask = imageio.v3.imread(trackedmaskpath)
-
-        #     filename = Db.get_table_value('tiledata', column='filename', kwargs=dict(welldata_id=welldata_id,
-        #                                                                   channeldata_id=target_channel_uuid,
-        #                                                                   tile=int(tile),
-        #                                                                   timepoint=int(timepoint)
-        #                                                                   ))
-        #     if filename is None: raise Exception(f'Filename for channel {self.opt.target_channel} is not found.')
-        #     print(f'filename {filename}')
-        #     img = imageio.v3.imread(filename[0][0])
-        #     img = self.Norm.image_correction[self.opt.img_norm_name](img, tile)
-
-        #     intensitycelldata_dcts = []
-        #     check_celldata_dct = dict(tiledata_id=df.tiledata_id.iloc[0],  # morphology tiledata_id
-        #                                 channeldata_id=target_channel_uuid)
-        #     print(f'Number of cells: {len(df)}')
-        #     logger.info(f'Number of cells: {len(df)}')
-        #     print('cellids')
-        #     z = set(df.randomcellid).symmetric_difference(np.unique(labelled_mask))
-        #     print('extra cellids', z)
-        #     for i, row in df.iterrows():
-        #         # offset channel?
-        #         # print('row', row)
-        #         # print('randomcellid', row.randomcellid)
-        #         if row.randomcellid not in labelled_mask:
-        #             raise Exception(f'Cellid not in mask {row.cellid} in {maskpath}')
-        #         logger.info(f'randomcellid {row.randomcellid}')
-        #         cell = img[labelled_mask == row.randomcellid]
-        #         intensity_max = float(np.max(cell))
-        #         intensity_mean = float(np.sum(cell) / np.count_nonzero(cell))
-        #         nonzero_arr = cell[cell!=0]
-        #         intensity_min = float(np.min(nonzero_arr)) if len(nonzero_arr) else 0
-        #         # intensity_std = float(np.std(nonzero_arr)) if len(nonzero_arr) else 0
-        #         intensitycelldata_dcts.append(dict(experimentdata_id=row.experimentdata_id,
-        #                                            welldata_id=row.welldata_id,
-        #                                            tiledata_id=row.tiledata_id,
-        #                                            celldata_id=row.id,
-        #                                            channeldata_id=target_channel_uuid,
-        #                                            intensity_max=intensity_max,
-        #                                            intensity_mean=intensity_mean,
-        #                                            intensity_min=intensity_min))
-        #     # Clears intensity for cell in the tile with the selected channel
-        #     Db.delete_based_on_duplicate_name(tablename='intensitycelldata', kwargs=check_celldata_dct)
-        #     Db.add_row(tablename='intensitycelldata', dct=intensitycelldata_dcts)
-
-        # with open(self.opt.outfile, 'w') as f:
-        #     f.write(f'Updated intensity {self.opt.chosen_channels} in intensitycelldata database.')
-        # print('Done.')        # read data
-
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -179,7 +121,7 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--experiment', default = '20231002-1-MSN-taueos', type=str)
+    parser.add_argument('--experiment', default = '20231005-MS-10-minisog-IF', type=str)
     parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument("--wells_toggle", default='include', 
@@ -189,14 +131,17 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='B3',
+                        dest="chosen_wells", default='A3',
                         help="Specify wells to include or exclude")
-    parser.add_argument("--chosen_timepoints", "-ct", default='T0',
+    parser.add_argument("--chosen_timepoints", "-ct", default='',
                         dest="chosen_timepoints", 
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc", default='GFP-DMD1',
+    parser.add_argument("--chosen_channels", "-cc", default='',
                         dest="chosen_channels",
-                        help="Morphology Channel")
+                        help="Filter channels, only for speed")
+    parser.add_argument("--morphology_channel", default='GFP-DMD1',
+                    dest="morphology_channel",
+                    help="Morphology Channel")
     parser.add_argument("--target_channel", default='RFP1',
                         dest="target_channel",
                         help="Get intensity of this channel.")

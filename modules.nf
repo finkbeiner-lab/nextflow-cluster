@@ -163,7 +163,7 @@ process INTENSITY {
     script:
     """
     intensity.py --experiment ${exp} --img_norm_name ${img_norm_name}  \
-    --chosen_channels ${morphology_channel} --target_channel ${target_channel} \
+    --morphology_channel ${morphology_channel} --target_channel ${target_channel} \
     --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
     """

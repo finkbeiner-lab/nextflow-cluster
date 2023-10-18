@@ -139,6 +139,7 @@ class Ops:
                     print(f'Selected channels for ML: {selected_channels}')
                     table_df = self.filter_df(table_df, 'channel', selected_channels, self.opt.channels_toggle)
                 df = pd.merge(df, table_df, left_on='channeldata_id', right_on='id', how='inner', suffixes=[None, '_dontuse'])
+        df = df.loc[:, ~df.columns.str.contains('_dontuse')]
         return df
     
     def get_punctadata_df(self):
