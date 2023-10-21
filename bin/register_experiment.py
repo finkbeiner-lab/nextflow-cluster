@@ -25,12 +25,14 @@ import re
 import argparse
 import datetime
 from glob import glob
-import image_analysis_modules.utils as utils
+import utils
 import logging
 from template_pycro import TemplateClass
 from template_QC import TemplateQC
 from ixm2galaxy import ConvertTemplate
+from robo2galaxy import RoboConvertTemplate
 import uuid
+from time import time
 
 logger = logging.getLogger("Folder2Db")
 # logger.propagate = False
@@ -109,17 +111,19 @@ class Intro:
 
         # Argument parsing
         parser = argparse.ArgumentParser(description="Process cell data.")
-        parser.add_argument("--input_path",
+        parser.add_argument("--input_path",default='/gladstone/finkbeiner/robodata/Robo4Images/20230920-MsDS-GFP',
                             help="Folder path to input data.")
-        parser.add_argument("--output_path",
+        parser.add_argument("--output_path", default='/gladstone/finkbeiner/linsley/Shijie/NewGalaxy/GXYTMP-20230920-MsDS-GFP',
                             help="Folder path to ouput results.")
         parser.add_argument("--template_path",
                             help="Path to xlsx template. It should be in ~/Microscope/Templates_sent on the computer you ran the job on.")
-        parser.add_argument("--platemap_path", help="Path to csv platemap.")
+        parser.add_argument("--platemap_path", default= '/gladstone/finkbeiner/robodata/Robo4Images/20230920-MsDS-GFP/20230920-MsDS-GFP-platemap.csv', help="Path to csv platemap.")
         parser.add_argument("--ixm_hts_file", help="Path to IXM HTS Template File.")
+        parser.add_argument("--robo_file", default='/gladstone/finkbeiner/robodata/Robo4Images/20230920-MsDS-GFP/20230920-MsDS-GFP.csv', help="Path to CSV Template File (Legacy template).")
         parser.add_argument("--illumination_file", default=r'/gladstone/finkbeiner/robodata/IXM Documents/illumination-setting-2023-06-16.ILS',
                             help="Path to IXM Illumination file. On metaxpres -> Control -> Devices -> Configure Illumination -> Backup")
-        parser.add_argument("--robo_num",
+        parser.add_argument("--overwrite_experiment", default=0, choices=[0,1], help='If 1, overwrite experiment.')
+        parser.add_argument("--robo_num", default=0, 
                             type=int,
                             help="Robo number")
         parser.add_argument("--wells_toggle",
@@ -129,7 +133,7 @@ class Intro:
         parser.add_argument("--channels_toggle",
                             help="Chose whether to include or exclude specified channels.")
         parser.add_argument("--chosen_wells", "-cw",
-                            dest="chosen_wells", default='',
+                            dest="chosen_wells", default='all',
                             help="Specify wells to include or exclude")
         parser.add_argument("--chosen_timepoints", "-ct",
                             dest="chosen_timepoints", default='',
@@ -151,8 +155,7 @@ class Intro:
         if not os.path.exists(output_path):
             os.makedirs(output_path)
             logger.warn(f'Created Directory {output_path}')
-
-        # TODO: if IXM, convert template, save as args.template_path
+        assert not (args.ixm_hts_file is not None and len(args.ixm_hts_file) > 0 and args.robo_file is not None and len(args.robo_file) > 0), 'Only IXM template or legacy roboscope template may be entered at one time.'
         if args.ixm_hts_file is not None and len(args.ixm_hts_file) > 0:
             print('IXM Template File: ', args.ixm_hts_file)
             new_template_path = os.path.join(output_path, 'ixm_template.xlsx')
@@ -162,6 +165,15 @@ class Intro:
             logger.warn(f'Converted template from IXM to XLSX.')
             logger.warn(f'Template path set to {args.template_path}')
         
+        if args.robo_file is not None and len(args.robo_file) > 0:
+            print(f'Robo file (old template): {args.robo_file}')
+            new_template_path = os.path.join(output_path, 'robo_template.xlsx')
+            Conv = RoboConvertTemplate(new_template_path)
+            Conv.convert_template(args.robo_file)
+            args.template_path = new_template_path
+            logger.info(f'Converted template from CSV to XLSX.')
+            logger.info(f'Template path set to {args.template_path}')
+  
         # If platemap is given as an arg
         if args.platemap_path is not None:
             platemap_path = str.strip(args.platemap_path)
@@ -220,6 +232,9 @@ class Intro:
         current_experiment = files_df.experiment.iloc[0]
         # Dataframe filtered by user. Now add to database.
         Db = Database()
+        if int(args.overwrite_experiment):
+            Db.delete_based_on_duplicate_name('experimentdata', dict(experiment=File.current_experiment))
+            
         self.write_to_experimentdata(input_path, output_path, File, Db)
         exp_uuid = Db.get_table_uuid('experimentdata', dict(experiment=current_experiment))
         
@@ -259,17 +274,31 @@ class Intro:
 
 
     def write_to_experimentdata(self, input_path, output_path, File, Db):
+        now = datetime.datetime.now()
+        analysisdate = f'{now.year}-{now.month:02}-{now.day:02}'
         exp_dct = dict(experiment=File.current_experiment,
+                       microscope=File.current_microscope,
                        researcher=File.exp.Author.iloc[0],
                        description=File.exp.Description.iloc[0],
-                       project=File.exp.Description.iloc[0],  # TODO: add project column in template
+                       project=File.exp.Description.iloc[0],  
                        platetype=File.exp.Plate.iloc[0],
                        wellcount=int(File.exp.WellCount.iloc[0]),
+                       analysisdate = analysisdate,
                        imagedir=input_path,
                        analysisdir=output_path
                        )
+        # check_exp = dict(experiment=File.current_experiment,
+        #                microscope=File.current_microscope,
+        #                researcher=File.exp.Author.iloc[0],
+        #                description=File.exp.Description.iloc[0],
+        #                project=File.exp.Description.iloc[0],  
+        #                platetype=File.exp.Plate.iloc[0],
+        #                wellcount=int(File.exp.WellCount.iloc[0]),
+        #                imagedir=input_path,
+        #                analysisdir=output_path
+        #                )
         logger.warn(f'exp dct {exp_dct}')
-        Db.delete_based_on_duplicate_name('experimentdata', exp_dct)
+        # Db.delete_based_on_duplicate_name('experimentdata', check_exp)
         Db.add_row('experimentdata', exp_dct)
 
     def write_to_tiledata_from_files(self, files_df, overlap, Db, exp_uuid, wells):
@@ -277,26 +306,33 @@ class Intro:
         check_tile_dcts = []
         exp = files_df.experiment.iloc[0]
         print('exp_uuid', exp_uuid)
+        channel_uuid_dict ={}
 
         for well in wells:
+            strt = time()
             well_uuid = Db.get_table_uuid('welldata', dict(experimentdata_id=exp_uuid, well=well))
             logger.warn(f'Well uuid for tiledata {well_uuid}')
             print(f'Well uuid for tiledata {well_uuid}')
             well_files_df = files_df.loc[files_df.well == well]
-            
+            print(f'Filtered df {time() - strt:.2f}')
             for i, row in well_files_df.iterrows():
                 logger.warn(f'Tiledata row {row}')
-                channel_uuid = Db.get_table_uuid('channeldata', dict(welldata_id=well_uuid, channel=row.channel))
-                print('channel', row.channel)
-                print(f'Channel uuid for tiledata {channel_uuid}')
-                logger.warn(f'Channel uuid for tiledata {channel_uuid}')
+                if (well_uuid, row.channel) in channel_uuid_dict:
+                    channel_uuid = channel_uuid_dict[(well_uuid, row.channel)]
+                else:
+                    channel_uuid = Db.get_table_uuid('channeldata', dict(welldata_id=well_uuid, channel=row.channel))
+                    channel_uuid_dict[(well_uuid, row.channel)] = channel_uuid
+                # print('channel', row.channel)
+                # print(f'Channel uuid for tiledata {channel_uuid}')
+                # logger.warn(f'Channel uuid for tiledata {channel_uuid}')
                 check_tile_dcts.append(dict(experimentdata_id=exp_uuid,
                                                     welldata_id=well_uuid,
                                                     channeldata_id=channel_uuid,
                                                     tile=int(row.tile),
                                                     timepoint=int(row.timepoint),
                                                     ))
-                tile_dcts.append(dict(experimentdata_id=exp_uuid,
+                tile_dcts.append(dict(id=uuid.uuid4(),
+                                      experimentdata_id=exp_uuid,
                                       welldata_id=well_uuid,
                                       channeldata_id=channel_uuid,
                                       tile=int(row.tile),
@@ -309,6 +345,8 @@ class Intro:
                                       filename=row.filename,
                                       )
                                  )
+            print(f'Looped through filepaths {time() - strt:.2f}')
+        
         for tile_dct in check_tile_dcts:
             Db.delete_based_on_duplicate_name('tiledata', tile_dct)
         Db.add_row('tiledata', tile_dcts)

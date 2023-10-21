@@ -214,7 +214,7 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
     parser.add_argument('--experiment', default='20231005-MS-10-minisog-IF', type=str)
-    parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity', 'rollingball'], type=str,
+    parser.add_argument('--img_norm_name', default='division', choices=['division', 'subtraction', 'identity', 'rollingball'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
@@ -223,10 +223,10 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw", 
-                        dest="chosen_wells", default='A3',
+                        dest="chosen_wells", default='C8',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='T0',
+                        dest="chosen_timepoints", default='',
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc",default='RFP1',
                         dest="chosen_channels",

@@ -13,16 +13,17 @@ params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20231005-MS-10-minisog-IF'  // Experiment name
-params.morphology_channel = 'GFP-DMD1'  // Your morphology channel
+params.experiment = '20230928-MsNeu-RGEDItau1'  // Experiment name
+params.morphology_channel = 'Confocal-GFP16'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
-params.img_norm_name = 'identity' // ['identity', 'subtraction', 'division']
+params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
 
 // SELECT MODULES
-params.DO_UPDATEPATHS = true
+params.DO_UPDATEPATHS = false
 params.DO_REGISTER_EXPERIMENT = false
-params.DO_SEGMENTATION = false
-params.DO_TRACKING = false
+params.DO_SEGMENTATION = true
+params.DO_CELLPOSE_SEGMENTATION = false
+params.DO_TRACKING = true
 params.DO_INTENSITY = false
 params.DO_CROP = false
 params.DO_MONTAGE = false
@@ -45,7 +46,7 @@ params.chosen_channels_for_register_exp = ''  // blank for all. USED BY REG
 // SEGMENTATION
 params.segmentation_method = 'sd_from_mean' // ['sd_from_mean', 'triangle', 'minimum', 'yen']
 params.lower_area_thresh = 50
-params.upper_area_thresh = 2500
+params.upper_area_thresh = 36000
 params.sd_scale_factor = 3.5
 
 // CELLPOSE SEGMENTATION
@@ -176,6 +177,15 @@ workflow {
     }
     else {
         seg_result = true
+    }
+    if (params.DO_CELLPOSE_SEGMENTATION) {
+        cellpose_ch = CELLPOSE(register_result, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
+        well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
+        cellpose_ch.view { it }
+        cellpose_result = CELLPOSE.out
+    }
+    else {
+        cellpose_result = true
     }
     if (params.DO_TRACKING) {
         track_ch = TRACKING(seg_result, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, tp_ch, morphology_ch,

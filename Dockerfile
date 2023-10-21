@@ -42,6 +42,7 @@ RUN apt-get update && \
     update-ca-certificates -f;
 
 RUN conda install matplotlib
+RUN conda install openpyxl
 
 # Setup JAVA_HOME -- useful for docker commandline
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/

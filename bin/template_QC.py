@@ -105,14 +105,14 @@ class TemplateQC:
 
         for i, row in df.iterrows():
 
-            assert not pd.isna(row.Exposure), 'camera exposure must be set'
-            if isinstance(row.Exposure, str):
-                assert ':' not in row.Exposure
-                exposure_vals = row.Exposure.split(';')
-                for exposure in exposure_vals:
-                    assert exposure.isnumeric(), f'exposure {exposure} is not numeric'
-            else:
-                assert 0 < row.Exposure < 20000, f'check Exposure in template, {row.Exposure}'
+            if not pd.isna(row.Exposure):
+                if isinstance(row.Exposure, str):
+                    assert ':' not in row.Exposure
+                    exposure_vals = row.Exposure.split(';')
+                    for exposure in exposure_vals:
+                        assert exposure.isnumeric(), f'exposure {exposure} is not numeric'
+                else:
+                    assert 0 < row.Exposure < 20000, f'check Exposure in template, {row.Exposure}'
 
             if isinstance(row.Show_Image, str):
                 assert ':' not in row.Show_Image
@@ -175,12 +175,13 @@ class TemplateQC:
             else:
                 exposures = [row.Exposure]
             for e in exposures:
-                try:
-                    assert int(e) >= 0, f"{e} is not greater than or equal to 0."
-                except ValueError as err:
-                    logger.error(f'Value {e} cannot be converted to int\n{err}')
-                    print(f'Value {e} cannot be converted to int\n{err}')
-                    raise err
+                if isinstance(e, str):
+                    try:
+                        assert int(e) >= 0, f"{e} is not greater than or equal to 0."
+                    except ValueError as err:
+                        logger.error(f'Value {e} cannot be converted to int\n{err}')
+                        print(f'Value {e} cannot be converted to int\n{err}')
+                        raise err
 
             if not pd.isna(row.ExcitationIntensity):
                 excitations = df.ExcitationIntensity.iloc[0].split(':')

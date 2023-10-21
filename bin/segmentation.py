@@ -223,7 +223,7 @@ if __name__ == '__main__':
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc",
                         dest="chosen_channels", default='GFP-DMD1',
-                        help="Specify channels to include or exclude.")
+                        help="Morphology channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()
     print(args)

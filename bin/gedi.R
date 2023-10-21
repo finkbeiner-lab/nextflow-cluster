@@ -46,17 +46,17 @@ channeldata.channel, welldata.well, dosagedata.name, celldata.stimulate
 print(query)
 exp_row = get_row('experimentdata', sprintf("experiment=\'%s\'", opt$exp))
 analysisdir = exp_row[1, 'analysisdir']
-data <- get_df(query)
+df <- get_df(query)
 
-group_counts <- data %>%
-  group_by(cellid, well, tile) %>%
-  filter(any(timepoint==0)) %>%
-  tally()
+# group_counts <- data %>%
+#   group_by(cellid, well, tile) %>%
+#   filter(any(timepoint==0)) %>%
+#   tally()
 
-df <- data %>%
-  group_by(cellid, well, tile) %>%
-  filter(any(timepoint==0)) %>%
-  ungroup()
+# df <- data %>%
+#   group_by(cellid, well, tile) %>%
+#   filter(any(timepoint==0)) %>%
+#   ungroup()
 
 # Create a jittered scatter plot
 channel1_df <- df %>% filter(channel==opt$channel1)
@@ -82,7 +82,13 @@ print('Calculated Ratio')
 #   filter(!is.na(ratio))
 # print('Filtered Nan')
 # Threshold gedi ratio
-gedi_threshold=2
+
+ggplot(df, aes(x=timepoint, y=ratio)) + 
+  geom_jitter(width=0.2) +  # The width argument controls the amount of jittering on the x-axis
+
+  labs(title=paste0('ratio', ' ', opt$exp), x="Timepoint", y='ratio') 
+
+gedi_threshold=.1
 df <- df %>%
   mutate(is_dead = ratio > gedi_threshold)
 print('Thresholded gedi ratio.')

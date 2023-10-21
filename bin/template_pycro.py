@@ -145,7 +145,7 @@ class TemplateClass:
             try:
                 self.platemap = pd.read_excel(self.template, sheet_name='platemap')
             except:
-                print('In excel template, platemap sheet does not exist.')
+                print('Warning: In excel template, platemap sheet does not exist.')
 
             self.parent_dir = self.exp.ImageFolder.iloc[0]
             self.current_experiment = self.exp.ExperimentName.iloc[0]
