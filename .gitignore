@@ -6,3 +6,5 @@ work/
 __pycache__/
 *.html
 *.txt
+*.csv
+core.*

@@ -5,12 +5,12 @@ Solver for minflow Linear Program based on gurobi
 from pyomo.environ import *
 import numpy as np
 from gurobipy import *
-from pyutilib.services import register_executable
-import pyutilib.subprocess.GlobalData
+# from pyutilib.services import register_executable
+# import pyutilib.subprocess.GlobalData
 
-pyutilib.subprocess.GlobalData.DEFINE_SIGNAL_HANDLERS_DEFAULT = False
+# pyutilib.subprocess.GlobalData.DEFINE_SIGNAL_HANDLERS_DEFAULT = False
 
-register_executable(name='gurobi')  # glpsol
+# register_executable(name='gurobi')  # glpsol
 # import logging
 # logger = logging.getLogger("Tracking")
 

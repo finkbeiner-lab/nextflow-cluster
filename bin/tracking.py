@@ -1,3 +1,5 @@
+#!/opt/conda/bin/python
+
 import imageio
 import pickle
 import shutil
@@ -10,10 +12,10 @@ print('working dir', os.getcwd())
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from image_analysis_modules.track_cells_res.minimum_flow import MinimumFlow
-from image_analysis_modules.track_cells_res.solver import SolverSmall
-from image_analysis_modules.track_cells_res.output_helper import OutputSmall
-from image_analysis_modules.track_cells_res.tracking_graph import Graph
+from track_cells_res.minimum_flow import MinimumFlow
+from track_cells_res.solver import SolverSmall
+from track_cells_res.output_helper import OutputSmall
+from track_cells_res.tracking_graph import Graph
 import os
 import warnings
 import matplotlib.pyplot as plt
@@ -137,6 +139,8 @@ class TrackCells:
                 # Get files
                 f_prev, f_prev_mask = self.filtered_celldata.loc[self.filtered_celldata.timepoint == prev_timepoint, ['filename', 'maskpath']].iloc[0]
                 f_curr, f_curr_mask = self.filtered_celldata.loc[self.filtered_celldata.timepoint == current_timepoint, ['filename', 'maskpath']].iloc[0]
+                import pdb
+                pdb.set_trace()
                 f_curr_mask_relabelled = f_curr_mask.split('ENCODED.tif')[0] + 'TRACKED.tif'
                 logger.warn(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
                 print(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
@@ -361,7 +365,7 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.pkl'
     )
     parser.add_argument(
-        '--experiment',
+        '--experiment',default='20230928-MsNeu-RGEDItau1',
         help='Plate name',
         # default='SB26-30plate1'  # AB-CS47iTDP-Survival LINCS062016A AB-SOD1-KW4-WTC11-Survival
         # default='KS-AB-iMN-TDP43-Survival'  # AB-CS47iTDP-Survival LINCS062016A LINCS092016B
@@ -369,7 +373,7 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        '--DISTANCE_THRESHOLD',
+        '--DISTANCE_THRESHOLD', default=300,
         help='Distance to determine a cell is a new cell.'
     )
     parser.add_argument(
@@ -381,7 +385,7 @@ if __name__ == '__main__':
         dest='USE_PROXIMITY')
     parser.add_argument(
         '--VORONOI_BOOL',
-        action='store',
+        action='store',default=VORONOI_BOOL,
         help='Use Voronoi Regions. Otherwise uses proximity tracking.',
         type=str2bool,
         dest='VORONOI_BOOL')
@@ -406,14 +410,14 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+                        dest="chosen_wells", default='B4',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
                         dest="chosen_timepoints", default='',
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc",
+    parser.add_argument("--chosen_channels", "-cc", default='Confocal-GFP16',
                         dest="chosen_channels",
-                        help="Specify channels to include or exclude.")
+                        help="Morphology Channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
 
     args, _ = parser.parse_known_args()

@@ -43,7 +43,8 @@ RUN apt-get update && \
 
 RUN conda install matplotlib
 RUN conda install openpyxl
-
+RUN pip install pyomo
+RUN conda install -c gurobi gurobi
 # Setup JAVA_HOME -- useful for docker commandline
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 RUN export JAVA_HOME

@@ -151,7 +151,7 @@ class Segmentation:
                                                                         channeldata_id=row.channeldata_id,
                                                                         tile=row.tile,
                                                                         timepoint=row.timepoint,
-                                                                        segmentationmethod=f'{self.segmentation_method}'))
+                                                                        ))  # TODO: add segmentationmethod=f'{self.segmentation_method}' with analysis version
             update_celldata_and_intensitycelldata(row, props_df, Db)
             print(f'Finished tile {row.tile} for well + timepoint in {time() - tile_strt:.2f}')
 
@@ -196,7 +196,7 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
 
-    parser.add_argument('--experiment',default='20230807-KS1-neuron-optocrispr', type=str)
+    parser.add_argument('--experiment',default='20230928-MsNeu-RGEDItau1', type=str)
 
     parser.add_argument('--segmentation_method', default='sd_from_mean', choices=['sd_from_mean', 'minimum', 'yen', 'local', 'li', 'isodata', 'mean',
                                                           'otsu', 'sauvola', 'triangle', 'manual', 'tryall'], type=str,
@@ -204,9 +204,7 @@ if __name__ == '__main__':
     parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument('--lower_area_thresh', default=50, type=int, help="Lowerbound for cell area. Remove cells with area less than this value.")
-    parser.add_argument('--upper_area_thresh', default=2500, type=int, help="Upperbound for cell area. Remove cells with area greater than this value.")
-    parser.add_argument('--lower_intensity_thresh', default=0, type=int, help="Lowerbound for cell intensity. Remove cells with intensity less than this value.")
-    parser.add_argument('--upper_intensity_thresh', default=2500, type=int, help="Upperbound for cell area. Remove cells with intensity greater than this value.")
+    parser.add_argument('--upper_area_thresh', default=36000, type=int, help="Upperbound for cell area. Remove cells with area greater than this value.")
     parser.add_argument('--sd_scale_factor', default=3.5, type=float, help="Standard Deviation (SD) scale factor if using sd_from_mean threshold.")
     parser.add_argument('--manual_thresh', default=0, type=int, help="Threshold if using manual threshold method.")
     parser.add_argument("--wells_toggle", default='include',
@@ -216,13 +214,13 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='E7',
+                        dest="chosen_wells", default='B1',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
                         dest="chosen_timepoints", default='T0',
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc",
-                        dest="chosen_channels", default='GFP-DMD1',
+                        dest="chosen_channels", default='Confocal-GFP16',
                         help="Morphology channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()
