@@ -139,8 +139,6 @@ class TrackCells:
                 # Get files
                 f_prev, f_prev_mask = self.filtered_celldata.loc[self.filtered_celldata.timepoint == prev_timepoint, ['filename', 'maskpath']].iloc[0]
                 f_curr, f_curr_mask = self.filtered_celldata.loc[self.filtered_celldata.timepoint == current_timepoint, ['filename', 'maskpath']].iloc[0]
-                import pdb
-                pdb.set_trace()
                 f_curr_mask_relabelled = f_curr_mask.split('ENCODED.tif')[0] + 'TRACKED.tif'
                 logger.warn(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
                 print(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
