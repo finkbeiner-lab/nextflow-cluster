@@ -13,7 +13,7 @@ params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20230928-MsNeu-RGEDItau1'  // Experiment name
+params.experiment = '20230920-MsDS-GFP'  // Experiment name
 params.morphology_channel = 'Confocal-GFP16'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
@@ -73,8 +73,8 @@ params.montage_pattern = 'standard'  // ['standard', 'legacy']
 
 // CNN
 params.label_type = 'stimulate'  // 'celltype', 'name', 'stimulate'
-params.label_name = null //Match the kind of dosage added. Treatment, Antibody, Inhibitor, etc
-params.classes = null //Comma separated list of classes. If all classes in experiment, leave blank.
+params.label_name = null // Match the kind of dosage added. Treatment, Antibody, Inhibitor, etc
+params.classes = null // Comma separated list of classes. If all classes in experiment, leave blank.
 params.img_norn_name_cnn = 'identity' // identity, subtraction, division
 params.filters = 'name,cry2mscarlet' // oolumnname,value used to filter down datasets
 params.chosen_channels_for_cnn = 'RFP1,RFP2'  // blank for all. Select which channels will be included in input
@@ -85,6 +85,9 @@ params.batch_size = 16  // Number of images the model sees simulataneously. 16, 
 params.learning_rate = 1e-4
 params.momentum = 0.9  // Only for Stochastic Gradient Descent (SGD)
 params.optimizer = 'adam' // 'adam', 'sgd'
+
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 input_path_ch = Channel.of(params.input_path)
 output_path_ch = Channel.of(params.output_path)
@@ -141,6 +144,7 @@ log.info """\
     timepoints: ${params.chosen_timepoints}
     channels: ${params.chosen_channels}
     Register Experiment: ${params.DO_REGISTER_EXPERIMENT}
+    Update Database Paths: ${params.DO_UPDATEPATHS}
     Segmentation: ${params.DO_SEGMENTATION}
     Tracking: ${params.DO_TRACKING}
     Intensity: ${params.DO_INTENSITY}

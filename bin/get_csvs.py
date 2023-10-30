@@ -20,7 +20,7 @@ logname = os.path.join(fink_log_dir, f'CSV-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Registering experiment with database.')
+logger.warning('Registering experiment with database.')
 
 class GetCSVS:
     def __init__(self, opt):

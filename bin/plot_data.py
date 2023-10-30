@@ -24,7 +24,7 @@ logname = os.path.join(fink_log_dir, f'Plot-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Plotting.')
+logger.warning('Plotting.')
 
 class PlotTable:
     def __init__(self, opt):

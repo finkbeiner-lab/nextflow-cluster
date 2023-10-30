@@ -21,7 +21,7 @@ logname = os.path.join(fink_log_dir, f'PlateMontage-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Running Plate Montage from Database.')
+logger.warning('Running Plate Montage from Database.')
 
 class PlateMontage(Montage):
     def __init__(self, opt):
@@ -31,7 +31,7 @@ class PlateMontage(Montage):
         self.Dbops = Ops(self.opt)
         self.Db = Database()
         self.imagedir, self.analysisdir = self.Dbops.get_raw_and_analysis_dir()
-        logger.warn(f'Analysis dir : {self.analysisdir}')
+        logger.warning(f'Analysis dir : {self.analysisdir}')
 
     def run(self):
         tiledata_df = self.Norm.get_flatfields_for_training(['channeldata'])
@@ -39,27 +39,27 @@ class PlateMontage(Montage):
         channels = tiledata_df.channel.unique()
         timepoints = tiledata_df.timepoint.unique()
         groups = tiledata_df.groupby(by='timepoint')
-        logger.warn(f'Tiledata length: {len(tiledata_df)}')
+        logger.warning(f'Tiledata length: {len(tiledata_df)}')
         wells = tiledata_df.well.unique()
         rows = sorted(list(np.unique([w[0] for w in wells])))
         cols = sorted(list(np.unique([int(w[1:]) for w in wells])))
         plate_montage = np.zeros((len(rows) * self.opt.img_size, len(cols) * self.opt.img_size), dtype='uint8')
         for timepoint in timepoints:
             for channel in channels:
-                logger.warn(f'Running tp {timepoint}')
+                logger.warning(f'Running tp {timepoint}')
                 savepath = os.path.join(self.montagedir, f'{self.opt.experiment}_{channel}_plate-montage-T{timepoint}.png')
 
                 tp_df = tiledata_df[(tiledata_df.timepoint == timepoint) & (tiledata_df.channel==channel)]
                 groups = tp_df.groupby('well')
                 for well, df in groups:
-                    logger.warn(f'running {well}')
+                    logger.warning(f'running {well}')
                     well_montage = self.single_montage(df, savebool=False)
 
                     row = well[0]
                     col = int(well[1:])
                     ridx = rows.index(row)
                     cidx = cols.index(col)
-                    logger.warn(f'Well montage: {np.size(well_montage)}')
+                    logger.warning(f'Well montage: {np.size(well_montage)}')
                     img = cv2.resize(well_montage, dsize=(self.opt.img_size, self.opt.img_size), interpolation=cv2.INTER_AREA)
                     img = np.clip(img / self.opt.norm_intensity * 255, 0, 255)
                     img = img.astype('uint8')
@@ -69,7 +69,7 @@ class PlateMontage(Montage):
                 imageio.v3.imwrite(savepath, plate_montage)
         with open(self.opt.outfile, 'w') as f:
             f.write(f'Plate Montaged Images.')
-        logger.warn(f"Saved to {self.opt.outfile}")
+        logger.warning(f"Saved to {self.opt.outfile}")
         print('Done.')
 
 

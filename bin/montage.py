@@ -19,7 +19,7 @@ logname = os.path.join(fink_log_dir, f'Montage-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Running Montage from Database.')
+logger.warning('Running Montage from Database.')
 
 
 class Montage:
@@ -55,7 +55,7 @@ class Montage:
         savepath = None
         mont = None
         overlap = 0  # TODO: use overlap?
-        logger.warn(f'Length of df: {len(df)} and max tile: {df.tile.max()}')
+        logger.warning(f'Length of df: {len(df)} and max tile: {df.tile.max()}')
         print(f'Length of df: {len(df)} and max tile: {df.tile.max()}')
         df = df.sort_values('tile')
         if len(df) == df.tile.max():
@@ -74,7 +74,7 @@ class Montage:
                 images.append(cleaned_im)
         num_tiles = len(images)
         print(num_tiles)
-        logger.warn(f'Num tiles: {num_tiles}')
+        logger.warning(f'Num tiles: {num_tiles}')
         side = int(np.sqrt(num_tiles))
         if num_tiles:
             h, w = np.shape(images[0])

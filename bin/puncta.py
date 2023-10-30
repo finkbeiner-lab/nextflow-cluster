@@ -27,7 +27,7 @@ logname = os.path.join(fink_log_dir, f'Puncta-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Registering experiment with database.')
+logger.warning('Registering experiment with database.')
 
 
 class Puncta:
@@ -57,7 +57,7 @@ class Puncta:
         groups = celldata_df.groupby(by=['welldata_id', 'tile', 'timepoint'])
         print(f'Number of tiles to start: {len(groups)}')
         for (welldata_id, tile, timepoint), df in groups:
-            logger.warn(f'Getting puncta for tile: {tile} at T{timepoint} with uuid: {welldata_id}')
+            logger.warning(f'Getting puncta for tile: {tile} at T{timepoint} with uuid: {welldata_id}')
             target_channel_uuid = Db.get_table_uuid('channeldata', dict(channel=self.opt.target_channel,
                                                                         welldata_id=welldata_id))
 
@@ -89,7 +89,7 @@ class Puncta:
         puncta_in_tile = 0
         labelled_mask = imageio.v3.imread(trackedmaskpath)
         target = imageio.v3.imread(filename)
-        logger.warn(f'Running difference of gaussians for puncta with sigma1: {sigma1} and sigma2: {sigma2}')
+        logger.warning(f'Running difference of gaussians for puncta with sigma1: {sigma1} and sigma2: {sigma2}')
         # Threshold
         smoothed_im = self.difference_of_gaussian(target, sigma2=sigma2, sigma1=sigma1)
         if self.opt.segmentation_method == 'manual':
@@ -110,7 +110,7 @@ class Puncta:
         if save_puncta_image_bool:
             savedir = os.path.join(self.analysisdir, self.puncta_folder_name, df.well.iloc[0])
             puncta_mask_path = self.save_puncta_mask(regions, filename, savedir)
-            logger.warn(f'Saved puncta mask to {puncta_mask_path}')
+            logger.warning(f'Saved puncta mask to {puncta_mask_path}')
 
         # TODO: is it faster to get contours of cells and see if puncta region props are inside contours?
         # cv2.findContours
@@ -144,7 +144,7 @@ class Puncta:
                 update_punctadata_and_intensitypunctadata(row, props_df, Db)
 
         # to target puncta, make a circle with puncta area at its location
-        logger.warn(f'Found {puncta_in_tile} puncta in in cells in tile.')
+        logger.warning(f'Found {puncta_in_tile} puncta in in cells in tile.')
 
     def difference_of_gaussian(self, img, sigma1=2, sigma2=4):
         assert sigma2 > sigma1

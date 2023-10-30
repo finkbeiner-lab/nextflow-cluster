@@ -62,8 +62,8 @@ process SEGMENTATION {
     """
 }
 
-process CELLPOSE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+process CELLPOSE {d,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bin
     input:
     val ready
     val exp
@@ -118,7 +118,7 @@ process PUNCTA {
 }
 
 process TRACKING {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/ --mount type=bind,src=/opt/gurobi/,target=/opt/gurobi/"
     input:
     val ready
     val exp

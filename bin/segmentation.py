@@ -30,7 +30,7 @@ logname = os.path.join(fink_log_dir, f'Segmentation-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Running Segmentation from Database.')
+logger.warning('Running Segmentation from Database.')
 
 
 class Segmentation:
@@ -39,7 +39,7 @@ class Segmentation:
         self.thread_lim = 4
         self.segmentation_method = opt.segmentation_method
         assert len(self.opt.chosen_channels) > 0, 'Must select a channel for segmentation'
-        logger.warn(f'Segmentation Method: {self.segmentation_method}')
+        logger.warning(f'Segmentation Method: {self.segmentation_method}')
         self.mask_folder_name = 'CellMasks'
         self.threshold_func = dict(sd_from_mean=self.sd_from_mean,
                                    minimum=filters.threshold_minimum,
@@ -56,11 +56,11 @@ class Segmentation:
         self.thresh_func = self.threshold_func[self.segmentation_method]
         self.Norm = Normalize(self.opt)
         _, self.analysisdir = self.Norm.get_raw_and_analysis_dir()
-        logger.warn(f'Save directory: {self.analysisdir}')
+        logger.warning(f'Save directory: {self.analysisdir}')
 
     def run(self):
         self.run_threshold()
-        logger.warn('Completed threshold')
+        logger.warning('Completed threshold')
 
     def sd_from_mean(self, img):
         thresh = int(np.mean(img) + np.std(img) * self.opt.sd_scale_factor)

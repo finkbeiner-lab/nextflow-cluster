@@ -28,7 +28,7 @@ logname = os.path.join(fink_log_dir, f'CellposeSegmentation-log_{TIMESTAMP}.log'
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Running Segmentation from Database.')
+logger.warning('Running Segmentation from Database.')
 
 
 class CellposeSegmentation:
@@ -38,13 +38,13 @@ class CellposeSegmentation:
         assert len(self.opt.chosen_channels) > 0, 'Channel must be selected'
         self.Norm = Normalize(self.opt)
         _, self.analysisdir = self.Norm.get_raw_and_analysis_dir()
-        logger.warn(f'Save directory: {self.analysisdir}')
+        logger.warning(f'Save directory: {self.analysisdir}')
         self.mask_folder_name = 'CellMasks'
 
     def run(self):
         tiledata_df = self.Norm.get_flatfields()
         self.thresh_with_cellpose(tiledata_df)
-        logger.warn('Completed threshold')
+        logger.warning('Completed threshold')
 
     def thresh_with_cellpose(self, df):
         """
@@ -52,7 +52,7 @@ class CellposeSegmentation:
         """
         # model_type='cyto' or 'nuclei' or 'cyto2'
         Db = Database()
-        logger.warn(f'running cellpose {self.opt.model_type}')
+        logger.warning(f'running cellpose {self.opt.model_type}')
         model = models.Cellpose(model_type=self.opt.model_type)
 
         # define CHANNELS to run segementation on
@@ -64,7 +64,7 @@ class CellposeSegmentation:
         # channels = [0,0] # IF YOU HAVE GRAYSCALE
         # channels = [2,3] # IF YOU HAVE G=cytoplasm and B=nucleus
         # channels = [2,1] # IF YOU HAVE G=cytoplasm and R=nucleus
-        logger.warn('Starting eval with cellpose.')
+        logger.warning('Starting eval with cellpose.')
         # if plot_bool:
         #     plt.figure()
         #     plt.imshow(img)
@@ -78,7 +78,7 @@ class CellposeSegmentation:
             savedir = os.path.join(self.analysisdir, self.mask_folder_name, row.well)
             maskpath = save_mask(masks, row.filename, savedir)
             print(f'Saved Cellpose segmentation mask to {maskpath}')
-            logger.warn(f'Saved Cellpose segmentation mask to {maskpath}')
+            logger.warning(f'Saved Cellpose segmentation mask to {maskpath}')
             print('props_df', props_df)
 
             # Add to database
@@ -89,7 +89,7 @@ class CellposeSegmentation:
                                                                        timepoint=row.timepoint,
                                                                        segmentationmethod='cellpose'))
             update_celldata_and_intensitycelldata(row, props_df, Db)
-            logger.warn(f'Updated celldata and intensitycelldata for well {row.well} tile {row.tile}')
+            logger.warning(f'Updated celldata and intensitycelldata for well {row.well} tile {row.tile}')
 
             # if plot_bool:
             #     fig = plt.figure(figsize=(12, 5))

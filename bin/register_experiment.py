@@ -46,7 +46,7 @@ logname = os.path.join(fink_log_dir, f'Folder2Db-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Registering experiment with database.')
+logger.warning('Registering experiment with database.')
 
 class Intro:
     def __init__(self,):
@@ -60,7 +60,7 @@ class Intro:
         files_df = pd.DataFrame(filenames, columns=['filepath'])
         files_df['filename'] = files_df['filepath']
         print(files_df.filename.iloc[0])
-        logger.warn(f'first file: {files_df.filename.iloc[0]}')
+        logger.warning(f'first file: {files_df.filename.iloc[0]}')
         fname_df = files_df['filepath'].str.split('/', expand=True)
         num_cols = len(fname_df.columns)
         if robo_num == 0:
@@ -148,13 +148,13 @@ class Intro:
         )
         args = parser.parse_args()
         print('args', args)
-        logger.warn(f'args {args}')
+        logger.warning(f'args {args}')
         # Set up I/O parameters
         input_path = str.strip(args.input_path)
         output_path = str.strip(args.output_path)
         if not os.path.exists(output_path):
             os.makedirs(output_path)
-            logger.warn(f'Created Directory {output_path}')
+            logger.warning(f'Created Directory {output_path}')
         assert not (args.ixm_hts_file is not None and len(args.ixm_hts_file) > 0 and args.robo_file is not None and len(args.robo_file) > 0), 'Only IXM template or legacy roboscope template may be entered at one time.'
         if args.ixm_hts_file is not None and len(args.ixm_hts_file) > 0:
             print('IXM Template File: ', args.ixm_hts_file)
@@ -162,8 +162,8 @@ class Intro:
             Conv = ConvertTemplate(new_template_path)
             Conv.convert_template(args.ixm_hts_file, args.illumination_file)
             args.template_path = new_template_path
-            logger.warn(f'Converted template from IXM to XLSX.')
-            logger.warn(f'Template path set to {args.template_path}')
+            logger.warning(f'Converted template from IXM to XLSX.')
+            logger.warning(f'Template path set to {args.template_path}')
         
         if args.robo_file is not None and len(args.robo_file) > 0:
             print(f'Robo file (old template): {args.robo_file}')
@@ -208,7 +208,7 @@ class Intro:
 
         filepaths = glob(os.path.join(input_path, '*[0-9]', '*.tif'))
         # TODO: obviously like to avoid relying on filename strings to get experiment info, but in case there's no template or platemap...
-        logger.warn(f'first filepath: {filepaths[0]}')
+        logger.warning(f'first filepath: {filepaths[0]}')
         files_df = self.parse_tokens_to_df(filepaths, robo_num)
         print('files df', files_df.iloc[0])
         # Set up dictionary parameters
@@ -238,7 +238,7 @@ class Intro:
         self.write_to_experimentdata(input_path, output_path, File, Db)
         exp_uuid = Db.get_table_uuid('experimentdata', dict(experiment=current_experiment))
         
-        logger.warn(f'Experiment uuid: {exp_uuid}')
+        logger.warning(f'Experiment uuid: {exp_uuid}')
 
         wells = pd.unique(files_df.well).tolist()
         if File is not None:
@@ -297,7 +297,7 @@ class Intro:
         #                imagedir=input_path,
         #                analysisdir=output_path
         #                )
-        logger.warn(f'exp dct {exp_dct}')
+        logger.warning(f'exp dct {exp_dct}')
         # Db.delete_based_on_duplicate_name('experimentdata', check_exp)
         Db.add_row('experimentdata', exp_dct)
 
@@ -311,12 +311,12 @@ class Intro:
         for well in wells:
             strt = time()
             well_uuid = Db.get_table_uuid('welldata', dict(experimentdata_id=exp_uuid, well=well))
-            logger.warn(f'Well uuid for tiledata {well_uuid}')
+            logger.warning(f'Well uuid for tiledata {well_uuid}')
             print(f'Well uuid for tiledata {well_uuid}')
             well_files_df = files_df.loc[files_df.well == well]
             print(f'Filtered df {time() - strt:.2f}')
             for i, row in well_files_df.iterrows():
-                logger.warn(f'Tiledata row {row}')
+                logger.warning(f'Tiledata row {row}')
                 if (well_uuid, row.channel) in channel_uuid_dict:
                     channel_uuid = channel_uuid_dict[(well_uuid, row.channel)]
                 else:
@@ -324,7 +324,7 @@ class Intro:
                     channel_uuid_dict[(well_uuid, row.channel)] = channel_uuid
                 # print('channel', row.channel)
                 # print(f'Channel uuid for tiledata {channel_uuid}')
-                # logger.warn(f'Channel uuid for tiledata {channel_uuid}')
+                # logger.warning(f'Channel uuid for tiledata {channel_uuid}')
                 check_tile_dcts.append(dict(experimentdata_id=exp_uuid,
                                                     welldata_id=well_uuid,
                                                     channeldata_id=channel_uuid,
@@ -369,39 +369,39 @@ class Intro:
         for i, row in template_df.iterrows():
             well_uuid = Db.get_table_uuid('welldata', dict(experimentdata_id=exp_uuid, well=row.Well))
             print('row ord', row['Ordering'])
-            logger.warn(f'row ord {row.Ordering}')
+            logger.warning(f'row ord {row.Ordering}')
             ordering = list(set(row['Ordering'].split(';') if not pd.isna(row['Ordering']) else []))  # taking a set in case there are duplicates
 
             channels = row['Channel'].split(';')  if not pd.isna(row['Channel']) else []
             intensities = row['ExcitationIntensity'].split(':') if not pd.isna(row['ExcitationIntensity']) else []
             exposures = row['Exposure'].split(';') if not pd.isna(row['Exposure']) else []
-            logger.warn(f'channels {channels}')
+            logger.warning(f'channels {channels}')
             print(f'channels {channels}')
-            logger.warn(f'epi exposures {exposures}')
+            logger.warning(f'epi exposures {exposures}')
             print(f'epi exposures {exposures}')
 
             dmd_channels = row['DMD_Channel'].split(';') if not pd.isna(row['DMD_Channel']) else []
             dmd_intensities = row['DMD_ExcitationIntensity'].split(':') if not pd.isna(row['DMD_ExcitationIntensity']) else []
             dmd_exposures = row['DMD_Exposure'].split(';') if not pd.isna(row['DMD_Exposure']) else []
-            logger.warn(f'dmd channels {dmd_channels}')
+            logger.warning(f'dmd channels {dmd_channels}')
             print(f'dmd channels {dmd_channels}')
-            logger.warn(f'dmd exposures {dmd_exposures}')
+            logger.warning(f'dmd exposures {dmd_exposures}')
             print(f'dmd exposures {dmd_exposures}')
 
             confocal_channels = row['Confocal_Channel'].split(';') if not pd.isna(row['Confocal_Channel']) else []
             confocal_intensities = row['Confocal_ExcitationIntensity'].split(':') if not pd.isna(row['Confocal_ExcitationIntensity']) else []
             confocal_exposures = row['Confocal_Exposure'].split(';') if not pd.isna(row['Confocal_Exposure']) else []
-            logger.warn(f'confocal channels {confocal_channels}')
+            logger.warning(f'confocal channels {confocal_channels}')
             print(f'confocal channels {confocal_channels}')
-            logger.warn(f'confocal exposures {confocal_exposures}')
+            logger.warning(f'confocal exposures {confocal_exposures}')
             print(f'confocal exposures {confocal_exposures}')
 
             cobolt_channels = row['Cobolt_Channel'] if not pd.isna(row['Cobolt_Channel']) else '' # single wavelength
             cobolt_intensities = row['Cobolt_ExcitationIntensity'] if not pd.isna(row['Cobolt_ExcitationIntensity']) else 0
             cobolt_exposures = row['Cobolt_Exposure'] if not pd.isna(row['Cobolt_Exposure']) else 0
-            logger.warn(f'cobolt channels {cobolt_channels}')
+            logger.warning(f'cobolt channels {cobolt_channels}')
             print(f'cobolt channels {cobolt_channels}')
-            logger.warn(f'cobolt exposures {cobolt_exposures}')
+            logger.warning(f'cobolt exposures {cobolt_exposures}')
             print(f'cobolt exposures {cobolt_exposures}')
 
             intensities_dct = {wave.lower(): float(intensity) for wave, intensity in zip(epi_wavelengths, intensities)}
@@ -435,7 +435,7 @@ class Intro:
         Db.add_row('channeldata', channel_dcts)
 
     def write_to_welldata(self, mapdf, Db, exp_uuid, wells):
-        logger.warn('Writing to well data: {wells}')
+        logger.warning('Writing to well data: {wells}')
         well_dcts = []
         dosage_dcts = []
 
@@ -483,10 +483,10 @@ class Intro:
                 df = df[df[column_name].isin(user_chosen_lst)]
         uni = pd.unique(df[column_name])
         if not len(df):
-            logger.warn(f'Empty df by doing {toggle} for {column_name}s {user_chosen_lst} on dataframe with {uni}')
+            logger.warning(f'Empty df by doing {toggle} for {column_name}s {user_chosen_lst} on dataframe with {uni}')
             raise Exception(f'Empty df by doing {toggle} for {column_name}s {user_chosen_lst} on dataframe with  {uni}')
 
-        logger.warn(f'Selected {column_name} {uni}')
+        logger.warning(f'Selected {column_name} {uni}')
         return df
 
 

@@ -104,7 +104,7 @@ class Graph:
     #                 self.neighbors[label][rlabel] = dist
 
     def edges_from_pandas(self, prev_df, current_df, prev_img=None, curr_img=None):
-        print('prev df', prev_df.cellid)
+        # print('prev df', prev_df.cellid)
         unique_cellids, cellid_counts = np.unique(prev_df.cellid, return_counts=True)
         _logger.info('unique_cellids {unique_cellids}')
         _logger.info('unique_cellids counts {cellid_counts}')

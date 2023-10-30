@@ -24,7 +24,7 @@ logname = os.path.join(fink_log_dir, f'Intensity-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 fh.setLevel(20)
 logger.addHandler(fh)
-logger.warn('Running Intensity from Database.')
+logger.warning('Running Intensity from Database.')
 
 class Intensity:
     def __init__(self, opt):

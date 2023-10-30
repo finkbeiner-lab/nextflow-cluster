@@ -18,7 +18,7 @@ from track_cells_res.output_helper import OutputSmall
 from track_cells_res.tracking_graph import Graph
 import os
 import warnings
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import argparse
 import time
 from glob import glob
@@ -40,7 +40,7 @@ logname = os.path.join(fink_log_dir, f'TRACKING-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
-logger.warn('Tracking starting')
+logger.warning('Tracking starting')
 
 
 class TrackCells:
@@ -61,7 +61,7 @@ class TrackCells:
         self.randomcellid_str = 'randomcellid'
         self.centroid_x_str = 'centroid_x'
         self.centroid_y_str = 'centroid_y'
-        logger.warn('Initialized Track Class.')
+        logger.warning('Initialized Track Class.')
         self.Db = Database()
 
     def remap_labelled_mask(self, labelled_mask, mapping:dict):
@@ -79,21 +79,21 @@ class TrackCells:
         groups = self.celldata.groupby(by=['well', 'tile'])
         # TODO: thread wells
         for (well, tile), df in groups:
-            logger.warn(f'Tracking {well} {tile}')
+            logger.warning(f'Tracking {well} {tile}')
             print(f'Tracking {well} {tile}')
             experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
             welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id,
                                                                         well=well))
             selected_channels = self.opt.chosen_channels.strip(' ').split(',')
             # should just be one channel for tracking
-            logger.warn(f'channels for tracking {selected_channels}')
+            logger.warning(f'channels for tracking {selected_channels}')
             channel = selected_channels[0]
             channeldata_id = self.Db.get_table_uuid('channeldata', dict(experimentdata_id=experimentdata_id,
                                                                         welldata_id=welldata_id, 
                                                                         channel=channel))                                                  
             timepoints = self.celldata[self.celldata.well == well].timepoint.unique().tolist()
             timepoints.sort()
-            logger.warn(f'timepoints: {timepoints}')
+            logger.warning(f'timepoints: {timepoints}')
             # In case celldata start after T0, copy randomlabel to cellid label
             df = self.set_cellid_from_randomcellid(df, timepoints[0])
             df0 = df[df.timepoint == timepoints[0]]
@@ -113,7 +113,7 @@ class TrackCells:
             for prev_timepoint, current_timepoint in zip(timepoints[:-1], timepoints[1:]):
                 elapsed_tp = time.time() - start_tp
                 start_tp = time.time()
-                logger.warn(f'Elapsed time for timepoint: {current_timepoint} is {elapsed_tp}')
+                logger.warning(f'Elapsed time for timepoint: {current_timepoint} is {elapsed_tp}')
 
                 if df[df.timepoint==current_timepoint].empty:
                     continue
@@ -134,13 +134,13 @@ class TrackCells:
 
                 self.get_previous_and_current_tp_df(df, prev_timepoint, current_timepoint)
                 
-                print('filtered', self.filtered_celldata)
+                # print('filtered', self.filtered_celldata)
                 tiledata_id = self.filtered_celldata.loc[self.filtered_celldata.timepoint == current_timepoint, 'tiledata_id'].iloc[0]
                 # Get files
                 f_prev, f_prev_mask = self.filtered_celldata.loc[self.filtered_celldata.timepoint == prev_timepoint, ['filename', 'maskpath']].iloc[0]
                 f_curr, f_curr_mask = self.filtered_celldata.loc[self.filtered_celldata.timepoint == current_timepoint, ['filename', 'maskpath']].iloc[0]
                 f_curr_mask_relabelled = f_curr_mask.split('ENCODED.tif')[0] + 'TRACKED.tif'
-                logger.warn(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
+                logger.warning(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
                 print(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
 
                 mapping = self.run_one_timepoint(prev_timepoint, current_timepoint, f_prev, f_prev_mask,
@@ -157,15 +157,15 @@ class TrackCells:
                                                randomcellid=random_lbl))
 
             elapsed_well = time.time() - start_well
-            logger.warn(f'Elapsed time for well: {well} is {elapsed_well}')
+            logger.warning(f'Elapsed time for well: {well} is {elapsed_well}')
 
     def run_one_timepoint(self, prev_timepoint, current_timepoint, f_prev, f_prev_mask,
                           f_curr, f_curr_mask, f_curr_mask_relabelled, divisions=1, plot_bool=False):
-        logger.warn(f'previous file: {f_prev}')
-        logger.warn(f'previous mask: {f_prev_mask}')
-        logger.warn(f'current file: {f_curr}')
-        logger.warn(f'current mask: {f_curr_mask}')
-        logger.warn(f'current mask relabelled: {f_curr_mask_relabelled}')
+        logger.warning(f'previous file: {f_prev}')
+        logger.warning(f'previous mask: {f_prev_mask}')
+        logger.warning(f'current file: {f_curr}')
+        logger.warning(f'current mask: {f_curr_mask}')
+        logger.warning(f'current mask relabelled: {f_curr_mask_relabelled}')
         print(f'previous file: {f_prev}')
         print(f'previous mask: {f_prev_mask}')
         print(f'current file: {f_curr}')
@@ -178,7 +178,7 @@ class TrackCells:
                    voronoi_bool=self.opt.VORONOI_BOOL,
                    verbose=self.opt.VERBOSE,
                    debug=self.opt.DEBUG)
-        logger.warn(f'Divisions of image in tracking: {divisions}')
+        logger.warning(f'Divisions of image in tracking: {divisions}')
         prev_img = imageio.v3.imread(f_prev)
         curr_img = imageio.v3.imread(f_curr)
         self.h, self.w = curr_img.shape
@@ -197,25 +197,25 @@ class TrackCells:
                                    & (current[self.centroid_y_str] >= j * self.h / divisions)
                                    & (current[self.centroid_y_str] < (j + 1) * self.h / divisions)]
                 if not _prev.empty and not _current.empty:
-                    logger.warn('Getting edges from pandas dataframes')
+                    logger.warning('Getting edges from pandas dataframes')
                     df_current_tp = Gr.edges_from_pandas(_prev, _current, prev_img, curr_img)
                     nodelist = list(Gr.g.nodes)
-                    logger.warn('Running LP')
+                    logger.warning('Running LP')
                     decision = self.linear_program(Gr, USE_GT=False)
-                    logger.warn(f'solution {decision}')
+                    logger.warning(f'solution {decision}')
                     # replace appear node with new cell ids
                     final_choice = self.replace_appear_node_with_cell_id(decision, nodelist)
 
-                    logger.warn(f'replaced appear and disappear with new neurons \n {i} {j}', final_choice)
+                    logger.warning(f'replaced appear and disappear with new neurons \n {i} {j}', final_choice)
                     for rnode, lnode in final_choice.items():
                         assert rnode not in mappings.keys()
                         mappings[rnode] = lnode
                 else:
-                    logger.warn(f'Length of previous timepoint dataframe: {len(_prev)}')
-                    logger.warn(f'Length of current timepoint dataframe: {len(_current)}')
-                    logger.warn('One of the timepoint dataframes is empty')
+                    logger.warning(f'Length of previous timepoint dataframe: {len(_prev)}')
+                    logger.warning(f'Length of current timepoint dataframe: {len(_current)}')
+                    logger.warning('One of the timepoint dataframes is empty')
 
-        logger.warn(f'mappings {mappings}')
+        logger.warning(f'mappings {mappings}')
 
         # checking mapping
         mapping = {}
@@ -223,7 +223,7 @@ class TrackCells:
             r = int(rnode[1:])  # turn R2 into 2
             ell = int(lnode[1:])
             mapping[r] = ell
-        logger.warn(f'Mapping previous timepoint to current timepoint: \n {mapping}')
+        logger.warning(f'Mapping previous timepoint to current timepoint: \n {mapping}')
 
         # prev_mask = imageio.v3.imread(f_prev_mask)
         curr_mask = imageio.v3.imread(f_curr_mask)
@@ -259,18 +259,18 @@ class TrackCells:
         Outs = OutputSmall()
 
         # Sparse minimum flow linear program
-        logger.warn('Getting incidence matrix and vertices')
+        logger.warning('Getting incidence matrix and vertices')
         a_incidence, a_vertices = Grs.incidence_matrix()  # prepare algorithm input
-        logger.warn(f'a_incidence {a_incidence}')
-        logger.warn(f'a_vertices {a_vertices}')
+        logger.warning(f'a_incidence {a_incidence}')
+        logger.warning(f'a_vertices {a_vertices}')
 
         b_flow = Grs.b_flow(a_vertices)
-        logger.warn(f'b_flow, {b_flow}')
+        logger.warning(f'b_flow, {b_flow}')
         c_cost = Grs.c_cost(a_incidence, a_vertices)  # edge cost is distance between nodes
-        logger.warn(f'c_cost {c_cost}')
+        logger.warning(f'c_cost {c_cost}')
         x = Solve.opto(a_incidence, b_flow, c_cost)  # solve
         decision = Outs.update(Grs.g, a_incidence, x, a_vertices)
-        logger.warn(f'Decisions from linear program: {decision}')
+        logger.warning(f'Decisions from linear program: {decision}')
         return decision
 
     def update_mapping_to_dataframe(self, mapping, celldata, well, tile, timepoint):
@@ -298,7 +298,7 @@ class TrackCells:
 
     def filter_celldata_func(self, well, tile, prev_timepoint, current_timepoint):
         # todo: store plate id without PID, just experiment name. Timestamp should be another column.
-        logger.warn(f'Filtering celldata with exp: {self.opt.exp}, well: {well}, tile: {tile}, previous timepoint: {prev_timepoint}, current timepoint: {current_timepoint}')
+        logger.warning(f'Filtering celldata with exp: {self.opt.exp}, well: {well}, tile: {tile}, previous timepoint: {prev_timepoint}, current timepoint: {current_timepoint}')
         self.filtered_celldata = self.celldata[(self.celldata.experiment == self.opt.experiment)
                                                & (self.celldata.well == well)
                                                & (self.celldata.tile == tile)
@@ -420,13 +420,13 @@ if __name__ == '__main__':
 
     args, _ = parser.parse_known_args()
     print('args', args)
-    logger.warn(f'args: {args}')
+    logger.warning(f'args: {args}')
     Track = TrackCells(args)
     mapping = Track.run()
-    logger.warn('Tracking tasks completed.')
+    logger.warning('Tracking tasks completed.')
     print(args.outfile)
-    logger.warn(args.outfile)
-    logger.warn(args.input_dict)
+    logger.warning(args.outfile)
+    logger.warning(args.input_dict)
 
     handlers = logger.handlers[:]
     for handler in handlers:
