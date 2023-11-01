@@ -62,8 +62,8 @@ process SEGMENTATION {
     """
 }
 
-process CELLPOSE {d,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    containerOptions "--mount type=bin
+process CELLPOSE {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
     val ready
     val exp

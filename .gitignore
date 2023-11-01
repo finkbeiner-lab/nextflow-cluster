@@ -8,3 +8,7 @@ __pycache__/
 *.txt
 *.csv
 core.*
+*.tif
+*.png
+*.jpg
+*.jpeg

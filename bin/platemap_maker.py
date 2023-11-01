@@ -11,7 +11,6 @@ def list_fonts():
     for font in available_fonts:
         print(font)
     root.destroy()
-    
 class SquareSelector:
     def __init__(self, master, rows=16, cols=24, cell_size=60):
         
@@ -68,49 +67,14 @@ class SquareSelector:
     def get_selected_cells(self):
         return self.selected_cells
 
-class ExperimentPage(tk.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.master = master
-        self.master.title("Experiment Page")
+class App(tk.Tk):
+    def __init__(self):
+        tk.Tk.__init__(self)
+        large_font = ('utopia', 18) 
 
-        # Create a button to go to the new page
-        self.go_to_prev_page_button = tk.Button(self, text="Microscope Page", command=self.show_microscope_page)
-        self.go_to_prev_page_button.pack()
-        self.go_to_next_page_button = tk.Button(self, text="Plate Page", command=self.show_plate_page)
-        self.go_to_next_page_button.pack()
-        
-    def show_microscope_page(self):
-        self.master.switch_frame(MicroscopePage)
-    def show_plate_page(self):
-        self.master.switch_frame(PlatePage)
+        self.title("Square Selector")
 
-class PlatePage(tk.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.master = master
-        self.master.title("Plate Page")
-
-        # Create a button to go back to the main page
-        self.go_to_prev_page_button = tk.Button(self, text="Experiment Page", command=self.show_experiment_page)
-        self.go_to_prev_page_button.pack()
-        self.go_to_next_page_button = tk.Button(self, text="Plate Map Page", command=self.show_platemap_page)
-        self.go_to_next_page_button.pack()
-
-    def show_experiment_page(self):
-        self.master.switch_frame(ExperimentPage)
-        
-    def show_platemap_page(self):
-        self.master.switch_frame(PlateMapPage)
-        
-
-class PlateMapPage(tk.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.master = master
-        self.master.title("Plate Map Page")
-        
-        self.platemap_df = pd.DataFrame(columns=["well", "celltype", "condition", "name", "dosage", "units"])
+        self.df = pd.DataFrame(columns=["well", "celltype", "condition", "name", "dosage", "units"])
 
         # Entry for Celltype
         Label(self, text="Celltype:", font=large_font).grid(row=0, column=0, sticky="e")
@@ -189,7 +153,7 @@ class PlateMapPage(tk.Frame):
                 well = row + col
                 updates.append({"well":well, "celltype": celltype, "condition":condition, "name": dosage_name, "type":dosage_type, "dosage": float_dosage, "units": units})
             update_df = pd.DataFrame(updates)
-            self.platemap_df = pd.concat([self.platemap_df, update_df], ignore_index=True)
+            self.df = pd.concat([self.df, update_df], ignore_index=True)
             self.selector.clear_selection()
             self.dosage_name_var.set("")
             self.dosage_var.set("")
@@ -197,96 +161,8 @@ class PlateMapPage(tk.Frame):
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid number for Dosage.")
 
-        self.go_to_prev_page_button = tk.Button(self, text="Plate Page", command=self.show_plate_page)
-        self.go_to_prev_page_button.pack()
-        self.go_to_next_page_button = tk.Button(self, text="Timepoint Page", command=self.show_timepoint_page)
-        self.go_to_next_page_button.pack()
-
-    def show_plate_page(self):
-        self.master.switch_frame(PlatePage)
-    def show_timepoint_page(self):
-        self.master.switch_frame(TimepointPage)
-
-class TimepointPage(tk.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.master = master
-        self.master.title("Timepoint Page")
-
-        self.go_to_prev_page_button = tk.Button(self, text="Plate Map Page", command=self.show_platemap_page)
-        self.go_to_prev_page_button.pack()
-        self.go_to_next_page_button = tk.Button(self, text="Microscope Page", command=self.show_microscope_page)
-        self.go_to_next_page_button.pack()
-    def show_platemap_page(self):
-        self.master.switch_frame(PlateMapPage)
-    def show_microscope_page(self):
-        self.master.switch_frame(MicroscopePage)
-        
-        
-class MicroscopePage(tk.Frame):
-    def __init__(self, master):
-        super().__init__(master)
-        self.master = master
-        self.master.title("Microscope Page")
-
-        self.go_to_prev_page_button = tk.Button(self, text="Plate Map Page", command=self.show_timepoint_page)
-        self.go_to_prev_page_button.pack()
-        self.go_to_next_page_button = tk.Button(self, text="Experiment Page", command=self.show_experiment_page)
-        self.go_to_next_page_button.pack()
-    def show_timepoint_page(self):
-        self.master.switch_frame(TimepointPage)
-    def show_experiment_page(self):
-        self.master.switch_frame(ExperimentPage)
-        
-
-class App(tk.Tk):
-    def __init__(self):
-        tk.Tk.__init__(self)
-        large_font = ('utopia', 18) 
-
-        self.title("Square Selector")
-
-        self.current_frame = None
-        self.switch_frame(ExperimentPage)
-
-    def switch_frame(self, frame_class):
-        new_frame = frame_class(self)
-
-        if self.current_frame is not None:
-            self.current_frame.destroy()
-
-        self.current_frame = new_frame
-        self.current_frame.pack()
-        
     def save(self):
-        with pd.ExcelWriter("output.xlsx", engine="xlsxwriter") as writer:
-            self.platemap_df.to_excel(writer, sheet_name="experiment", index=False)
-            
-            # Add other data to sheets as needed (you need to replace this with your own data)
-            plate_data = pd.DataFrame({
-                "Column1": [1, 2, 3],
-                "Column2": ['A', 'B', 'C']
-            })
-            plate_data.to_excel(writer, sheet_name="plate", index=False)
-
-            platemap_data = pd.DataFrame({
-                "Column1": [4, 5, 6],
-                "Column2": ['D', 'E', 'F']
-            })
-            self.platemap_df.to_excel(writer, sheet_name="platemap", index=False)
-
-            Timepoint_data = pd.DataFrame({
-                "Column1": [7, 8, 9],
-                "Column2": ['G', 'H', 'I']
-            })
-            Timepoint_data.to_excel(writer, sheet_name="Timepoint", index=False)
-
-            microscope_data = pd.DataFrame({
-                "Column1": [10, 11, 12],
-                "Column2": ['J', 'K', 'L']
-            })
-            microscope_data.to_excel(writer, sheet_name="microscope", index=False)
-
+        self.df.to_csv("selected_squares.csv", index=False)
 
 if __name__ == "__main__":
     app = App()

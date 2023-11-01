@@ -15,9 +15,10 @@ public class sift {
     
     public static void main(String[] args) {
 
-
-        String src_file = "PID20230928_20230928-MsNeu-RGEDItau1_T0_0.0-0_A8_1_Confocal-GFP16_0_0_1.tif";
-        String dst_file = "PID20230929_20230928-MsNeu-RGEDItau1_T1_12.0-0_A8_1_Confocal-GFP16_0_0_1.tif";
+        String parent_dir = "/gladstone/finkbeiner/robodata/Robo4Images/20230928-MsNeu-RGEDItau1/A8/";
+        String src_file = parent_dir + "PID20230928_20230928-MsNeu-RGEDItau1_T0_0.0-0_A8_1_Confocal-GFP16_0_0_1.tif";
+        String dst_file = parent_dir + "PID20230929_20230928-MsNeu-RGEDItau1_T1_12.0-0_A8_1_Confocal-GFP16_0_0_1.tif";
+        String outputStackPath = "registered.tif";
         ImageStack stack = new ImageStack(1, 1);
         ImagePlus src_tile = IJ.openImage(src_file);
 
@@ -45,16 +46,14 @@ public class sift {
         ImagePlus alignedStack = new ImagePlus("Aligned Stack", stack);
 
         // Initialize SIFT parameters
-        SIFT sift = SIFT.matchFeatures(null, null, null, 0);
-        SIFT sift = new SIFT(); 
-        sift.setOptions("action=Align channels=1-2 reference=1 display_images save_transform");
-        sift.run(alignedStack);
+        SIFT()
+        ij.IJ.run("Linear Stack Alignment with SIFT...", 
+        "initial_gaussian_blur=1.60 steps_per_scale_octave=3 minimum_image_size=64 maximum_image_size=1024 feature_descriptor_size=4 feature_descriptor_orientation_bins=8 closest/next_closest_ratio=0.92 maximal_alignment_error=25 inlier_ratio=0.05 expected_transformation=Rigid interpolate");
 
         // Show the aligned stack
-        alignedStack.show();
+        // alignedStack.show();
 
         // Optionally, save the aligned stack to a file
-        String outputStackPath = "registered.tif";
         IJ.save(alignedStack, outputStackPath);
 
         // Close the original stack and the aligned stack

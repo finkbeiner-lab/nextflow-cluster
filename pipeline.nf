@@ -114,6 +114,8 @@ morphology_ch = Channel.of(params.morphology_channel)
 distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
 crop_size_ch = Channel.of(params.crop_size)
+tiletype_ch = Channel.of(params.tiletype)
+montage_pattern_ch = Channel.of(params.montage_pattern)
 
 label_type_ch = Channel.of(params.label_type)
 label_name_ch = Channel.of(params.label_name)
@@ -191,6 +193,7 @@ workflow {
     else {
         cellpose_result = true
     }
+
     if (params.DO_TRACKING) {
         track_ch = TRACKING(seg_result, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, tp_ch, morphology_ch,
         well_toggle_ch, tp_toggle_ch)
@@ -198,6 +201,14 @@ workflow {
     }
     else {
         track_result = true
+    }
+    if (params.DO_MONTAGE) {
+        montage_ch = MONTAGE(track_result, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
+        well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
+        montage_result = MONTAGE.out
+    }
+    else {
+        montage_result = true
     }
     if (params.DO_INTENSITY) {
         int_ch = INTENSITY(track_result, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)

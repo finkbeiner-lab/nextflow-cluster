@@ -110,6 +110,8 @@ morphology_ch = Channel.of(params.morphology_channel)
 distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
 crop_size_ch = Channel.of(params.crop_size)
+tiletype_ch = Channel.of(params.tiletype)
+montage_pattern_ch = Channel.of(params.montage_pattern)
 
 label_type_ch = Channel.of(params.label_type)
 label_name_ch = Channel.of(params.label_name)
@@ -124,7 +126,6 @@ batch_size_ch = Channel.of(params.batch_size)
 learning_rate_ch = Channel.of(params.learning_rate)
 momentum_ch = Channel.of(params.momentum)
 optimizer_ch = Channel.of(params.optimizer)
-
 
 include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
 
@@ -184,7 +185,7 @@ process REGISTER_EXPERIMENT {
 }
 
 process SEGMENTATION {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata --mount type=bind,src=/Volumes/Finkbeiner-Linsley,target=/gladstone/finkbeiner/linsley"
     input:
     val ready
     val exp
@@ -204,16 +205,17 @@ process SEGMENTATION {
 
     script:
     """
-    segmentation.py --experiment ${exp} --chosen_channels ${morphology_channel} --segmentation_method ${segmentation_method} \
+    segmentation.py --experiment ${exp} --segmentation_method ${segmentation_method} \
     --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
     --sd_scale_factor ${sd_scale_factor} \
-    --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
+    --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
     """
 }
 
 process CELLPOSE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--mount type=bind,src=/Volumes/Finkbeiner-Lab,target=/gladstone/finkbeiner/lab --mount type=bind,src=/Volumes/Finkbeiner-Kaye,target=/gladstone/finkbeiner/kaye --mount type=bind,src=/Volumes/Finkbeiner-Barbe,target=/gladstone/finkbeiner/barbe --mount type=bind,src=/Volumes/Finkbeiner-Robodata,target=/gladstone/finkbeiner/robodata --mount type=bind,src=/Volumes/Finkbeiner-Linsley,target=/gladstone/finkbeiner/linsley"
+
     input:
     val ready
     val exp
@@ -403,18 +405,14 @@ process CNN {
 
     input:
     val ready
-    val exp
-    val label_type
-    val label_name
-    val classes
-    val img_norm_name
-    val filters
-    val num_channels
-    val n_samples
-    val epochs
-    val batch_size
-    val learning_rate
-    val momentum
+    val exp    if (params.DO_MONTAGE) {
+        montage_ch = MONTAGE(track_result, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
+        well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
+        montage_result = MONTAGE.out
+    }
+    else {
+        montage_result = true
+    }
     val optimizer
     val chosen_wells
     val chosen_timepoints
@@ -495,6 +493,7 @@ workflow {
     else {
         register_result = true
     }
+    
     if ( params.DO_SEGMENTATION ) {
         seg_ch = SEGMENTATION(register_result, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
@@ -512,6 +511,14 @@ workflow {
     }
     else{
     track_result = true
+    }
+    if (params.DO_MONTAGE) {
+        montage_ch = MONTAGE(track_result, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
+        well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
+        montage_result = MONTAGE.out
+    }
+    else {
+        montage_result = true
     }
     if ( params.DO_INTENSITY ) {
         int_ch = INTENSITY(track_result, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch,well_toggle_ch, tp_toggle_ch)
