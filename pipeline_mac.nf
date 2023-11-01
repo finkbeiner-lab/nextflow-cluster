@@ -405,14 +405,7 @@ process CNN {
 
     input:
     val ready
-    val exp    if (params.DO_MONTAGE) {
-        montage_ch = MONTAGE(track_result, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
-        well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
-        montage_result = MONTAGE.out
-    }
-    else {
-        montage_result = true
-    }
+    val exp
     val optimizer
     val chosen_wells
     val chosen_timepoints
