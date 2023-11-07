@@ -22,6 +22,7 @@ public class db {
     private static final String JDBC_URL = "jdbc:postgresql://fb-postgres01.gladstone.internal:5432/galaxy";
     private static final String USERNAME = "postgres";
     private static String PASSWORD;
+    
     public static void main(String[] args) {
 
 

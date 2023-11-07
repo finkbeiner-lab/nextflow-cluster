@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import Canvas, messagebox, Entry, Label, StringVar
+from tkinter import Canvas, messagebox, Entry, Label, StringVar, OptionMenu
 import pandas as pd
 import string
 from tkinter import font as tkfont  # this module provides utilities to work with fonts
@@ -71,19 +71,95 @@ class SquareSelector:
 class ExperimentPage(tk.Frame):
     def __init__(self, master):
         super().__init__(master)
-        self.master = master
+        # self.master = master
         self.master.title("Experiment Page")
+        # self.fnt = ('utopia', 18) 
+        print(self.data)
+        
+        labels = [
+            "Experiment Name:",
+            "Barcode:",
+            "Author:",
+            "Description:",
+            "Plate:",
+            "Well Count:",
+            "Image Folder:",
+            "PFS Per Tile:",
+            "Well Spacing:",
+            "Plate Height:",
+            "Imaging Pattern:",
+            "Email:"
+        ]
 
+        self.entry_vars = {}
+        row = 0
+        for label_text in labels:
+            label = Label(self, text=label_text, font=self.fnt)
+            label.grid(row=row, column=0, padx=10, pady=5, sticky="e")
+            var = StringVar()
+            if label_text == "Well Count:":
+                # Create a dropdown for Well Count
+                options = ["96", "384"]
+                var.set("96")
+                dropdown = OptionMenu(self, var, *options)
+                dropdown.config(font=self.fnt)
+                dropdown.grid(row=row, column=1, padx=10, pady=5)
+            elif label_text == "Imaging Pattern:":
+                options = ["epi_only", "epi_dmd_per_well"]
+                var.set("epi_only")
+                dropdown = OptionMenu(self, var, *options)
+                dropdown.config(font=self.fnt)
+                dropdown.grid(row=row, column=1, padx=10, pady=5)
+            else:
+                if label_text == "Image Folder:":
+                    var.set(r"D:\Images")
+                entry = Entry(self, textvariable=var, font=self.fnt)
+                entry.grid(row=row, column=1, padx=10, pady=5)
+            self.entry_vars[label_text] = var
+            row += 1
         # Create a button to go to the new page
-        self.go_to_prev_page_button = tk.Button(self, text="Microscope Page", command=self.show_microscope_page)
-        self.go_to_prev_page_button.pack()
-        self.go_to_next_page_button = tk.Button(self, text="Plate Page", command=self.show_plate_page)
-        self.go_to_next_page_button.pack()
+        label = Label(self, text='Go to: ', font=self.fnt)
+        label.grid(row=row, column=0, padx=10, pady=5, sticky="e")
+        self.go_to_prev_page_button = tk.Button(self, text="Microscope Page", font=self.fnt, command=self.show_microscope_page)
+        self.go_to_prev_page_button.grid(row=row, column=1, padx=10, pady=5)
+        self.go_to_next_page_button = tk.Button(self, text="Plate Page", font=self.fnt, command=self.show_plate_page)
+        self.go_to_next_page_button.grid(row=row, column=2, padx=10, pady=5)
         
     def show_microscope_page(self):
         self.master.switch_frame(MicroscopePage)
     def show_plate_page(self):
         self.master.switch_frame(PlatePage)
+        
+    def save_entry(self):
+        # Retrieve the values entered by the user
+        experiment_name = self.entry_vars["Experiment Name:"].get()
+        barcode = self.entry_vars["Barcode:"].get()
+        author = self.entry_vars["Author:"].get()
+        description = self.entry_vars["Description:"].get()
+        plate = self.entry_vars["Plate:"].get()
+        well_count = int(self.entry_vars["Well Count:"].get())  # Convert to integer
+        image_folder = self.entry_vars["Image Folder:"].get()
+        pfs_per_tile = self.entry_vars["PFS Per Tile:"].get()
+        well_spacing = self.entry_vars["Well Spacing:"].get()
+        plate_height = self.entry_vars["Plate Height:"].get()
+        imaging_pattern = self.entry_vars["Imaging Pattern:"].get()
+        email = self.entry_vars["Email:"].get()
+
+        # Create an entry dictionary or DataFrame to store the values
+        entry = {
+            "Experiment Name": experiment_name,
+            "Barcode": barcode,
+            "Author": author,
+            "Description": description,
+            "Plate": plate,
+            "Well Count": well_count,
+            "Image Folder": image_folder,
+            "PFS Per Tile": pfs_per_tile,
+            "Well Spacing": well_spacing,
+            "Plate Height": plate_height,
+            "Imaging Pattern": imaging_pattern,
+            "Email": email,
+        }
 
 class PlatePage(tk.Frame):
     def __init__(self, master):
@@ -107,58 +183,58 @@ class PlatePage(tk.Frame):
 class PlateMapPage(tk.Frame):
     def __init__(self, master):
         super().__init__(master)
-        self.master = master
+        # self.master = master
         self.master.title("Plate Map Page")
         
         self.platemap_df = pd.DataFrame(columns=["well", "celltype", "condition", "name", "dosage", "units"])
 
         # Entry for Celltype
-        Label(self, text="Celltype:", font=large_font).grid(row=0, column=0, sticky="e")
+        Label(self, text="Celltype:", font=self.fnt).grid(row=0, column=0, sticky="e")
         self.celltype_var = StringVar()
-        Entry(self, textvariable=self.celltype_var, font=large_font).grid(row=0, column=1)
+        Entry(self, textvariable=self.celltype_var, font=self.fnt).grid(row=0, column=1)
         # Entry for Condition
-        Label(self, text="Condition:", font=large_font).grid(row=1, column=0, sticky="e")
+        Label(self, text="Condition:", font=self.fnt).grid(row=1, column=0, sticky="e")
         self.condition_var = StringVar()
-        Entry(self, textvariable=self.condition_var, font=large_font).grid(row=1, column=1)
+        Entry(self, textvariable=self.condition_var, font=self.fnt).grid(row=1, column=1)
 
         # Entry for Dosage Name
-        Label(self, text="Dose Name:", font=large_font).grid(row=2, column=0, sticky="e")
+        Label(self, text="Dose Name:", font=self.fnt).grid(row=2, column=0, sticky="e")
         self.dosage_name_var = StringVar()
-        Entry(self, textvariable=self.dosage_name_var, font=large_font).grid(row=2, column=1)
+        Entry(self, textvariable=self.dosage_name_var, font=self.fnt).grid(row=2, column=1)
         
         # Entry for Dosage Type
-        Label(self, text="Dose Type:", font=large_font).grid(row=3, column=0, sticky="e")
+        Label(self, text="Dose Type:", font=self.fnt).grid(row=3, column=0, sticky="e")
         self.dosage_type_var = StringVar()
-        Entry(self, textvariable=self.dosage_type_var, font=large_font).grid(row=3, column=1)
+        Entry(self, textvariable=self.dosage_type_var, font=self.fnt).grid(row=3, column=1)
 
         # Entry for Dosage (float)
-        Label(self, text="Dosage:", font=large_font).grid(row=4, column=0, sticky="e")
+        Label(self, text="Dosage:", font=self.fnt).grid(row=4, column=0, sticky="e")
         self.dosage_var = StringVar()
-        Entry(self, textvariable=self.dosage_var, font=large_font).grid(row=4, column=1)
+        Entry(self, textvariable=self.dosage_var, font=self.fnt).grid(row=4, column=1)
 
         # Entry for Units
-        Label(self, text="Units:", font=large_font).grid(row=5, column=0, sticky="e")
+        Label(self, text="Units:", font=self.fnt).grid(row=5, column=0, sticky="e")
         self.units_var = StringVar()
-        Entry(self, textvariable=self.units_var, font=large_font).grid(row=5, column=1)
+        Entry(self, textvariable=self.units_var, font=self.fnt).grid(row=5, column=1)
 
         # Square Selector (10x10 grid)
         self.selector = SquareSelector(self)
 
 
         # Update DataFrame Button
-        self.wells_button = tk.Button(self, text="96 <-> 384 Wells", command=self.toggle_well_count, font=large_font)
+        self.wells_button = tk.Button(self, text="96 <-> 384 Wells", command=self.toggle_well_count, font=self.fnt)
         self.wells_button.grid(row=7, column=0, pady=10)
         
         # Clear Selection
-        self.clear_button = tk.Button(self, text="Clear Selection", command=self.selector.clear_selection, font=large_font)
+        self.clear_button = tk.Button(self, text="Clear Selection", command=self.selector.clear_selection, font=self.fnt)
         self.clear_button.grid(row=7, column=1, pady=10)
         
         # Update DataFrame Button
-        self.update_button = tk.Button(self, text="Update DataFrame", command=self.update_df, font=large_font)
+        self.update_button = tk.Button(self, text="Update DataFrame", command=self.update_df, font=self.fnt)
         self.update_button.grid(row=7, column=2, pady=10)
 
         # Save Button
-        self.save_button = tk.Button(self, text="Save to CSV", font=large_font,command=self.save)
+        self.save_button = tk.Button(self, text="Save to CSV", font=self.fnt,command=self.save)
         self.save_button.grid(row=7, column=3, pady=10)
         
     def toggle_well_count(self):
@@ -242,12 +318,21 @@ class MicroscopePage(tk.Frame):
 class App(tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
-        large_font = ('utopia', 18) 
+        self.fnt = ('utopia', 18) 
 
-        self.title("Square Selector")
+        self.title("Template Maker")
+        self.data = {'created':0}
+        self.experiment_frame = ExperimentPage(self)
+        self.plate_frame = PlatePage(self)
+        self.platemap_frame = PlateMapPage(self)
+        self.timepoint_frame = TimepointPage(self)
+        self.microscope_frame = MicroscopePage(self)
+        
+        self.save_page = tk.Button(self, text="Save Page", command=self.save_page)
+        self.save_page.pack(side="top", padx=10, pady=10, fill="x")
 
         self.current_frame = None
-        self.switch_frame(ExperimentPage)
+        self.show_frame(self.experiment_frame)
 
     def switch_frame(self, frame_class):
         new_frame = frame_class(self)
@@ -257,6 +342,12 @@ class App(tk.Tk):
 
         self.current_frame = new_frame
         self.current_frame.pack()
+    
+    def show_frame(self, frame):
+        frame.tkraise()
+    
+    def save_page(self):
+        print("Global Button Clicked")
         
     def save(self):
         with pd.ExcelWriter("output.xlsx", engine="xlsxwriter") as writer:

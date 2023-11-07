@@ -60,7 +60,23 @@ class GetCSVS:
         modeldata.to_csv(os.path.join(savedir, 'modeldata.csv'))
         modelcropdata.to_csv(os.path.join(savedir, 'modelcropdata.csv'))
         cropdata.to_csv(os.path.join(savedir, 'cropdata.csv'))
+        get_legacy_celldata_csv(savedir)
         print(f'Saved csvs to {savedir}.')
+        
+def get_legacy_celldata_csv(csvdir):
+    celldata = pd.read_csv(os.path.join(csvdir, 'celldata.csv'))
+    channeldata = pd.read_csv(os.path.join(csvdir, 'channeldata.csv'))
+    welldata = pd.read_csv(os.path.join(csvdir, 'welldata.csv'))
+    tiledata = pd.read_csv(os.path.join(csvdir, 'tiledata.csv'))
+    tiledata.rename(columns={'id': 'tiledata_id'}, inplace=True)
+    df = pd.merge(tiledata, welldata[['id', 'well', 'celltype']], left_on='welldata_id', right_on='id',
+                       how='left', suffixes=[None, '_dontuse'])
+    df = pd.merge(df, celldata, on='tiledata_id', how='inner', suffixes=[None, '_dontuse'])
+    df.rename(columns={'id': 'celldata_id'}, inplace=True)
+    df = pd.merge(df, channeldata[['id', 'channel', 'exposure']], left_on='channeldata_id', right_on='id', how='inner', suffixes=[None, '_dontuse'])
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+    df = df.loc[:, ~df.columns.str.contains('dontuse')]
+    df.to_csv(os.path.join(csvdir, 'legacy_celldata.csv'))
 
 
 if __name__ == '__main__':

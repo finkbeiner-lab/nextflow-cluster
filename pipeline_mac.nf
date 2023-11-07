@@ -363,7 +363,7 @@ process MONTAGE {
     val channels_toggle
 
     output:
-    stdout
+    val true
 
     script:
     """
@@ -389,7 +389,7 @@ process PLATEMONTAGE {
 
 
     output:
-    stdout
+    val true
 
     script:
     """

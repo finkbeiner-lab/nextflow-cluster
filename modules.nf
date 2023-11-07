@@ -63,13 +63,17 @@ process SEGMENTATION {
 }
 
 process CELLPOSE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions "--gpus all --mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
     val ready
     val exp
+    val batch_size
+    val cell_diameter
+    val flow_threshold
+    val cell_probability
+    val model_type
     val morphology_channel
     val segmentation_method
-    val img_norm_name
     val lower_area_thresh
     val upper_area_thresh
     val sd_scale_factor
@@ -84,9 +88,9 @@ process CELLPOSE {
     script:
     """
     cellpose_segmentation.py --experiment ${exp} --batch_size ${batch_size} --cell_diameter ${cell_diameter} --flow_threshold ${flow_threshold} \
-    --cell_probabililty ${cell_probability} --model_type ${model_type} \
+    --cell_probability ${cell_probability} --model_type ${model_type} \
     --chosen_channels ${morphology_channel} \
-    --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
+    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
     """
 }
@@ -211,7 +215,7 @@ process MONTAGE {
     val channels_toggle
 
     output:
-    stdout
+    val true
 
     script:
     """

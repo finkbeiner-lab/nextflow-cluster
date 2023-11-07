@@ -1,9 +1,8 @@
+#!/opt/conda/bin/python
+
 import argparse
 import os
-from glob import glob
-import numpy as np
 from cellpose import models
-from cellpose import plot
 from skimage import (
     color, feature, filters, measure, morphology, segmentation, util
 )
@@ -34,6 +33,7 @@ logger.warning('Running Segmentation from Database.')
 class CellposeSegmentation:
     def __init__(self, opt):
         self.opt = opt
+        self.opt.img_norm_name = 'identity'
         self.experiment = opt.experiment
         assert len(self.opt.chosen_channels) > 0, 'Channel must be selected'
         self.Norm = Normalize(self.opt)
@@ -172,7 +172,7 @@ if __name__ == '__main__':
     parser.add_argument("--chosen_channels", "-cc", default='Confocal-GFP16',
                         dest="chosen_channels",
                         help="Specify channels to include or exclude.")
-    parser.add_argument('--tile', default=1, type=int, help="Select single tile to segment. Default is to segment all tiles.")
+    parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
 
     args = parser.parse_args()
     print(args)

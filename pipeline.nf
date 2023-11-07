@@ -5,7 +5,7 @@
  */
 // SHARED VARIABLES
 params.wells_toggle = 'include' // ['include', 'exclude']
-params.chosen_wells = 'all'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
+params.chosen_wells = 'B04'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
 
 params.timepoints_toggle = 'include' // ['include', 'exclude']
 params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
@@ -13,16 +13,16 @@ params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20230920-MsDS-GFP'  // Experiment name
-params.morphology_channel = 'Confocal-GFP16'  // Your morphology channel
+params.experiment = 'AALS-Set31-09182023-GEDI-JAK'  // Experiment name
+params.morphology_channel = 'RFP'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
 
 // SELECT MODULES
 params.DO_UPDATEPATHS = false
 params.DO_REGISTER_EXPERIMENT = false
-params.DO_SEGMENTATION = true
-params.DO_CELLPOSE_SEGMENTATION = false
+params.DO_SEGMENTATION = false
+params.DO_CELLPOSE_SEGMENTATION = true
 params.DO_TRACKING = true
 params.DO_INTENSITY = false
 params.DO_CROP = false
@@ -117,6 +117,12 @@ crop_size_ch = Channel.of(params.crop_size)
 tiletype_ch = Channel.of(params.tiletype)
 montage_pattern_ch = Channel.of(params.montage_pattern)
 
+model_type_ch = Channel.of(params.model_type)
+batch_size_ch = Channel.of(params.batch_size)
+cell_diameter_ch = Channel.of(params.cell_diameter)
+flow_threshold_ch = Channel.of(params.flow_threshold)
+cell_probability_ch = Channel.of(params.cell_probability)
+
 label_type_ch = Channel.of(params.label_type)
 label_name_ch = Channel.of(params.label_name)
 classes_ch = Channel.of(params.classes)
@@ -185,7 +191,9 @@ workflow {
         seg_result = true
     }
     if (params.DO_CELLPOSE_SEGMENTATION) {
-        cellpose_ch = CELLPOSE(register_result, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
+
+        cellpose_ch = CELLPOSE(register_result, experiment_ch, batch_size_ch, cell_diameter_ch, flow_threshold_ch, 
+        cell_probability_ch, model_type_ch, morphology_ch, seg_ch, lower_ch, upper_ch, sd_ch,
         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         cellpose_ch.view { it }
         cellpose_result = CELLPOSE.out

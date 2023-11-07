@@ -66,3 +66,6 @@ ENV GUROBI_HOME="/opt/gurobi"
 ENV PATH="${PATH}:${GUROBI_HOME}/bin"
 ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
 ENV PATH /opt/conda/envs/datastudy/bin:$PATH
+ENV NUMBA_CACHE_DIR=/tmp
+RUN mkdir /.cellpose
+RUN chmod 777 /.cellpose
