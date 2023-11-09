@@ -151,7 +151,7 @@ if __name__ == '__main__':
         help='path to save pickle file',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.pkl'
     )
-    parser.add_argument('--experiment', default='20230126-MsNeuron-ADctrlEVS-sensorsMito', type=str)
+    parser.add_argument('--experiment', default='20230928-MsNeu-RGEDItau1', type=str)
     parser.add_argument('--batch_size',default=1, type=int)
     parser.add_argument('--cell_diameter', default=50, type=int)
     parser.add_argument('--flow_threshold', default=.4, type=float)
@@ -164,7 +164,7 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='H4',
+                        dest="chosen_wells", default='A1',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
                         dest="chosen_timepoints", default='T0',
