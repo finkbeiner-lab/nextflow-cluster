@@ -230,6 +230,8 @@ process PLATEMONTAGE {
     input:
     val ready
     val exp
+    val img_size
+    val norm_intensity
     val tiletype
     val montage_pattern
     val chosen_wells
@@ -245,7 +247,7 @@ process PLATEMONTAGE {
 
     script:
     """
-    plate_montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
+    plate_montage.py --experiment ${exp} --img_size ${img_size} --norm_intensity ${norm_intensity} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
     --chosen_channels ${chosen_channels} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
     """

@@ -100,11 +100,12 @@ class TrackCells:
             if df0.empty:
                 continue
             tiledata_id_T0 = df0.tiledata_id.iloc[0]
-            for i, row in df0.iterrows():
-                self.Db.update('celldata', update_dct=dict(cellid=row.randomcellid),
-                               kwargs=dict(tiledata_id=tiledata_id_T0,
-                                           randomcellid=row.randomcellid))
-            self.Db.update('tiledata', update_dct=dict(trackedmaskpath=df0.maskpath.iloc[0]), kwargs=dict(id=tiledata_id_T0))
+            if not self.opt.DEBUG:
+                for i, row in df0.iterrows():
+                    self.Db.update('celldata', update_dct=dict(cellid=row.randomcellid),
+                                kwargs=dict(tiledata_id=tiledata_id_T0,
+                                            randomcellid=row.randomcellid))
+                self.Db.update('tiledata', update_dct=dict(trackedmaskpath=df0.maskpath.iloc[0]), kwargs=dict(id=tiledata_id_T0))
 
 
             if len(df) < 2:
@@ -125,10 +126,11 @@ class TrackCells:
                     new_cellids = [i + 1 + max_cell_id for i in range(len(cellids))]
                     df.loc[df.timepoint==current_timepoint, 'cellid'] = new_cellids
                     tmp_df = df.loc[df.timepoint==current_timepoint]
-                    for i, row in tmp_df.iterrows():
-                        self.Db.update('celldata', update_dct=dict(cellid=row.cellid),
-                                   kwargs=dict(tiledata_id=row.tiledata_id,
-                                               randomcellid=row.randomcellid))
+                    if not self.opt.DEBUG:
+                        for i, row in tmp_df.iterrows():
+                            self.Db.update('celldata', update_dct=dict(cellid=row.cellid),
+                                    kwargs=dict(tiledata_id=row.tiledata_id,
+                                                randomcellid=row.randomcellid))
                     continue
                 # Updates self.filtered_celldata
 
@@ -139,7 +141,9 @@ class TrackCells:
                 # Get files
                 f_prev, f_prev_mask = self.filtered_celldata.loc[self.filtered_celldata.timepoint == prev_timepoint, ['filename', 'maskpath']].iloc[0]
                 f_curr, f_curr_mask = self.filtered_celldata.loc[self.filtered_celldata.timepoint == current_timepoint, ['filename', 'maskpath']].iloc[0]
-                f_curr_mask_relabelled = f_curr_mask.split('ENCODED.tif')[0] + 'TRACKED.tif'
+                f_curr_mask_relabelled = f_curr_mask.split('_')[:-1] + ['TRACKED.tif']
+                f_curr_mask_relabelled = '_'.join(f_curr_mask_relabelled)
+                # f_curr_mask_relabelled = f_curr_mask.split('ENCODED.tif')[0] + 'TRACKED.tif'
                 logger.warning(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
                 print(f'Tracking {self.opt.experiment} at well {well} at tile {tile} for timepoint T{prev_timepoint} to T{current_timepoint}')
 
@@ -151,10 +155,11 @@ class TrackCells:
                 df.loc[updated_celldata.index] = updated_celldata
                 assert np.all(updated_celldata.cellid != -1), '-1 in cellid after updating celldata'
                 print('mapping', mapping)
-                for random_lbl, lbl_from_prev_timepoint in mapping.items():
-                    self.Db.update('celldata', update_dct=dict(cellid=lbl_from_prev_timepoint),
-                                   kwargs=dict(tiledata_id=tiledata_id,
-                                               randomcellid=random_lbl))
+                if not self.opt.DEBUG:
+                    for random_lbl, lbl_from_prev_timepoint in mapping.items():
+                        self.Db.update('celldata', update_dct=dict(cellid=lbl_from_prev_timepoint),
+                                    kwargs=dict(tiledata_id=tiledata_id,
+                                                randomcellid=random_lbl))
 
             elapsed_well = time.time() - start_well
             logger.warning(f'Elapsed time for well: {well} is {elapsed_well}')
@@ -254,7 +259,7 @@ class TrackCells:
         if USE_GT:
             warnings.warn('Duplicates set with GROUND TRUTH')
         # Initialize solver
-        Solve = SolverSmall(debug=True, verbose=False)
+        Solve = SolverSmall(debug=self.opt.DEBUG, verbose=False)
         Grs = MinimumFlow(Gr.g, True, self.opt.DEBUG)
         Outs = OutputSmall()
 
@@ -322,15 +327,15 @@ def str2bool(v):
 
 if __name__ == '__main__':
 
-    DEBUG = 0
+    DEBUG = 1
     VERBOSE = 0
     SAVEBOOL = 1
     USE_SIAMESE = 1
     USE_PROXIMITY = 1
     SET_RANDOM_IDS = 0
     USE_OVERLAP = 0
-    VORONOI_CALC = 1  # calculate voronoi
-    VORONOI_BOOL = 1  # use voronoi calculations, 0 to use basic proximity decide duplicates by cell area
+    VORONOI_CALC = 0  # calculate voronoi
+    VORONOI_BOOL = 0  # use voronoi calculations, 0 to use basic proximity decide duplicates by cell area
     FORWARD_BOOL = 1
     REVERSE_BOOL = 1
     GET_ENCODED_MASKS = 0
@@ -363,7 +368,7 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.pkl'
     )
     parser.add_argument(
-        '--experiment',default='20230928-MsNeu-RGEDItau1',
+        '--experiment',default='20231026-1-msn-cry2tdp43-updated',
         help='Plate name',
         # default='SB26-30plate1'  # AB-CS47iTDP-Survival LINCS062016A AB-SOD1-KW4-WTC11-Survival
         # default='KS-AB-iMN-TDP43-Survival'  # AB-CS47iTDP-Survival LINCS062016A LINCS092016B
@@ -408,15 +413,15 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='B4',
+                        dest="chosen_wells", default='A1',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='T0,T1',
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc", default='Confocal-GFP16',
+    parser.add_argument("--chosen_channels", "-cc", default='RFP1',
                         dest="chosen_channels",
                         help="Morphology Channel.")
-    parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
+    parser.add_argument('--tile', default=1, type=int, help="Select single tile to segment. Default is to segment all tiles.")
 
     args, _ = parser.parse_known_args()
     print('args', args)

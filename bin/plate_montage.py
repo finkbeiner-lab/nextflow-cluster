@@ -1,3 +1,4 @@
+#!/opt/conda/bin/python
 import argparse
 import cv2
 import os
@@ -85,28 +86,28 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--experiment', type=str)
-    parser.add_argument('--img_size', type=int, help='Side length of well montage.')
-    parser.add_argument('--norm_intensity', type=int, help='Value to normalize: (img / norm) * 255.')
-    parser.add_argument('--tiletype', choices=['filename', 'maskpath', 'trackedmaskpath'], type=str,
+    parser.add_argument('--experiment', default='20230928-MsNeu-RGEDItau1', type=str)
+    parser.add_argument('--img_size',default=200, type=int, help='Side length of well montage.')
+    parser.add_argument('--norm_intensity', default=2000, type=int, help='Value to normalize: (img / norm) * 255.')
+    parser.add_argument('--tiletype', default='filename', choices=['filename', 'maskpath', 'trackedmaskpath'], type=str,
                         help='Montage image, binary mask, or tracked mask.')
-    parser.add_argument('--img_norm_name', choices=['division', 'subtraction', 'identity'], type=str,
+    parser.add_argument('--img_norm_name', default='identity', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
-    parser.add_argument('--montage_pattern', choices=['standard', 'legacy'], help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
-    parser.add_argument("--wells_toggle",
+    parser.add_argument('--montage_pattern', default='standard', choices=['standard', 'legacy'], help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
+    parser.add_argument("--wells_toggle", default='include', 
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include', 
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+                        dest="chosen_wells", default='all',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='T0',
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc",
-                        dest="chosen_channels",
+                        dest="chosen_channels", default='all',
                         help="Specify channels to include or exclude.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()

@@ -52,10 +52,6 @@ class SolverSmall:
         a = np.array(a_coup)
         
         with gp.Env(params=self.options) as env, gp.Model(env=env) as model:
-                # Formulate problem
-                # model.optimize()
-
-            # model = Model()
             x = model.addMVar((len(c_cost),), vtype=gp.GRB.BINARY)
             model.setObjective(sum(c_cost[j] * x[j] for j in range(len(c_cost))), sense=gp.GRB.MINIMIZE)
 
@@ -71,16 +67,19 @@ class SolverSmall:
             model.update()
             obj = model.getObjective()
             constrs = model.getConstrs()
-            # for constr in constrs:
-            #     print(constr)
+            if self.debug:
+                print('cost', c_cost)
+                print('Objective', obj)
+                # for constr in constrs:
+                    # print(constr)
             # logger.info('optimizing')
             model.optimize()
-            # model.printAttr('X')
 
             # model = self.model_construct(a_coup, b_flow, c_cost)
 
-            # if self.debug and self.verbose:
-            #     # model.pprint()
+            # if self.debug:
+            #     model.printAttr('X')
+                
             #     print('constrain')
             #     model.constrain.pprint()
             #     print('xx')

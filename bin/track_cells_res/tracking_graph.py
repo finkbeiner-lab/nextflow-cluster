@@ -8,7 +8,7 @@ import pandas as pd
 import numpy as np
 from .voronoi import run_voronoi
 import time
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import logging
 _logger = logging.getLogger("Tracking")
 
@@ -157,10 +157,8 @@ class Graph:
         # to dataframe, then graph
         edge_df = pd.DataFrame(DIST)
         _logger.info(f'Edge df: {edge_df}')
-
         mapping[N] = 'A'
         mapping[N + 1] = 'D'
-
         g = nx.from_pandas_adjacency(edge_df)
         g = nx.relabel_nodes(g, mapping)
         # _logger.info(self.g['L0']['R0'])

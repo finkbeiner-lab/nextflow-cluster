@@ -134,7 +134,7 @@ class Ops:
             if tablename=='dosagedata':
                 df = pd.merge(df, table_df, on='welldata_id', how='inner', suffixes=[None, '_dontuse'])
             if tablename=='channeldata':
-                if self.opt.chosen_channels is not None and len(self.opt.chosen_channels) > 0:
+                if self.opt.chosen_channels is not None and len(self.opt.chosen_channels) > 0 and self.opt.chosen_channels!='all':
                     selected_channels = self.opt.chosen_channels.strip(' ').split(',')
                     print(f'Selected channels for ML: {selected_channels}')
                     table_df = self.filter_df(table_df, 'channel', selected_channels, self.opt.channels_toggle)

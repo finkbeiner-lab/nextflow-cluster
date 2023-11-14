@@ -2,13 +2,13 @@ import time
 
 import numpy as np
 import cv2
-from scipy.stats import mode
-from matplotlib import pyplot as plt
+# from scipy.stats import mode
+# from matplotlib import pyplot as plt
 import imageio
-import os
-import sys
-from scipy.spatial import Voronoi, voronoi_plot_2d
-import pandas as pd
+# import os
+# import sys
+from scipy.spatial import Voronoi
+# import pandas as pd
 import warnings
 from threading import Thread
 import logging
@@ -85,7 +85,7 @@ class VoronoiClass:
         mask = mask - border
         # INITIAL EROSION OF BINARY OR ENCODED MASK
         mask = cv2.erode(mask, np.ones((5, 5)), iterations=1)
-        if self.debug:
+        if self.debug and 0:
             plt.figure()
             plt.imshow(mask)
             for cc in self.centroids:
@@ -94,7 +94,7 @@ class VoronoiClass:
         labels, labelled_mask, stats, region_centroids = cv2.connectedComponentsWithStats(mask)
         logger.info(f'connected components {time.time() - start}')
 
-        if self.debug:
+        if self.debug and 0:
             fig = plt.figure()
             plt.imshow(labelled_mask)
             for cc in self.centroids:
@@ -102,7 +102,7 @@ class VoronoiClass:
             plt.title('CV2 Labels')
         else:
             fig = None
-        if self.debug:
+        if self.debug and 0:
             plt.show()
 
         return labelled_mask
@@ -205,12 +205,12 @@ class VoronoiClass:
         # ymin = np.min(self.centroids[:, 1]) - delta
         # xmax = np.max(self.centroids[:, 0]) + delta
         # ymax = np.max(self.centroids[:, 1]) + delta
-        if self.debug:
-            plt.figure(5)
-            plt.plot(_centroids[:, 0], _centroids[:, 1], 'o')
-            plt.plot(self.vor.vertices[:, 0], self.vor.vertices[:, 1], '*')
-            plt.xlim(0, self.width)
-            plt.ylim(0, self.height)
+        # if self.debug:
+        #     plt.figure(5)
+        #     plt.plot(_centroids[:, 0], _centroids[:, 1], 'o')
+        #     plt.plot(self.vor.vertices[:, 0], self.vor.vertices[:, 1], '*')
+        #     plt.xlim(0, self.width)
+        #     plt.ylim(0, self.height)
         for simplex in self.vor.ridge_vertices:
             simplex = np.asarray(simplex)
             if np.all(simplex >= 0):
@@ -218,7 +218,7 @@ class VoronoiClass:
                                                N=self.num_makeline)
                 border_locs.append(_lin)  # positions to set to 1 in mask
                 # logger.info('border_locs', border_locs)
-                if self.debug:
+                if self.debug and 0:
                     plt.plot(self.vor.vertices[simplex, 0], self.vor.vertices[simplex, 1], 'b-')
 
         # Handle points at infinity
@@ -521,7 +521,7 @@ def thread_intersection(mask_ident, mask_base, cell_ident, edges_to_keep, direct
     filter = mask_ident == cell_ident
     # area = np.count_nonzero(filter)
     cell_ident_on_mask = filter * mask_base
-    if debug:
+    if debug and 0:
         plt.figure()
         plt.imshow(filter * 255)
         plt.title(f'filter intersection {cell_ident}')

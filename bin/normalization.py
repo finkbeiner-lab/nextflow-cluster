@@ -228,7 +228,7 @@ if __name__ == '__main__':
     parser.add_argument("--chosen_timepoints", "-ct",
                         dest="chosen_timepoints", default='',
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc",default='RFP1',
+    parser.add_argument("--chosen_channels", "-cc", default='RFP1',
                         dest="chosen_channels",
                         help="Specify channels to include or exclude.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
