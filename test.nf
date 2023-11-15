@@ -31,6 +31,7 @@ log.info """\
 
 process PYEXAMPLE {
     input:
+    val ready
     val x
 
     output: 
@@ -49,7 +50,7 @@ process BASHEX {
     val x
 
     output:
-    stdout
+    val true
     
     script:
     """
@@ -57,13 +58,46 @@ process BASHEX {
     """
 }
 
+process BASHEX2 {
+    tag "Bash Script Test"
+
+    input:
+    val x
+
+    output:
+    val true
+    
+    script:
+    """
+    test.sh
+    """
+}
+process BASHEX3 {
+    tag "Bash Script Test"
+
+    input:
+    val x
+
+    output:
+    val true
+    
+    script:
+    """
+    test.sh
+    """
+}
 workflow {
-    letters_ch = SPLITLETTERS(greeting_ch)
-    results_ch = CONVERTTOUPPER(letters_ch.flatten())
-    results_ch.view{ it }
-    bashresults_ch = BASHEX(text_ch)
-    bashresults_ch.view{ it }
-    pyresults_ch = PYEXAMPLE(text_ch)
+    // letters_ch = SPLITLETTERS(greeting_ch)
+    // results_ch = CONVERTTOUPPER(letters_ch.flatten())
+    // results_ch.view{ it }
+    BASHEX(text_ch)
+    bashresults_ch = BASHEX.out
+    bashresults_ch2 = BASHEX2(text_ch)
+    // bashresults_ch3 = BASHEX3(text_ch)
+    bashresults_ch3 = Channel.of(true)
+    // bashresults_ch.view{ it }
+    bash_flag = bashresults_ch.mix(bashresults_ch2).mix(bashresults_ch3).collect()
+    pyresults_ch = PYEXAMPLE(bash_flag, text_ch)
     pyresults_ch.view{ it }
 }
 

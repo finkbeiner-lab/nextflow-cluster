@@ -5,16 +5,18 @@
  */
 // SHARED VARIABLES
 params.wells_toggle = 'include' // ['include', 'exclude']
-params.chosen_wells = 'all'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
+params.chosen_wells = 'A2'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
 
 params.timepoints_toggle = 'include' // ['include', 'exclude']
-params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
+params.chosen_timepoints = 'T0'  // 'T0', 'T0-T7', or 'all'
 
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20230928-MsNeu-RGEDItau1'  // Experiment name 
-params.morphology_channel = 'Confocal-GFP16'  // Your morphology channel
+params.tile = 1 // Set to 0 for all, for debugging set to an integer. 
+
+params.experiment = '20231026-1-msn-cry2tdp43-updated'  // Experiment name 
+params.morphology_channel = 'RFP1'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
 
@@ -23,10 +25,11 @@ params.DO_UPDATEPATHS = false
 params.DO_REGISTER_EXPERIMENT = false
 params.DO_SEGMENTATION = false
 params.DO_CELLPOSE_SEGMENTATION = false
+params.DO_PUNCTA_SEGMENTATION = true
 params.DO_TRACKING = false
 params.DO_INTENSITY = false
 params.DO_CROP = false
-params.DO_MONTAGE = true
+params.DO_MONTAGE = false
 params.DO_PLATEMONTAGE = false
 params.DO_CNN = false
 params.DO_GET_CSVS = false
@@ -55,6 +58,16 @@ params.batch_size = 16
 params.cell_diameter = 50  // default is 30 pixels
 params.flow_threshold = 0.4
 params.cell_probability = 0.0
+
+
+// PUNCTA SEGMENTATION
+// Puncta segmentation uses difference of gaussians where one strong gaussian blur subtracts a lesser gaussian blur, emphasizing the intensity peaks.
+params.puncta_target_channel = ['RFP1']  // List of channels. Run in parallel.
+params.puncta_segmentation_method = 'yen' // ['triangle', 'minimum', 'yen', 'manual']
+params.sigma1 = 2  // lesser gaussian blur
+params.sigma2 = 4 // greater gaussian blur
+params.puncta_manual_thresh = 2000  // set manual threshold if puncta_segmentation_method is set to manual
+
 
 // TRACKING
 params.distance_threshold = 300 // distance that a cell must be new
@@ -101,17 +114,23 @@ robo_num_ch = Channel.of(params.robo_num)
 chosen_channels_for_register_exp_ch = Channel.of(params.chosen_channels_for_register_exp)
 experiment_ch = Channel.of(params.experiment)
 seg_ch = Channel.of(params.segmentation_method)
+puncta_seg_ch = Channel.of(params.puncta_segmentation_method)
+puncta_manual_thresh_ch = Channel.of(params.puncta_manual_thresh)
+sigma1_ch = Channel.of(params.sigma1)
+sigma2_ch = Channel.of(params.sigma2)
 norm_ch = Channel.of(params.img_norm_name)
 lower_ch = Channel.of(params.lower_area_thresh)
 upper_ch = Channel.of(params.upper_area_thresh)
 sd_ch = Channel.of(params.sd_scale_factor)
 well_ch = Channel.of(params.chosen_wells)
+tile_ch = Channel.of(params.tile)
 tp_ch = Channel.of(params.chosen_timepoints)
 well_toggle_ch = Channel.of(params.wells_toggle)
 tp_toggle_ch = Channel.of(params.timepoints_toggle)
 channel_toggle_ch = Channel.of(params.channels_toggle)
 target_channel_ch = Channel.from(params.target_channel)
 target_channel_crop_ch = Channel.from(params.target_channel_crop)
+puncta_target_channel_ch = Channel.from(params.puncta_target_channel)
 morphology_ch = Channel.of(params.morphology_channel)
 distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
@@ -175,7 +194,7 @@ workflow {
         updatepaths_result= UPDATEPATHS.out
     }
     else{
-        updatepaths_result = true
+        updatepaths_result = Channel.of(true)
     }
     if (params.DO_REGISTER_EXPERIMENT) {
         REGISTER_EXPERIMENT(input_path_ch, output_path_ch, template_path_ch, platemap_path_ch, ixm_hts_file_ch, robo_num_ch,
@@ -183,7 +202,7 @@ workflow {
         register_result = REGISTER_EXPERIMENT.out
     }
     else {
-        register_result = true
+        register_result = Channel.of(true)
     }
     if (params.DO_SEGMENTATION) {
         seg_ch = SEGMENTATION(register_result, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
@@ -192,7 +211,7 @@ workflow {
         seg_result = SEGMENTATION.out
     }
     else {
-        seg_result = true
+        seg_result = Channel.of(true)
     }
     if (params.DO_CELLPOSE_SEGMENTATION) {
 
@@ -203,8 +222,20 @@ workflow {
         cellpose_result = CELLPOSE.out
     }
     else {
-        cellpose_result = true
+        cellpose_result = Channel.of(true)
     }
+
+    if (params.DO_PUNCTA_SEGMENTATION){
+        seg_flag = seg_result.mix(cellpose_result).collect()
+        PUNCTA(seg_flag, experiment_ch, puncta_seg_ch, puncta_manual_thresh_ch,sigma1_ch, sigma2_ch, 
+        morphology_ch, puncta_target_channel_ch,
+         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch, tile_ch)
+        puncta_result = PUNCTA.out
+    }
+    else{
+        puncta_result = Channel.of(true)
+    }
+
 
     if (params.DO_TRACKING) {
         track_ch = TRACKING(seg_result, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, tp_ch, morphology_ch,
@@ -212,8 +243,9 @@ workflow {
         track_result = TRACKING.out
     }
     else {
-        track_result = true
+        track_result = Channel.of(true)
     }
+    
     if (params.DO_MONTAGE) {
 
         montage_ch = MONTAGE(track_result, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
@@ -227,7 +259,7 @@ workflow {
         montage_result = PLATEMONTAGE.out
     }
     else {
-        montage_result = true
+        montage_result = Channel.of(true)
     }
     if (params.DO_INTENSITY) {
         int_ch = INTENSITY(track_result, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
@@ -235,7 +267,7 @@ workflow {
         int_ch.view { it }
     }
     else {
-        intensity_result = true
+        intensity_result = Channel.of(true)
     }
     if (params.DO_CROP) {
         crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, crop_size_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
@@ -243,7 +275,7 @@ workflow {
         crop_result = CROP.out
     }
     else {
-        crop_result = true
+        crop_result = Channel.of(true)
     }
     if (params.DO_CNN) {
         cnn_ch = CNN(crop_result, experiment_ch, label_type_ch, label_name_ch, classes_ch, img_norn_name_cnn_ch, filters_ch, num_channels_ch, n_samples_ch,
@@ -252,7 +284,7 @@ workflow {
         cnn_result = CNN.out
     }
     else {
-        cnn_result = true
+        cnn_result = Channel.of(true)
     }
     //     MULT(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)
     csv_ready = collect(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)

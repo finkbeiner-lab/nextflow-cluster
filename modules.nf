@@ -100,24 +100,29 @@ process PUNCTA {
     input:
     val ready
     val exp
-    val morphology_channel
     val segmentation_method
-    val lower_area_thresh
+    val manual_thresh
+    val sigma1
+    val sigma2
+    val morphology_channel
+    each target_channel
     val chosen_wells
     val chosen_timepoints
     val wells_toggle
     val timepoints_toggle
+    val tile
 
     output:
     val true
 
     script:
     """
-    puncta.py --experiment ${exp} --segmentation_method ${segmentation_method} \
+    puncta.py --experiment ${exp} --segmentation_method ${segmentation_method} --manual_thresh ${manual_thresh} \
+    --sigma1 ${sigma1} --sigma2 ${sigma2} \
     --chosen_channels ${morphology_channel} --target_channel ${target_channel} \
-    --area_thresh ${lower_area_thresh} \
     --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --tile ${tile}
     """
 }
 
