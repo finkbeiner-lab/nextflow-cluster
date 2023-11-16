@@ -5,24 +5,24 @@
  */
 // SHARED VARIABLES
 params.wells_toggle = 'include' // ['include', 'exclude']
-params.chosen_wells = 'A2'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
+params.chosen_wells = 'all'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
 
 params.timepoints_toggle = 'include' // ['include', 'exclude']
-params.chosen_timepoints = 'T0'  // 'T0', 'T0-T7', or 'all'
+params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 
 params.channels_toggle = 'include' // ['include', 'exclude']
-params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
+params.chosen_channels = 'all'  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.tile = 1 // Set to 0 for all, for debugging set to an integer. 
+params.tile = 0 // Set to 0 for all, for debugging set to an integer. 
 
-params.experiment = '20231026-1-msn-cry2tdp43-updated'  // Experiment name 
+params.experiment = 'CB-ICC-110223'  // Experiment name 
 params.morphology_channel = 'RFP1'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
 
 // SELECT MODULES
 params.DO_UPDATEPATHS = false
-params.DO_REGISTER_EXPERIMENT = false
+params.DO_REGISTER_EXPERIMENT = true
 params.DO_SEGMENTATION = false
 params.DO_CELLPOSE_SEGMENTATION = false
 params.DO_PUNCTA_SEGMENTATION = false
@@ -32,19 +32,21 @@ params.DO_CROP = false
 params.DO_MONTAGE = false
 params.DO_PLATEMONTAGE = false
 params.DO_CNN = false
-params.DO_GET_CSVS = true
+params.DO_GET_CSVS = false
 
 // Variables per module
 
 // REGISTER_EXPERIMENT
-params.input_path = ''  // path to raw images
-params.output_path = ''  // analysis directory
-params.template_path = ''  // xlsx template
-params.ixm_hts_file = ''  // IXM HTS Template
-params.platemap_path = '' // Platemap path (csv)
+params.input_path = '/gladstone/finkbeiner/robodata/IXM4Galaxy/ChristinaB/CB-ICC-110223'  // path to raw images
+params.output_path = '/gladstone/finkbeiner/elia/Christina/Imaging_Experiments/ICC/GXYTMP-NEW-CB-ICC110223'  // analysis directory
+params.template_path = '.'  // xlsx template
+params.robo_file = '.'  // Legacy Template Path for Roboscopes (csv)
+params.ixm_hts_file = '/gladstone/finkbeiner/robodata/ImagingTemplates/CB-ICC-110223.HTS'  // IXM HTS Template
+params.platemap_path = '/gladstone/finkbeiner/robodata/ImagingTemplates/CB-Platemap-ICC-110223.csv' // Platemap path (csv)
 params.illumination_file = '/gladstone/finkbeiner/robodata/IXM Documents/illumination-setting-2023-06-16.ILS'  // Path to IXM Illumination file. On metaxpres -> Control -> Devices -> Configure Illumination -> Backup
 params.robo_num = 0  // [0,3,4]
 params.chosen_channels_for_register_exp = 'all'  // Used by Montage as well
+params.overwrite_experiment = 1 // [0,1] 0 to prevent overwriting experiment, 1 allows overwriting.
 
 // SEGMENTATION
 params.segmentation_method = 'sd_from_mean' // ['sd_from_mean', 'triangle', 'minimum', 'yen']
@@ -54,7 +56,7 @@ params.sd_scale_factor = 3.5
 
 // CELLPOSE SEGMENTATION
 params.model_type = 'cyto2' // ['cyto', 'nuclei', 'cyto2']
-params.batch_size = 16
+params.batch_size_cellpose = 16
 params.cell_diameter = 50  // default is 30 pixels
 params.flow_threshold = 0.4
 params.cell_probability = 0.0
@@ -108,10 +110,12 @@ input_path_ch = Channel.of(params.input_path)
 output_path_ch = Channel.of(params.output_path)
 template_path_ch = Channel.of(params.template_path)
 ixm_hts_file_ch = Channel.of(params.ixm_hts_file)
+robo_file_ch = Channel.of(params.robo_file)
 platemap_path_ch = Channel.of(params.platemap_path)
 illumination_file_ch = Channel.of(params.illumination_file)
 robo_num_ch = Channel.of(params.robo_num)
 chosen_channels_for_register_exp_ch = Channel.of(params.chosen_channels_for_register_exp)
+overwrite_experiment_ch = Channel.of(params.overwrite_experiment)
 experiment_ch = Channel.of(params.experiment)
 seg_ch = Channel.of(params.segmentation_method)
 puncta_seg_ch = Channel.of(params.puncta_segmentation_method)
@@ -141,7 +145,7 @@ well_size_for_platemontage_ch = Channel.of(params.well_size_for_platemontage)
 norm_intensity_ch = Channel.of(params.norm_intensity)
 
 model_type_ch = Channel.of(params.model_type)
-batch_size_ch = Channel.of(params.batch_size)
+batch_size_cellpose_ch = Channel.of(params.batch_size_cellpose)
 cell_diameter_ch = Channel.of(params.cell_diameter)
 flow_threshold_ch = Channel.of(params.flow_threshold)
 cell_probability_ch = Channel.of(params.cell_probability)
@@ -162,8 +166,7 @@ optimizer_ch = Channel.of(params.optimizer)
 
 include { REGISTER_EXPERIMENT; SEGMENTATION;
     CELLPOSE; PUNCTA; TRACKING; INTENSITY;
-    CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; MULT; BASHEX;UPDATEPATHS;
-    SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
+    CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX;UPDATEPATHS} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -197,8 +200,9 @@ workflow {
         updatepaths_result = Channel.of(true)
     }
     if (params.DO_REGISTER_EXPERIMENT) {
-        REGISTER_EXPERIMENT(input_path_ch, output_path_ch, template_path_ch, platemap_path_ch, ixm_hts_file_ch, robo_num_ch,
-        well_ch, tp_ch,chosen_channels_for_register_exp_ch, well_toggle_ch, tp_toggle_ch, channels_toggle)
+        REGISTER_EXPERIMENT(input_path_ch, output_path_ch, template_path_ch, platemap_path_ch, ixm_hts_file_ch, robo_file_ch, 
+        overwrite_experiment_ch, robo_num_ch,
+        well_ch, tp_ch, chosen_channels_for_register_exp_ch, well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
         register_result = REGISTER_EXPERIMENT.out
     }
     else {
@@ -215,7 +219,7 @@ workflow {
     }
     if (params.DO_CELLPOSE_SEGMENTATION) {
 
-        cellpose_ch = CELLPOSE(register_result, experiment_ch, batch_size_ch, cell_diameter_ch, flow_threshold_ch, 
+        cellpose_ch = CELLPOSE(register_result, experiment_ch, batch_size_cellpose_ch, cell_diameter_ch, flow_threshold_ch, 
         cell_probability_ch, model_type_ch, morphology_ch, seg_ch, lower_ch, upper_ch, sd_ch,
         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         cellpose_ch.view { it }
