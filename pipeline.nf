@@ -25,14 +25,14 @@ params.DO_UPDATEPATHS = false
 params.DO_REGISTER_EXPERIMENT = false
 params.DO_SEGMENTATION = false
 params.DO_CELLPOSE_SEGMENTATION = false
-params.DO_PUNCTA_SEGMENTATION = true
+params.DO_PUNCTA_SEGMENTATION = false
 params.DO_TRACKING = false
 params.DO_INTENSITY = false
 params.DO_CROP = false
 params.DO_MONTAGE = false
 params.DO_PLATEMONTAGE = false
 params.DO_CNN = false
-params.DO_GET_CSVS = false
+params.DO_GET_CSVS = true
 
 // Variables per module
 
@@ -238,7 +238,8 @@ workflow {
 
 
     if (params.DO_TRACKING) {
-        track_ch = TRACKING(seg_result, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, tp_ch, morphology_ch,
+        seg_flag = seg_result.mix(cellpose_result).collect()
+        track_ch = TRACKING(seg_flag, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, tp_ch, morphology_ch,
         well_toggle_ch, tp_toggle_ch)
         track_result = TRACKING.out
     }
@@ -286,14 +287,9 @@ workflow {
     else {
         cnn_result = Channel.of(true)
     }
-    //     MULT(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)
-    csv_ready = collect(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result)
-    //     csv_channel = Channel
-    //         .of(register_result, seg_result, track_result, intensity_result, crop_result, cnn_result )
-    //         .max()
-    //         .view { "Max value is $it" }
-    csv_ready = true
+
     if (params.DO_GET_CSVS) {
+        csv_ready = updatepaths_result.mix(register_result).mix(seg_result).mix(cellpose_result).mix(puncta_result).mix(track_result).mix(intensity_result).mix(crop_result).mix(cnn_result).collect()
         csv_ch = GETCSVS(csv_ready, experiment_ch)
         csv_ch.view { it }
     }
