@@ -5,7 +5,7 @@
  */
 // SHARED VARIABLES
 params.wells_toggle = 'include' // ['include', 'exclude']
-params.chosen_wells = 'all'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
+params.chosen_wells = 'A3'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
 
 params.timepoints_toggle = 'include' // ['include', 'exclude']
 params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
@@ -22,17 +22,17 @@ params.img_norm_name = 'subtraction' // ['identity', 'subtraction', 'division']
 
 // SELECT MODULES
 params.DO_UPDATEPATHS = false
-params.DO_REGISTER_EXPERIMENT = true
+params.DO_REGISTER_EXPERIMENT = false
 params.DO_SEGMENTATION = false
 params.DO_CELLPOSE_SEGMENTATION = false
 params.DO_PUNCTA_SEGMENTATION = false
 params.DO_TRACKING = false
 params.DO_INTENSITY = false
 params.DO_CROP = false
-params.DO_MONTAGE = false
+params.DO_MONTAGE = true
 params.DO_PLATEMONTAGE = false
 params.DO_CNN = false
-params.DO_GET_CSVS = false
+params.DO_GET_CSVS = true
 
 // Variables per module
 
@@ -46,7 +46,7 @@ params.platemap_path = '/gladstone/finkbeiner/robodata/ImagingTemplates/CB-Plate
 params.illumination_file = '/gladstone/finkbeiner/robodata/IXM Documents/illumination-setting-2023-06-16.ILS'  // Path to IXM Illumination file. On metaxpres -> Control -> Devices -> Configure Illumination -> Backup
 params.robo_num = 0  // [0,3,4]
 params.chosen_channels_for_register_exp = 'all'  // Used by Montage as well
-params.overwrite_experiment = 1 // [0,1] 0 to prevent overwriting experiment, 1 allows overwriting.
+params.overwrite_experiment = 0 // [0,1] 0 to prevent overwriting experiment, 1 allows overwriting.
 
 // SEGMENTATION
 params.segmentation_method = 'sd_from_mean' // ['sd_from_mean', 'triangle', 'minimum', 'yen']
@@ -61,7 +61,6 @@ params.cell_diameter = 50  // default is 30 pixels
 params.flow_threshold = 0.4
 params.cell_probability = 0.0
 
-
 // PUNCTA SEGMENTATION
 // Puncta segmentation uses difference of gaussians where one strong gaussian blur subtracts a lesser gaussian blur, emphasizing the intensity peaks.
 params.puncta_target_channel = ['RFP1']  // List of channels. Run in parallel.
@@ -69,7 +68,6 @@ params.puncta_segmentation_method = 'yen' // ['triangle', 'minimum', 'yen', 'man
 params.sigma1 = 2  // lesser gaussian blur
 params.sigma2 = 4 // greater gaussian blur
 params.puncta_manual_thresh = 2000  // set manual threshold if puncta_segmentation_method is set to manual
-
 
 // TRACKING
 params.distance_threshold = 300 // distance that a cell must be new
@@ -217,7 +215,7 @@ workflow {
     else {
         seg_result = Channel.of(true)
     }
-    if (params.DO_CELLPOSE_SEGMENTATION) {
+    if (params.DO_CELLPOSE_SEGMENTATION && !params.DO_SEGMENTATION) {
 
         cellpose_ch = CELLPOSE(register_result, experiment_ch, batch_size_cellpose_ch, cell_diameter_ch, flow_threshold_ch, 
         cell_probability_ch, model_type_ch, morphology_ch, seg_ch, lower_ch, upper_ch, sd_ch,
@@ -239,8 +237,6 @@ workflow {
     else{
         puncta_result = Channel.of(true)
     }
-
-
     if (params.DO_TRACKING) {
         seg_flag = seg_result.mix(cellpose_result).collect()
         track_ch = TRACKING(seg_flag, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, tp_ch, morphology_ch,
@@ -249,16 +245,13 @@ workflow {
     }
     else {
         track_result = Channel.of(true)
-    }
-    
+    }   
     if (params.DO_MONTAGE) {
-
         montage_ch = MONTAGE(track_result, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
         well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
         montage_result = MONTAGE.out
     }
     if (params.DO_PLATEMONTAGE) {
-
         platemontage_ch = PLATEMONTAGE(track_result, experiment_ch, well_size_for_platemontage_ch, norm_intensity_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
         well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
         montage_result = PLATEMONTAGE.out

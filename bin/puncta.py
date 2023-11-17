@@ -1,6 +1,7 @@
 #!/opt/conda/bin/python
 import numpy as np
 import imageio
+import matplotlib.pyplot as plt
 from skimage import (
     color, feature, filters, measure, morphology, segmentation, util
 )

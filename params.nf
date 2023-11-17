@@ -1,0 +1,1 @@
+p.from_another_module = '123'

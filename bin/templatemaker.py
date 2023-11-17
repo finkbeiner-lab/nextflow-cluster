@@ -69,11 +69,12 @@ class SquareSelector:
         return self.selected_cells
 
 class ExperimentPage(tk.Frame):
-    def __init__(self, master):
+    def __init__(self, master, controller):
         super().__init__(master)
-        # self.master = master
+        self.data = controller.data
+        self.fnt= controller.fnt
+        self.frame_dct = controller.frame_dct
         self.master.title("Experiment Page")
-        # self.fnt = ('utopia', 18) 
         print(self.data)
         
         labels = [
@@ -126,9 +127,9 @@ class ExperimentPage(tk.Frame):
         self.go_to_next_page_button.grid(row=row, column=2, padx=10, pady=5)
         
     def show_microscope_page(self):
-        self.master.switch_frame(MicroscopePage)
+        self.master.show_frame(self.frame_dct['microscope'])
     def show_plate_page(self):
-        self.master.switch_frame(PlatePage)
+        self.master.show_frame(self.frame_dct['plate'])
         
     def save_entry(self):
         # Retrieve the values entered by the user
@@ -162,28 +163,35 @@ class ExperimentPage(tk.Frame):
         }
 
 class PlatePage(tk.Frame):
-    def __init__(self, master):
+    def __init__(self, master, controller):
         super().__init__(master)
         self.master = master
+        self.data = controller.data
+        self.fnt= controller.fnt
+        self.frame_dct = controller.frame_dct
+        
         self.master.title("Plate Page")
 
         # Create a button to go back to the main page
         self.go_to_prev_page_button = tk.Button(self, text="Experiment Page", command=self.show_experiment_page)
-        self.go_to_prev_page_button.pack()
+        self.go_to_prev_page_button.grid(row=0, column=0, padx=10, pady=5)
         self.go_to_next_page_button = tk.Button(self, text="Plate Map Page", command=self.show_platemap_page)
-        self.go_to_next_page_button.pack()
+        self.go_to_next_page_button.grid(row=0, column=1, padx=10, pady=5)
 
     def show_experiment_page(self):
-        self.master.switch_frame(ExperimentPage)
+        self.master.show_frame(self.frame_dct['experiment'])
         
     def show_platemap_page(self):
-        self.master.switch_frame(PlateMapPage)
+        self.master.show_frame(self.frame_dct['platemap'])
         
 
 class PlateMapPage(tk.Frame):
-    def __init__(self, master):
+    def __init__(self, master, controller):
         super().__init__(master)
-        # self.master = master
+        self.data = controller.data
+        self.fnt= controller.fnt
+        self.frame_dct = controller.frame_dct
+        
         self.master.title("Plate Map Page")
         
         self.platemap_df = pd.DataFrame(columns=["well", "celltype", "condition", "name", "dosage", "units"])
@@ -237,6 +245,12 @@ class PlateMapPage(tk.Frame):
         self.save_button = tk.Button(self, text="Save to CSV", font=self.fnt,command=self.save)
         self.save_button.grid(row=7, column=3, pady=10)
         
+        
+        self.go_to_prev_page_button = tk.Button(self, text="Plate Page", command=self.show_plate_page)
+        self.go_to_prev_page_button.grid(row=8, column=0, padx=10, pady=5)
+        self.go_to_next_page_button = tk.Button(self, text="Timepoint Page", command=self.show_timepoint_page)
+        self.go_to_next_page_button.grid(row=8, column=1, padx=10, pady=5)
+        
     def toggle_well_count(self):
         if self.selector.rows==8:
             rows=16
@@ -273,46 +287,56 @@ class PlateMapPage(tk.Frame):
         except ValueError:
             messagebox.showerror("Error", "Please enter a valid number for Dosage.")
 
-        self.go_to_prev_page_button = tk.Button(self, text="Plate Page", command=self.show_plate_page)
-        self.go_to_prev_page_button.pack()
-        self.go_to_next_page_button = tk.Button(self, text="Timepoint Page", command=self.show_timepoint_page)
-        self.go_to_next_page_button.pack()
 
     def show_plate_page(self):
-        self.master.switch_frame(PlatePage)
+        self.master.show_frame(self.frame_dct['plate'])
     def show_timepoint_page(self):
-        self.master.switch_frame(TimepointPage)
+        self.master.show_frame(self.frame_dct['timepoint'])
+    def save(self):
+        self.platemap_df.to_csv("selected_squares.csv", index=False)
 
 class TimepointPage(tk.Frame):
-    def __init__(self, master):
+    def __init__(self, master,  controller):
         super().__init__(master)
-        self.master = master
+        self.data = controller.data
+        self.fnt= controller.fnt
+        self.frame_dct = controller.frame_dct
+        
         self.master.title("Timepoint Page")
 
         self.go_to_prev_page_button = tk.Button(self, text="Plate Map Page", command=self.show_platemap_page)
-        self.go_to_prev_page_button.pack()
+        self.go_to_prev_page_button.grid(row=0, column=0, pady=10)
         self.go_to_next_page_button = tk.Button(self, text="Microscope Page", command=self.show_microscope_page)
-        self.go_to_next_page_button.pack()
+        self.go_to_next_page_button.grid(row=0, column=1, pady=10)
     def show_platemap_page(self):
-        self.master.switch_frame(PlateMapPage)
+        self.master.show_frame(self.frame_dct['platemap'])
     def show_microscope_page(self):
-        self.master.switch_frame(MicroscopePage)
+        self.master.show_frame(self.frame_dct['microscope'])
         
         
 class MicroscopePage(tk.Frame):
-    def __init__(self, master):
+    def __init__(self, master,  controller):
         super().__init__(master)
-        self.master = master
+        self.data = controller.data
+        self.fnt= controller.fnt
+        self.frame_dct = controller.frame_dct
+        
         self.master.title("Microscope Page")
 
         self.go_to_prev_page_button = tk.Button(self, text="Plate Map Page", command=self.show_timepoint_page)
-        self.go_to_prev_page_button.pack()
+        self.go_to_prev_page_button.grid(row=0, column=0, pady=10)
         self.go_to_next_page_button = tk.Button(self, text="Experiment Page", command=self.show_experiment_page)
-        self.go_to_next_page_button.pack()
+        self.go_to_next_page_button.grid(row=0, column=1, pady=10)
     def show_timepoint_page(self):
-        self.master.switch_frame(TimepointPage)
+        self.master.show_frame(self.frame_dct['timepoint'])
     def show_experiment_page(self):
-        self.master.switch_frame(ExperimentPage)
+        self.master.show_frame(self.frame_dct['experiment'])
+
+class Handler:
+    def __init__(self):
+        self.frame_dct = {}
+        self.data = {'created':0}
+        self.fnt = ('utopia', 18)
         
 
 class App(tk.Tk):
@@ -322,18 +346,32 @@ class App(tk.Tk):
 
         self.title("Template Maker")
         self.data = {'created':0}
-        self.experiment_frame = ExperimentPage(self)
-        self.plate_frame = PlatePage(self)
-        self.platemap_frame = PlateMapPage(self)
-        self.timepoint_frame = TimepointPage(self)
-        self.microscope_frame = MicroscopePage(self)
+        controller = Handler()
+        experiment_frame = ExperimentPage(self, controller)
+        plate_frame = PlatePage(self, controller)
+        platemap_frame = PlateMapPage(self, controller)
+        timepoint_frame = TimepointPage(self, controller)
+        microscope_frame = MicroscopePage(self, controller)
         
-        self.save_page = tk.Button(self, text="Save Page", command=self.save_page)
-        self.save_page.pack(side="top", padx=10, pady=10, fill="x")
+        experiment_frame.grid(row=0,column=0,sticky="nsew")
+        plate_frame.grid(row=0,column=0,sticky="nsew")
+        platemap_frame.grid(row=0,column=0,sticky="nsew")
+        timepoint_frame.grid(row=0,column=0,sticky="nsew")
+        microscope_frame.grid(row=0,column=0,sticky="nsew")
+        
+        controller.frame_dct['experiment'] = experiment_frame
+        controller.frame_dct['plate'] = plate_frame
+        controller.frame_dct['platemap'] = platemap_frame
+        controller.frame_dct['timepoint'] = timepoint_frame
+        controller.frame_dct['microscope'] = microscope_frame
+        
+        self.save_page = tk.Button(self, text="Save Page", font=self.fnt, command=self.save_page)
+        self.save_page.grid(row=1, column=1, pady=10)
 
         self.current_frame = None
-        self.show_frame(self.experiment_frame)
-
+        self.show_frame(experiment_frame)
+        
+        
     def switch_frame(self, frame_class):
         new_frame = frame_class(self)
 
