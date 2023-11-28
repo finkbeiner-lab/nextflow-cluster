@@ -1,9 +1,16 @@
 import tkinter as tk
-from tkinter import Canvas, messagebox, Entry, Label, StringVar, OptionMenu
+from tkinter import Canvas, messagebox, Entry, Label, StringVar, OptionMenu, BooleanVar, IntVar
 import pandas as pd
 import string
 from tkinter import font as tkfont  # this module provides utilities to work with fonts
 
+def save_template(data):
+    with pd.ExcelWriter("output.xlsx", engine="xlsxwriter") as writer:
+        data['experiment_df'].to_excel(writer, sheet_name="experiment", index=False)
+        data['plate_df'].to_excel(writer, sheet_name="plate", index=False)
+        data['platemap_df'].to_excel(writer, sheet_name="platemap", index=False)
+        data['timepoint_df'].to_excel(writer, sheet_name="Timepoint", index=False)
+        data['microscope_df'].to_excel(writer, sheet_name="microscope", index=False)
 
 def list_fonts():
     root = tk.Tk()  # Create a root window
@@ -13,7 +20,7 @@ def list_fonts():
     root.destroy()
     
 class SquareSelector:
-    def __init__(self, master, rows=16, cols=24, cell_size=60):
+    def __init__(self, master, row=6, rows=16, cols=24, cell_size=60):
         
         self.default_font = ('utopia', 18) 
         
@@ -27,7 +34,7 @@ class SquareSelector:
         self.canvas_height = (rows + 1) * cell_size
 
         self.canvas = Canvas(master, width=self.canvas_width, height=self.canvas_height)
-        self.canvas.grid(row=6, column=0, columnspan=3, pady=10)
+        self.canvas.grid(row=row, column=0, columnspan=3, pady=10)
 
         self.draw_grid()
         self.canvas.bind("<B1-Motion>", self.select_square)
@@ -92,7 +99,7 @@ class ExperimentPage(tk.Frame):
             "Email:"
         ]
 
-        self.entry_vars = {}
+        controller.data['experiment'] = {}
         row = 0
         for label_text in labels:
             label = Label(self, text=label_text, font=self.fnt)
@@ -116,11 +123,14 @@ class ExperimentPage(tk.Frame):
                     var.set(r"D:\Images")
                 entry = Entry(self, textvariable=var, font=self.fnt)
                 entry.grid(row=row, column=1, padx=10, pady=5)
-            self.entry_vars[label_text] = var
+            controller.data['experiment'][label_text] = var
             row += 1
         # Create a button to go to the new page
         label = Label(self, text='Go to: ', font=self.fnt)
         label.grid(row=row, column=0, padx=10, pady=5, sticky="e")
+        
+        
+        
         self.go_to_prev_page_button = tk.Button(self, text="Microscope Page", font=self.fnt, command=self.show_microscope_page)
         self.go_to_prev_page_button.grid(row=row, column=1, padx=10, pady=5)
         self.go_to_next_page_button = tk.Button(self, text="Plate Page", font=self.fnt, command=self.show_plate_page)
@@ -161,22 +171,106 @@ class ExperimentPage(tk.Frame):
             "Imaging Pattern": imaging_pattern,
             "Email": email,
         }
+        
+        exp_df = pd.DataFrame(entry)
+        
+        
 
 class PlatePage(tk.Frame):
     def __init__(self, master, controller):
         super().__init__(master)
         self.master = master
-        self.data = controller.data
+        self.controller = controller
         self.fnt= controller.fnt
         self.frame_dct = controller.frame_dct
         
         self.master.title("Plate Page")
+        
+        # map for channels, exposure time, pfs, dmd targeting options, ordering
+        columns = ["Well",
+                   "Montage",
+                   "PFSHeight",
+                   "Channel",
+                   "Exposure",
+                   "ExcitationIntensity",
+                   "Objective",
+                   "Overlap",
+                   "Show_Images"]
+        tm_columns = ["DMD_Channel",
+                   "DMD_Exposure",
+                   "DMD_ExcitationIntensity",
+                   "DMD_Generate",
+                   "DMD_Function",
+                   "Experiment_Target",
+                   "Track_Channel",
+                   "Stim_Channel",
+                   "Stim_Filter",
+                   "DMD_Paint",
+                   "Holdout_N_Track",
+                   "Show_Image",
+                   "Excitation_Function",
+                   "Threshold_Method",
+                   "Sd_Scale_Factor",
+                   "Cell_Area_Lower_Lim",
+                   "Cell_Area_Upper_Lim"]
+        robo4_columns = [
+            "Confocal_Channel",
+            "Confocal_Exposure",
+            "Confocal_ExcitationIntensity",
+            "Cobolt_Channel",
+            "Cobolt_Exposure",
+            "Cobolt_ExcitationIntensity",
+        ]
+        self.plate_df = pd.DataFrame(columns=columns + tm_columns + robo4_columns)
+        for row, label_text in enumerate(columns):
+            var = StringVar()
+            
+            if label_text in ['Montage','Exposure']:
+                var = IntVar()
+            elif label_text=='Show_Images':
+                var = BooleanVar()
+                var.set(False)
+                checkbutton = tk.Checkbutton(self, text=label_text, variable=var)
+                checkbutton.config(font = self.fnt)
+                checkbutton.grid(row=row, column=1, padx=10, pady=5)
+            elif label_text=='Objective':
+                var = StringVar()
+                options = ["10X", "20X", "40X", "60X"]
+                var.set("20X")
+                dropdown = OptionMenu(self, var, *options)
+                dropdown.config(font=self.fnt)
+                dropdown.grid(row=row, column=1, padx=10, pady=5)
+                Label(self, text=label_text, font=self.fnt).grid(row=row, column=0, sticky="e")
+                
+            else:
+                Label(self, text=label_text, font=self.fnt).grid(row=row, column=0, sticky="e")
+                Entry(self, textvariable=var, font=self.fnt).grid(row=row, column=1)
+            controller.data['plate'][label_text] = var
 
+
+        # Square Selector (10x10 grid)
+        self.selector = SquareSelector(self, row=row)
+
+        # Update DataFrame Button
+        self.wells_button = tk.Button(self, text="96 <-> 384 Wells", command=self.toggle_well_count, font=self.fnt)
+        self.wells_button.grid(row=row + 1, column=0, pady=10)
+        
+        # Clear Selection
+        self.clear_button = tk.Button(self, text="Clear Selection", command=self.selector.clear_selection, font=self.fnt)
+        self.clear_button.grid(row=row + 1, column=1, pady=10)
+        
+        # Update DataFrame Button
+        self.update_button = tk.Button(self, text="Update DataFrame", command=self.update_df, font=self.fnt)
+        self.update_button.grid(row=row + 1, column=2, pady=10)
+
+        # Save Button
+        self.save_button = tk.Button(self, text="Save to CSV", font=self.fnt,command=save_template)
+        self.save_button.grid(row=row + 1, column=3, pady=10)
         # Create a button to go back to the main page
-        self.go_to_prev_page_button = tk.Button(self, text="Experiment Page", command=self.show_experiment_page)
-        self.go_to_prev_page_button.grid(row=0, column=0, padx=10, pady=5)
-        self.go_to_next_page_button = tk.Button(self, text="Plate Map Page", command=self.show_platemap_page)
-        self.go_to_next_page_button.grid(row=0, column=1, padx=10, pady=5)
+        self.go_to_prev_page_button = tk.Button(self, text="Experiment Page", command=self.show_experiment_page, font=self.fnt)
+        self.go_to_prev_page_button.grid(row=row + 2, column=0, padx=10, pady=5)
+        self.go_to_next_page_button = tk.Button(self, text="Plate Map Page", command=self.show_platemap_page, font=self.fnt)
+        self.go_to_next_page_button.grid(row=row + 2, column=1, padx=10, pady=5)
 
     def show_experiment_page(self):
         self.master.show_frame(self.frame_dct['experiment'])
@@ -184,11 +278,49 @@ class PlatePage(tk.Frame):
     def show_platemap_page(self):
         self.master.show_frame(self.frame_dct['platemap'])
         
+    def toggle_well_count(self):
+        if self.selector.rows==8:
+            rows=16
+            cols = 24
+        else:
+            rows = 8
+            cols=12
+        print(self.selector.rows)
+        self.selector.selected_cells.clear()
+        self.selector.canvas.delete("all")  # Clear all items on the canvas
+        self.selector = SquareSelector(self, rows=rows, cols=cols)
+
+    def update_df(self):
+        celltype = self.celltype_var.get()
+        condition = self.condition_var.get()
+        dosage_name = self.dosage_name_var.get()
+        dosage_type = self.dosage_type_var.get()
+        dosage = self.dosage_var.get()
+        units = self.units_var.get()
+        updates = []
+        try:
+            float_dosage = float(dosage)
+            for cell in self.selector.get_selected_cells():
+                row = cell[0]
+                col = str(cell[1])
+                well = row + col
+                updates.append({"well":well, "celltype": celltype, "condition":condition, "name": dosage_name, "type":dosage_type, "dosage": float_dosage, "units": units})
+            update_df = pd.DataFrame(updates)
+            self.plate_df = pd.concat([self.plate_df, update_df], ignore_index=True)
+            self.data.controller['plate'] = self.plate_df
+            self.selector.clear_selection()
+            self.dosage_name_var.set("")
+            self.dosage_var.set("")
+            self.units_var.set("")
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid number for Dosage.")
+
+        
 
 class PlateMapPage(tk.Frame):
     def __init__(self, master, controller):
         super().__init__(master)
-        self.data = controller.data
+        self.controller = controller
         self.fnt= controller.fnt
         self.frame_dct = controller.frame_dct
         
@@ -242,7 +374,7 @@ class PlateMapPage(tk.Frame):
         self.update_button.grid(row=7, column=2, pady=10)
 
         # Save Button
-        self.save_button = tk.Button(self, text="Save to CSV", font=self.fnt,command=self.save)
+        self.save_button = tk.Button(self, text="Save to CSV", font=self.fnt,command=save_template)
         self.save_button.grid(row=7, column=3, pady=10)
         
         
@@ -280,6 +412,7 @@ class PlateMapPage(tk.Frame):
                 updates.append({"well":well, "celltype": celltype, "condition":condition, "name": dosage_name, "type":dosage_type, "dosage": float_dosage, "units": units})
             update_df = pd.DataFrame(updates)
             self.platemap_df = pd.concat([self.platemap_df, update_df], ignore_index=True)
+            self.controller.data['platemap'] = self.platemap_df
             self.selector.clear_selection()
             self.dosage_name_var.set("")
             self.dosage_var.set("")
@@ -335,7 +468,11 @@ class MicroscopePage(tk.Frame):
 class Handler:
     def __init__(self):
         self.frame_dct = {}
-        self.data = {'created':0}
+        self.data = dict(experiment=dict(), 
+                         plate=dict(),
+                         platemap=dict(),
+                         timepoint=dict(),
+                         microscope=dict())
         self.fnt = ('utopia', 18)
         
 
@@ -387,34 +524,6 @@ class App(tk.Tk):
     def save_page(self):
         print("Global Button Clicked")
         
-    def save(self):
-        with pd.ExcelWriter("output.xlsx", engine="xlsxwriter") as writer:
-            self.platemap_df.to_excel(writer, sheet_name="experiment", index=False)
-            
-            # Add other data to sheets as needed (you need to replace this with your own data)
-            plate_data = pd.DataFrame({
-                "Column1": [1, 2, 3],
-                "Column2": ['A', 'B', 'C']
-            })
-            plate_data.to_excel(writer, sheet_name="plate", index=False)
-
-            platemap_data = pd.DataFrame({
-                "Column1": [4, 5, 6],
-                "Column2": ['D', 'E', 'F']
-            })
-            self.platemap_df.to_excel(writer, sheet_name="platemap", index=False)
-
-            Timepoint_data = pd.DataFrame({
-                "Column1": [7, 8, 9],
-                "Column2": ['G', 'H', 'I']
-            })
-            Timepoint_data.to_excel(writer, sheet_name="Timepoint", index=False)
-
-            microscope_data = pd.DataFrame({
-                "Column1": [10, 11, 12],
-                "Column2": ['J', 'K', 'L']
-            })
-            microscope_data.to_excel(writer, sheet_name="microscope", index=False)
 
 
 if __name__ == "__main__":
