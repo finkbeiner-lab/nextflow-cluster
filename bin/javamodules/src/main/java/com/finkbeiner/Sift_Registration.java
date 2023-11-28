@@ -368,6 +368,8 @@ public class Sift_Registration {
 			impAligned.updateAndDraw();
 		}
 		IJ.log( "Done." );
+		// TODO: save aligned image as new image
+		// TODO: get shift, add shift to centroids in db. Update db
     }
 }
 

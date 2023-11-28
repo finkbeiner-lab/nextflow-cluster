@@ -268,6 +268,7 @@ process CNN {
     input:
     val ready
     val exp
+    val model_type
     val label_type
     val label_name
     val classes
@@ -292,7 +293,7 @@ process CNN {
 
     script:
     """
-    cnn.py --experiment ${exp} --label_type ${label_type} --label_name ${label_name} --classes ${classes} \
+    cnn.py --experiment ${exp} --model_type ${model_type} --label_type ${label_type} --label_name ${label_name} --classes ${classes} \
     --img_norm_name ${img_norm_name} --filters ${filters} --num_channels ${num_channels} --n_samples ${n_samples} \
     --epochs ${epochs} --batch_size ${batch_size} --learning_rate ${learning_rate} \
     --momentum ${momentum} --optimizer ${optimizer} \

@@ -6,11 +6,14 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 import org.jooq.DSLContext;
+import org.jooq.Condition;
 import org.jooq.tools.jdbc.JDBCUtils;
 
 import java.io.FileReader;
 import java.io.IOException;
-
+import java.util.HashMap;
+import org.jooq.Record1;
+import org.jooq.Table;
 
 import java.sql.*;
 import java.util.Map;
@@ -37,35 +40,50 @@ public class db {
         } catch (IOException e) {
             e.printStackTrace();
         }
-
-
+        Map<String, Object> conditions = new HashMap<>();
+        Map<String, Object> updateMap = new HashMap<>();
+        conditions.put("experiment", "testset");
+        updateMap.put("centroid_x", 1000);
         // Connection is the only JDBC resource that we need
         // PreparedStatement and ResultSet are handled by jOOQ, internally
-        getRow("experimentdata","experiment","20231002-1-MSN-taueos");
+        getRows("experimentdata",conditions);
+        Object exp_uuid = getTableUUID("experimentdata", conditions);
+        
+        Map<String, Object> conditions_well = new HashMap<>();
+        conditions_well.put("experimentdata_id", exp_uuid);
+        conditions_well.put("well", "A1");
+
+        Object well_uuid = getTableUUID("welldata", conditions_well);
+
+
+        Map<String, Object> conditions2 = new HashMap<>();
+        conditions2.put("experimentdata_id", exp_uuid);
+        conditions2.put("randomcellid", 1);
+        conditions2.put("welldata_id", well_uuid);
+        getRows("celldata",conditions2);
+
+        update("celldata",updateMap, conditions2);
     }
 
-    private static void getRow(String tablename, String columnname, String value) {
+    private static void getRows(String tablename, Map<String, Object> conditions) {
         try (Connection conn = DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD)) {
             DSLContext create = DSL.using(conn, SQLDialect.POSTGRES);
-            System.out.println(value);
+            System.out.println(conditions);
             Result<Record> result = create
                     .select()
                     .from(tablename)
-                    .where(field(columnname).eq(value))
+                    .where(buildConditions(conditions))
                     //         ^^^^^^^^^^^^  ^^^^^^^^^^^ <-> ^^^^^  ^^^^^ Types must match
                     .fetch();
 
-            String r = result.toString();
-            System.out.println(r);
-
-            // for (Record r : result) {
-            //     // UUID uuid = r.get(field("id", UUID.class));
-            //     // String experiment = r.get(field("experiment", String.class));
+            for (Record r : result) {
+                // UUID uuid = r.get(field("id", UUID.class));
+                // String experiment = r.get(field("experiment", String.class));
 
 
-            //     // System.out.println("ID: " + uuid + " experiment: " + experiment);
-            //     System.out.println(r.toString());
-            // }
+                // System.out.println("ID: " + uuid + " experiment: " + experiment);
+                System.out.println(r.toString());
+            }
         } 
     
         catch (Exception e) {
@@ -74,15 +92,53 @@ public class db {
     }
 
 
-    // private static void addRow(DSLContext dslContext, String tableName, Map<String, String> data) {
-    //     Table<?> table = table(DSL.name(tableName));
+    public static Object getTableUUID(String tablename, Map<String, Object> conditions) {
+        try (Connection conn = DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD)) {
+            DSLContext create = DSL.using(conn, SQLDialect.POSTGRES);
+            System.out.println(conditions);
+            Result<?> result = create
+            .select()
+            .from(table(tablename))
+            .where(buildConditions(conditions))
+            .fetch();
 
-    //     for (Map.Entry<String, Object> entry : dct.entrySet()) {
-    //         dslContext.insertInto(table).set(DSL.field(DSL.name(entry.getKey())), entry.getValue());
-    //     }
-    //     dslContext
-    //         .insertInto(table(tableName))
-    //         .set(field(data.keySet()), data.values())
-    //         .execute();
-    // }
+        if (result.size() == 0) {
+            return null;
+        }
+        Object uuid = result.get(0).get(field("id"));
+        System.out.println(uuid);
+        return uuid;
+    }
+        catch (Exception e) {
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public static void update(String tablename, Map<String, Object> updateMap, Map<String, Object> conditions) {
+        try (Connection conn = DriverManager.getConnection(JDBC_URL, USERNAME, PASSWORD)) {
+            DSLContext create = DSL.using(conn, SQLDialect.POSTGRES);
+            System.out.println(conditions);
+
+            create
+            .update(table(tablename))
+            .set(updateMap)
+            .where(buildConditions(conditions))
+            .execute();
+        }
+
+        catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+
+    private static Condition buildConditions(Map<String, Object> conditions) {
+        Condition condition = DSL.noCondition();
+        for (Map.Entry<String, Object> entry : conditions.entrySet()) {
+            condition = condition.and(field(entry.getKey()).eq(entry.getValue()));
+        }
+        return condition;
+    }
+
 }
