@@ -5,6 +5,10 @@ Creates ImageJ-readable hyperstack of channels and overlays
 import os, pickle, argparse, shutil, tifffile, cv2, struct
 import numpy as np
 import utils
+from sql import Database
+from db_util import Ops
+from montage import Montage
+from normalization import Normalize
 
 def get_display_metadata(colormap_list):
     """
@@ -90,196 +94,150 @@ def get_dataset_maximum(var_dict, img_paths, norm_intensity):
         img = None
     return int(norm_intensity)
 
+class Hyperstack:
+    def __init__(self, opt):
+        self.opt = opt
+        self.Db = Database()
+        self.Dbops = Ops()
+        self.Norm = Normalize(self.opt)
+        self.imagedir, self.analysisdir = self.Dbops.get_raw_and_analysis_dir()
+        self.hyperstackdir = os.path.join(self.analysisdir, 'Hyperstacks')
+        if not os.path.exists(self.hyperstackdir):
+            os.makedirs(self.hyperstackdir)
+        
+        
+    def run(args):
+        
+        tiledata_df = self.Norm.get_flatfields_for_training(['channeldata'])
+        tiledata_df = tiledata_df.sort_values(by=['timepoint', 'well', 'tile'])
+        available_channels = tiledata_df.channel.unique()
+        timepoints = tiledata_df.timepoint.unique()
+        wells = tiledata_df.well.unique()
+        channels = args.channels.replace(' ', '').split(',')
+        channels = [utils.get_ref_channel(c, available_channels) for c in channels]
 
-def main():
-    ''' Main point of entry '''
+        available_colors = ['green', 'red', 'blue', 'gray']
+        colors = args.colors.replace(' ', '').lower().split(',')
+        assert len(channels) == len(colors), 'Number of channels must equal the number of colors'
+        assert len([c for c in colors if c not in available_colors]) == 0, 'Colors must be from the list of available colors (%s)' % str(available_colors)
 
-    # get arguments
+        for i, ch in enumerate(channels):
+            print ('Channel #%i: %s -- %s' % (i+1, ch, colors[i]))
+
+        # scaling factor
+        scaling_factor = args.scaling_factor
+        print('Scaling factor:', str(scaling_factor))
+
+        # parse normalization parameters
+        norm_intensities = args.norm_intensities.replace(' ', '')
+        if norm_intensities == '':
+            normalize = False
+            print('No normalization')
+        else:
+            normalize = True
+            norm_intensities = norm_intensities.split(',')
+            assert len(norm_intensities) == len(channels), 'Number of normalization intensities must match the number of channels (%i).' % len(channels)
+            norm_vals = []
+            for i, norm_val in enumerate(norm_intensities):
+                if int(norm_val) == 0:
+                    # determine the max intensity across all images of the current channel
+                    if channels[i] == 'overlay':
+                        norm_vals.append(255)
+                    else:
+                        img_paths = []
+                        for well in var_dict['Wells']:
+                            for tp in var_dict['TimePoints']:
+                                print(image_tokens)
+                                print(well)
+                                print(tp)
+                                print(channels[i])
+                                print(var_dict['RoboNumber'])
+                                img_paths.append(utils.get_filename(image_tokens, well, tp, channels[i], var_dict['RoboNumber']))
+                        norm_vals.append(get_dataset_maximum(var_dict, img_paths, float(norm_val)))
+                else:
+                    # use the user-specified intensity for this channel
+                    norm_vals.append(int(norm_val))
+            print('Normalization intensities:', str(norm_vals))
+
+        # loop through wells
+        for well in wells:
+
+            # initialize list for image channel stack
+            c_stack_list = []
+
+            # loop through timepoints
+            for timepoint in timepoints:
+
+                # initialize list for image channel stack paths
+                c_stack_paths = []
+                ch_colors_selected = []
+
+                # loop through channels
+                overlay_idx = []
+                for idx, channel in enumerate(channels):
+                    montage_file = tiledata_df.loc[(tiledata_df.well==well) & (tiledata_df.timepoint==timepoint) & (tiledata_df.channel==channel), 'imagemontage']
+                    # get image file path for current well, timepoint, channel
+                    c_stack_paths.append(montage_file)
+                    # get channel colormap
+                    ch_colors_selected.append(colors[idx])
+
+                # read in images
+                c_stack = [cv2.imread(i, -1) for i in c_stack_paths]
+
+                # downscale
+                if scaling_factor != 1:
+                    c_stack = [cv2.resize(i, (0,0), fx=scaling_factor, fy=scaling_factor, interpolation=cv2.INTER_AREA) for i in c_stack]
+
+                # normalize
+                if normalize:
+                    c_stack_normed = []
+                    for idx, c in enumerate(c_stack):
+                        c_normed = np.rint(np.clip(c.astype(np.float) / norm_vals[idx], 0, 1) * 65535).astype(np.uint16)
+                        c_stack_normed.append(c_normed)
+                    c_stack = c_stack_normed
+
+                # stack channels for current timepoint along 0th dimension
+                c_stack = np.stack(c_stack, axis=0)
+
+                # add channel stack to list of channel stacks
+                c_stack_list.append(c_stack)
+
+            # combine channel stacks for all timepoints along 0th axis
+            t_stack = np.stack(c_stack_list, axis=0)
+
+            # create hyperstack filename
+            
+            savename = os.path.basename(montage_file)
+            savename = savename.split('.t')
+            savename = savename + '_STACK.tif'
+            savepath = os.path.join(self.hyperstackdir, savename)
+            
+            # generate colormap metadata
+            display_metadata = get_display_metadata(ch_colors_selected)
+
+            # save hyperstack
+            with tifffile.TiffWriter(savepath, bigtiff=False, byteorder='>', imagej=True) as tif:
+                for i in range(t_stack.shape[0]):
+                    tif.save(t_stack[i], metadata={'Composite mode': 'composite'}, extratags=display_metadata)
+
+
+    
+
+if __name__ == '__main__':
+    
     parser = argparse.ArgumentParser(description='Generate hyperstacks.')
     parser.add_argument('input_dict',
         help='Load input variable dictionary')
+    parser.add_argument('--experiment', default='20230928-MsNeu-RGEDItau1', type=str)
     parser.add_argument('channels',
         help='First channel of hyperstack.')
     parser.add_argument('colors',
         help='ImageJ color for first channel.')
     parser.add_argument('scaling_factor',
         help='Scaling factor', type=float, default=1)
-    parser.add_argument('output_dict',
-        help='Write variable dictionary.')
     parser.add_argument('--norm_intensities',
         help='Option to normalize intensities', default='')
-    parser.add_argument('--images_path',
-        help='Path to images folder', default='')
-    parser.add_argument('--overlays_path',
-        help='Path to overlay images folder', default='')
-    parser.add_argument('--output_path',
-        help='Path to save hyperstacks', default='')
     args = parser.parse_args()
-
-    # assign arguments to variables
-    var_dict = pickle.load(open(args.input_dict, 'rb'))
-
-    # parse channels and corresponding pseudocolors
-    channels = args.channels.replace(' ', '').split(',')
-    available_channels = var_dict['Channels']
-    available_channels.append('overlay')
-    channels = [utils.get_ref_channel(c, available_channels) for c in channels]
-
-    available_colors = ['green', 'red', 'blue', 'gray']
-    colors = args.colors.replace(' ', '').lower().split(',')
-    assert len(channels) == len(colors), 'Number of channels must equal the number of colors'
-    assert len([c for c in colors if c not in available_colors]) == 0, 'Colors must be from the list of available colors (%s)' % str(available_colors)
-
-    for i, ch in enumerate(channels):
-        print ('Channel #%i: %s -- %s' % (i+1, ch, colors[i]))
-
-    # get input/output paths
-    images_path = utils.get_path(args.images_path, var_dict['GalaxyOutputPath'], 'AlignedImages')
-    assert os.path.exists(images_path), 'Confirm path for images exists (%s)' % args.images_path
-    print ('Images path:', images_path)
-
-    overlays_path = utils.get_path(args.overlays_path, var_dict['GalaxyOutputPath'], 'OverlaysTablesResults')
-
-    output_path = utils.get_path(args.output_path, var_dict['GalaxyOutputPath'], 'Hyperstacks')
-    utils.create_dir(output_path)
-    assert os.path.exists(os.path.split(output_path)[0]), 'Confirm that the output path parent folder (%s) exists.' % os.path.split(output_path)[0]
-    print('Output path:' , output_path)
-
-    if any('overlay' in x for x in channels):
-        assert os.path.exists(overlays_path), 'Confirm path for overlays exists (%s)' % overlays_path
-        print('Overlays path:', overlays_path)
-        overlay_paths = ''
-        if var_dict['DirStructure'] == 'root_dir':
-            overlay_paths = [os.path.join(overlays_path, name) for name in os.listdir(overlays_path) if name.endswith('.tif') and '_FIDUCIARY_' not in name]
-        elif var_dict['DirStructure'] == 'sub_dir':
-            # Only traverse root and immediate subdirectories for images
-            relevant_dirs = [overlays_path] + [os.path.join(overlays_path, name) for name in os.listdir(overlays_path) if os.path.isdir(os.path.join(overlays_path, name))]
-            overlay_paths = [os.path.join(relevant_dir, name) for relevant_dir in relevant_dirs for name in os.listdir(relevant_dir) if name.endswith('.tif') and '_FIDUCIARY_' not in name]
-        else:
-            raise Exception('Unknown Directory Structure!')
-        overlay_tokens = utils.tokenize_files(overlay_paths)
-
-    # scaling factor
-    scaling_factor = args.scaling_factor
-    print('Scaling factor:', str(scaling_factor))
-
-    # get image paths
-    image_paths = ''
-    if var_dict['DirStructure'] == 'root_dir':
-        image_paths = [os.path.join(images_path, name) for name in os.listdir(images_path) if name.endswith('.tif') and '_FIDUCIARY_' not in name]
-    elif var_dict['DirStructure'] == 'sub_dir':
-        # Only traverse root and immediate subdirectories for images
-        relevant_dirs = [images_path] + [os.path.join(images_path, name) for name in os.listdir(images_path) if os.path.isdir(os.path.join(images_path, name))]
-        image_paths = [os.path.join(relevant_dir, name) for relevant_dir in relevant_dirs for name in os.listdir(relevant_dir) if name.endswith('.tif') and '_FIDUCIARY_' not in name]
-    else:
-        raise Exception('Unknown Directory Structure!')
-    image_tokens = utils.tokenize_files(image_paths)
-
-    # parse normalization parameters
-    norm_intensities = args.norm_intensities.replace(' ', '')
-    if norm_intensities == '':
-        normalize = False
-        print('No normalization')
-    else:
-        normalize = True
-        norm_intensities = norm_intensities.split(',')
-        assert len(norm_intensities) == len(channels), 'Number of normalization intensities must match the number of channels (%i).' % len(channels)
-        norm_vals = []
-        for i, norm_val in enumerate(norm_intensities):
-            if int(norm_val) == 0:
-                # determine the max intensity across all images of the current channel
-                if channels[i] == 'overlay':
-                    norm_vals.append(255)
-                else:
-                    img_paths = []
-                    for well in var_dict['Wells']:
-                        for tp in var_dict['TimePoints']:
-                            print(image_tokens)
-                            print(well)
-                            print(tp)
-                            print(channels[i])
-                            print(var_dict['RoboNumber'])
-                            img_paths.append(utils.get_filename(image_tokens, well, tp, channels[i], var_dict['RoboNumber']))
-                    norm_vals.append(get_dataset_maximum(var_dict, img_paths, float(norm_val)))
-            else:
-                # use the user-specified intensity for this channel
-                norm_vals.append(int(norm_val))
-        print('Normalization intensities:', str(norm_vals))
-
-    # loop through wells
-    for well in var_dict['Wells']:
-
-        # initialize list for image channel stack
-        c_stack_list = []
-
-        # loop through timepoints
-        for timepoint in var_dict['TimePoints']:
-
-            # initialize list for image channel stack paths
-            c_stack_paths = []
-            ch_colors_selected = []
-
-            # loop through channels
-            overlay_idx = []
-            for idx, channel in enumerate(channels):
-                # get image file path for current well, timepoint, channel
-                if channel == 'overlay':
-                    overlay_path = utils.get_filename(overlay_tokens, well, timepoint, var_dict['MorphologyChannel'], var_dict['RoboNumber'])
-                    assert len(overlay_path) > 0, 'No overlay image found for well %s at %s in %s' % (well, timepoint, overlays_path)
-                    assert len(overlay_path) == 1, 'More than one overlay image found for well %s at %s in %s' % (well, timepoint, overlays_path)
-                    c_stack_paths.append(overlay_path[0])
-                    overlay_idx.append(idx)
-                else:
-                    img_path = utils.get_filename(image_tokens, well, timepoint, channel, var_dict['RoboNumber'])
-                    assert len(img_path) > 0, 'No image found for well %s at %s in %s' % (well, timepoint, images_path)
-                    assert len(img_path) == 1, 'More than one image found for well %s at %s in %s' % (well, timepoint, images_path)
-                    c_stack_paths.append(img_path[0])
-
-                # get channel colormap
-                ch_colors_selected.append(colors[idx])
-
-            # read in images
-            c_stack = [cv2.imread(i, -1) for i in c_stack_paths]
-
-            # downscale
-            if scaling_factor != 1:
-                c_stack = [cv2.resize(i, (0,0), fx=scaling_factor, fy=scaling_factor, interpolation=cv2.INTER_AREA) for i in c_stack]
-
-            # normalize
-            if normalize:
-                c_stack_normed = []
-                for idx, c in enumerate(c_stack):
-                    c_normed = np.rint(np.clip(c.astype(np.float) / norm_vals[idx], 0, 1) * 65535).astype(np.uint16)
-                    c_stack_normed.append(c_normed)
-                c_stack = c_stack_normed
-
-            # stack channels for current timepoint along 0th dimension
-            c_stack = np.stack(c_stack, axis=0)
-
-            # add channel stack to list of channel stacks
-            c_stack_list.append(c_stack)
-
-        # combine channel stacks for all timepoints along 0th axis
-        t_stack = np.stack(c_stack_list, axis=0)
-
-        # create hyperstack filename
-        orig_name = utils.extract_file_name(c_stack_paths[0])
-        new_name = utils.make_file_name(output_path, orig_name + '_STACK')
-
-        # generate colormap metadata
-        display_metadata = get_display_metadata(ch_colors_selected)
-
-        # save hyperstack
-        with tifffile.TiffWriter(new_name, bigtiff=False, byteorder='>', imagej=True) as tif:
-            for i in range(t_stack.shape[0]):
-                tif.save(t_stack[i], metadata={'Composite mode': 'composite'}, extratags=display_metadata)
-
-    # write out dictionary
-    outfile = args.output_dict
-    pickle.dump(var_dict, open('var_dict.p', 'wb'))
-    outfile = shutil.move('var_dict.p', outfile)
-    utils.save_user_args_to_csv(args, output_path, 'hyperstack')
-
-if __name__ == '__main__':
-
-     main()
+    print('Args', args)
+    Hyp = Hyperstack(args)
+    Hyp.run()

@@ -12,3 +12,4 @@ core.*
 *.png
 *.jpg
 *.jpeg
+.DS_Store
