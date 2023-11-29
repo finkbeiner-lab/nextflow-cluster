@@ -12,6 +12,8 @@ process REGISTER_EXPERIMENT {
     val template_path
     val platemap_path
     val ixm_hts_file
+    val robo_file
+    val overwrite_experiment
     val robo_num
     val chosen_wells
     val chosen_timepoints
@@ -26,7 +28,8 @@ process REGISTER_EXPERIMENT {
     script:
     """
     register_experiment.py --input_path ${input_path} --output_path ${output_path} --template_path ${template_path} \
-    --platemap_path ${platemap_path} --ixm_hts_file ${ixm_hts_file} --robo_num ${robo_num} \
+    --platemap_path ${platemap_path} --ixm_hts_file ${ixm_hts_file} --robo_file ${robo_file} --overwrite_experiment ${overwrite_experiment}  \
+    --robo_num ${robo_num} \
      --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
      --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
     """
@@ -100,24 +103,29 @@ process PUNCTA {
     input:
     val ready
     val exp
-    val morphology_channel
     val segmentation_method
-    val lower_area_thresh
+    val manual_thresh
+    val sigma1
+    val sigma2
+    val morphology_channel
+    each target_channel
     val chosen_wells
     val chosen_timepoints
     val wells_toggle
     val timepoints_toggle
+    val tile
 
     output:
     val true
 
     script:
     """
-    puncta.py --experiment ${exp} --segmentation_method ${segmentation_method} \
+    puncta.py --experiment ${exp} --segmentation_method ${segmentation_method} --manual_thresh ${manual_thresh} \
+    --sigma1 ${sigma1} --sigma2 ${sigma2} \
     --chosen_channels ${morphology_channel} --target_channel ${target_channel} \
-    --area_thresh ${lower_area_thresh} \
     --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --tile ${tile}
     """
 }
 
@@ -260,6 +268,7 @@ process CNN {
     input:
     val ready
     val exp
+    val model_type
     val label_type
     val label_name
     val classes
@@ -284,7 +293,7 @@ process CNN {
 
     script:
     """
-    cnn.py --experiment ${exp} --label_type ${label_type} --label_name ${label_name} --classes ${classes} \
+    cnn.py --experiment ${exp} --model_type ${model_type} --label_type ${label_type} --label_name ${label_name} --classes ${classes} \
     --img_norm_name ${img_norm_name} --filters ${filters} --num_channels ${num_channels} --n_samples ${n_samples} \
     --epochs ${epochs} --batch_size ${batch_size} --learning_rate ${learning_rate} \
     --momentum ${momentum} --optimizer ${optimizer} \
@@ -319,25 +328,6 @@ process UPDATEPATHS {
     script:
     """
     update_path.py --experiment ${exp}
-    """
-}
-
-process MULT {
-    input:
-    val register_result
-    val seg_result
-    val track_result
-    val intensity_result
-    val crop_result
-    val cnn_result
-
-    output:
-    val mult_result
-
-    script:
-    """
-    mult_result = register_result * seg_result * track_result * intensity_result * crop_result * cnn_result
-    echo "Ready to Get CSVS ($mult_result)"
     """
 }
 

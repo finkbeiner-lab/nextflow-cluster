@@ -1,3 +1,4 @@
+#!/opt/conda/bin/python
 """Create folders and initialize parameters based on filenames
 
 Write to
@@ -122,7 +123,7 @@ class Intro:
         parser.add_argument("--robo_file", default='/gladstone/finkbeiner/robodata/Robo4Images/20230920-MsDS-GFP/20230920-MsDS-GFP.csv', help="Path to CSV Template File (Legacy template).")
         parser.add_argument("--illumination_file", default=r'/gladstone/finkbeiner/robodata/IXM Documents/illumination-setting-2023-06-16.ILS',
                             help="Path to IXM Illumination file. On metaxpres -> Control -> Devices -> Configure Illumination -> Backup")
-        parser.add_argument("--overwrite_experiment", default=0, choices=[0,1], help='If 1, overwrite experiment.')
+        parser.add_argument("--overwrite_experiment", default=0, choices=[0,1, '0', '1'], help='If 1, overwrite experiment.')
         parser.add_argument("--robo_num", default=0, 
                             type=int,
                             help="Robo number")
@@ -155,8 +156,8 @@ class Intro:
         if not os.path.exists(output_path):
             os.makedirs(output_path)
             logger.warning(f'Created Directory {output_path}')
-        assert not (args.ixm_hts_file is not None and len(args.ixm_hts_file) > 0 and args.robo_file is not None and len(args.robo_file) > 0), 'Only IXM template or legacy roboscope template may be entered at one time.'
-        if args.ixm_hts_file is not None and len(args.ixm_hts_file) > 0:
+        assert not (args.ixm_hts_file is not None and len(args.ixm_hts_file) > 1 and args.robo_file is not None and len(args.robo_file) > 1), 'Only IXM template or legacy roboscope template may be entered at one time.'
+        if args.ixm_hts_file is not None and len(args.ixm_hts_file) > 1:
             print('IXM Template File: ', args.ixm_hts_file)
             new_template_path = os.path.join(output_path, 'ixm_template.xlsx')
             Conv = ConvertTemplate(new_template_path)
@@ -165,7 +166,7 @@ class Intro:
             logger.warning(f'Converted template from IXM to XLSX.')
             logger.warning(f'Template path set to {args.template_path}')
         
-        if args.robo_file is not None and len(args.robo_file) > 0:
+        if args.robo_file is not None and len(args.robo_file) > 1:
             print(f'Robo file (old template): {args.robo_file}')
             new_template_path = os.path.join(output_path, 'robo_template.xlsx')
             Conv = RoboConvertTemplate(new_template_path)
@@ -475,7 +476,7 @@ class Intro:
     @ staticmethod
     def filter_df_by_col(toggle: str, df: pd.DataFrame, column_name: str, user_chosen_str: str):
         user_chosen_lst = []
-        if user_chosen_str != '':
+        if user_chosen_str != '' and user_chosen_str != 'all':
             user_chosen_lst = utils.get_iter_from_user(user_chosen_str, column_name)
             if toggle == 'exclude':
                 df = df[~df[column_name].isin(user_chosen_lst)]

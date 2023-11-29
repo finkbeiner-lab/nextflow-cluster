@@ -758,7 +758,7 @@ if __name__ == '__main__':
                         help="Morphology Channel")
     parser.add_argument('--tile', default=0, type=int,
                         help="Select single tile to segment. Default is to segment all tiles.")
-    parser.add_argument('--use_wandb', default=1, type=int, help="Log training with wandb.")
+    parser.add_argument('--use_wandb', default=0, type=int, help="Log training with wandb.")
     args = parser.parse_args()
     print(args)
     Tr = Train(args)

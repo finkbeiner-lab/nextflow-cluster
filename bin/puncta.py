@@ -1,3 +1,4 @@
+#!/opt/conda/bin/python
 import numpy as np
 import imageio
 import matplotlib.pyplot as plt
@@ -85,7 +86,7 @@ class Puncta:
         # cell must exist in mask
 
     def thresh_puncta_per_mask(self, df, Db, filename, trackedmaskpath,
-                               sigma1=2, sigma2=4, save_puncta_image_bool=True):
+                               sigma1=2, sigma2=4,):
         puncta_in_tile = 0
         labelled_mask = imageio.v3.imread(trackedmaskpath)
         target = imageio.v3.imread(filename)
@@ -107,10 +108,10 @@ class Puncta:
             except:
                 thresh = np.zeros_like(smoothed_im)
         regions = (smoothed_im > thresh) * 255
-        if save_puncta_image_bool:
+        if self.opt.save_puncta_image_bool:
             savedir = os.path.join(self.analysisdir, self.puncta_folder_name, df.well.iloc[0])
             puncta_mask_path = self.save_puncta_mask(regions, filename, savedir)
-            logger.warning(f'Saved puncta mask to {puncta_mask_path}')
+            logger.info(f'Saved puncta mask to {puncta_mask_path}')
 
         # TODO: is it faster to get contours of cells and see if puncta region props are inside contours?
         # cv2.findContours
@@ -175,32 +176,34 @@ if __name__ == '__main__':
         help='Tiff image of last tile',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
-    parser.add_argument('--experiment', type=str)
-    parser.add_argument('--segmentation_method', choices=['minimum', 'yen', 'local', 'li', 'isodata', 'mean',
+    parser.add_argument('--experiment', default='20231026-1-msn-cry2tdp43-updated', type=str)
+    parser.add_argument('--segmentation_method', default='yen', choices=['minimum', 'yen', 'local', 'li', 'isodata', 'mean',
                                                           'otsu', 'sauvola', 'triangle', 'manual','tryall'], type=str,
                         help='Auto segmentation method.')
-    parser.add_argument('--area_thresh', default=1000, type=int, help="Lowerbound for cell area. Remove cells with area less than this value.")
     parser.add_argument('--manual_thresh', default=0, type=int, help="Threshold if using manual threshold method.")
-    parser.add_argument("--wells_toggle",
+    parser.add_argument("--sigma1", default=2, dest="sigma1", type=float, help='Lesser gaussian blur for difference of gaussians')
+    parser.add_argument("--sigma2", default=4, dest="sigma2", type=float, help='Greater gaussian blur for difference of gaussians')
+    # TODO: add puncta images to db? 
+    parser.add_argument('--save_puncta_image_bool', default=1, type=int, help="Threshold if using manual threshold method.")
+    parser.add_argument("--wells_toggle",default='include',
                         help="Chose whether to include or exclude specified wells.")
-    parser.add_argument("--timepoints_toggle",
+    parser.add_argument("--timepoints_toggle", default='include',
                         help="Chose whether to include or exclude specified timepoints.")
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='',
+                        dest="chosen_wells", default='A1',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='T0',
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc",
                         dest="chosen_channels",
                         help="Morphology Channel")
-    parser.add_argument("--target_channel",
+    parser.add_argument("--target_channel", default='RFP1',
                         dest="target_channel",
                         help="Get intensity of this channel.")
-    parser.add_argument("--sigma1", dest="sigma1", type=float, help='Lesser gaussian blur for difference of gaussians')
-    parser.add_argument("--sigma2", dest="sigma2", type=float, help='Greater gaussian blur for difference of gaussians')
+
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()
     print(args)
