@@ -5,7 +5,7 @@
  */
 // SHARED VARIABLES
 params.wells_toggle = 'include' // ['include', 'exclude']
-params.chosen_wells = 'all'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
+params.chosen_wells = 'A1'  // 'A1,A2,A7', or 'A1-A6' or 'B07,G06' or 'A1' or 'all'
 
 params.timepoints_toggle = 'include' // ['include', 'exclude']
 params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
@@ -13,19 +13,19 @@ params.chosen_timepoints = 'all'  // 'T0', 'T0-T7', or 'all'
 params.channels_toggle = 'include' // ['include', 'exclude']
 params.chosen_channels = ''  // 'RFP1', 'RFP1,GFP,DAPI', 'all'
 
-params.experiment = '20231002-1-MSN-taueos'  // Experiment name
-params.morphology_channel = 'GFP-DMD1'  // Your morphology channel
+params.experiment = '112023-TH-GEDI-DSMs'  // Experiment name
+params.morphology_channel = 'Confocal-GFP16'  // Your morphology channel
 params.analysis_version = 1  // Analysis version. Change if you're rerunning analysis and want to save previous iteration.
 params.img_norm_name = 'identity' // ['identity', 'subtraction', 'division']
 
 // SELECT MODULES
 params.DO_REGISTER_EXPERIMENT = false
-params.DO_SEGMENTATION = false
-params.DO_TRACKING = false
-params.DO_INTENSITY = false
-params.DO_CROP = false
-params.DO_MONTAGE = false
-params.DO_PLATEMONTAGE = false
+params.DO_SEGMENTATION = true
+params.DO_TRACKING = true
+params.DO_INTENSITY = true
+params.DO_CROP = true
+params.DO_MONTAGE = true
+params.DO_PLATEMONTAGE = true
 params.DO_CNN = false
 params.DO_GET_CSVS = true
 
@@ -44,7 +44,7 @@ params.chosen_channels_for_register_exp = ''  // blank for all. USED BY REG
 // SEGMENTATION
 params.segmentation_method = 'sd_from_mean' // ['sd_from_mean', 'triangle', 'minimum', 'yen']
 params.lower_area_thresh = 50
-params.upper_area_thresh = 2500
+params.upper_area_thresh = 20000
 params.sd_scale_factor = 3.5
 
 // CELLPOSE SEGMENTATION
@@ -59,11 +59,11 @@ params.distance_threshold = 300 // distance that a cell must be new
 params.voronoi_bool = true // distance that a cell must be new
 
 // INTENSITY
-params.target_channel = ['RFP1', 'RFP2']  // List of channels. Run in parallel.
+params.target_channel = ['Confocal-GFP16', 'Confocal-RFP']  // List of channels. Run in parallel.
 
 // CROP
 params.crop_size = 300
-params.target_channel_crop = ['RFP1', 'RFP2']  // List of channels. Run in parallel.
+params.target_channel_crop = ['Confocal-GFP16', 'Confocal-RFP']  // List of channels. Run in parallel.
 
 
 // MONTAGE and PLATEMONTAGE
