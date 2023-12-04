@@ -394,10 +394,11 @@ class Database:
         
             
     def update_slashes(self, tablename: str, exp_uuid):
+        """Assumes tiledata, won't work for experimentdata due to primary key name"""
         with self.engine.connect() as connection:
             update_stmt = (
                 update(self.meta.tables[tablename]).
-                where(self.meta.tables['experimentdata'].c.id==exp_uuid).
+                where(self.meta.tables[tablename].c.experimentdata_id==exp_uuid).
                 values(filename=func.replace(self.meta.tables[tablename].c.filename, '\\', '/'),
                        maskpath=func.replace(self.meta.tables[tablename].c.maskpath, '\\', '/'),
                        trackedmaskpath=func.replace(self.meta.tables[tablename].c.trackedmaskpath, '\\', '/'))
