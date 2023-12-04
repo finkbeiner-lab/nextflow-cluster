@@ -248,12 +248,14 @@ workflow {
         track_result = Channel.of(true)
     }   
     if (params.DO_MONTAGE) {
-        montage_ch = MONTAGE(track_result, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
+        montage_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
+        montage_ch = MONTAGE(montage_flag, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
         well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
         montage_result = MONTAGE.out
     }
     if (params.DO_PLATEMONTAGE) {
-        platemontage_ch = PLATEMONTAGE(track_result, experiment_ch, well_size_for_platemontage_ch, norm_intensity_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
+        montage_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
+        platemontage_ch = PLATEMONTAGE(montage_flag, experiment_ch, well_size_for_platemontage_ch, norm_intensity_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
         well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
         montage_result = PLATEMONTAGE.out
     }
@@ -261,7 +263,8 @@ workflow {
         montage_result = Channel.of(true)
     }
     if (params.DO_INTENSITY) {
-        int_ch = INTENSITY(track_result, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
+        intensity_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
+        int_ch = INTENSITY(intensity_flag, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         intensity_result = INTENSITY.out
         int_ch.view { it }
     }

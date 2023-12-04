@@ -11,7 +11,6 @@ text_ch = Channel.of(params.text)
 greeting_ch = Channel.of(params.greeting)
 
 include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
-include { p } from './params.nf'
 
 
 params.outdir = "results"
@@ -100,7 +99,6 @@ workflow {
     bash_flag = bashresults_ch.mix(bashresults_ch2).mix(bashresults_ch3).collect()
     pyresults_ch = PYEXAMPLE(bash_flag, text_ch)
     pyresults_ch.view{ it }
-    println(p.from_another_module)
 }
 
 workflow.onComplete {

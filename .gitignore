@@ -3,7 +3,7 @@ work/
 .nextflow*
 .vscode/
 *.log
-__pycache__/
+**/__pycache__/
 *.html
 *.txt
 *.csv
