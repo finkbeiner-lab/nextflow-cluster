@@ -42,7 +42,11 @@ class Intensity:
         target_group = target_df.groupby(['well', 'timepoint'])
 
         for (well, timepoint), df in morph_group:
-            tdf = target_group.get_group((well, timepoint))  # get target df for well and timepoint
+            try:
+                tdf = target_group.get_group((well, timepoint))  # get target df for well and timepoint
+            except KeyError:
+                print(well, timepoint, 'not found')
+                continue
             logger.info(f'Getting intensity well {well} at timepoint {timepoint}')
             if df.maskpath.iloc[0] is None:
                 print(f'{well} T{timepoint} has null maskpath. Skipping. Check morphology channel.')
@@ -121,7 +125,7 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--experiment', default = '20231005-MS-10-minisog-IF', type=str)
+    parser.add_argument('--experiment', default = '20231109-1-MsN-cry2tdp43-updated', type=str)
     parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument("--wells_toggle", default='include', 
@@ -131,7 +135,7 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='A3',
+                        dest="chosen_wells", default='all',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct", default='',
                         dest="chosen_timepoints", 
@@ -139,10 +143,10 @@ if __name__ == '__main__':
     parser.add_argument("--chosen_channels", "-cc", default='',
                         dest="chosen_channels",
                         help="Filter channels, only for speed")
-    parser.add_argument("--morphology_channel", default='GFP-DMD1',
+    parser.add_argument("--morphology_channel", default='RFP1',
                     dest="morphology_channel",
                     help="Morphology Channel")
-    parser.add_argument("--target_channel", default='RFP1',
+    parser.add_argument("--target_channel", default='Cy5',
                         dest="target_channel",
                         help="Get intensity of this channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
