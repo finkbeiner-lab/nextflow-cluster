@@ -1,3 +1,5 @@
+#!/opt/conda/bin/python
+
 """Normalization file. Divide or subtract by flatfield image. Get flatfield by median of N images."""
 import numpy as np
 from db_util import Ops
@@ -38,37 +40,37 @@ class Normalize(Ops):
             for i, row in df.iterrows():
                 # print('row', row)
                 
-                img = imageio.imread(row.filename)
+                img = imageio.v3.imread(row.filename)
                 img = np.uint16(self.image_bg_correction[self.opt.img_norm_name](img, well, timepoint))
-                normpath = self.save_norm(img, row.filename, savedir)
+                normpath = self.save_norm(img, row.filename, savedir, well)
                 print('normpath', normpath)
 
     def to_eight_bit(self, target):
         return np.uint8(target / np.max(target) * 255)
 
-    def identity(self, img, tile):
-        return img
+    # def identity(self, img, tile):
+    #     return img
 
-    def division_flatfield(self, img, tile):
-        im = img / self.flatfields[tile]
-        im = im / np.max(im) * 50000
-        return im
+    # def division_flatfield(self, img, tile):
+    #     im = img / self.flatfields[tile]
+    #     im = im / np.max(im) * 50000
+    #     return im
 
-    def rolling_ball(self, img, tile):
-        # img = np.uint16(self.gaussian_filter(img))
-        img = transform.rescale(img, 1 / 8, anti_aliasing=True)
-        background = restoration.rolling_ball(img, radius=100)
+    # def rolling_ball(self, img, tile):
+    #     # img = np.uint16(self.gaussian_filter(img))
+    #     img = transform.rescale(img, 1 / 8, anti_aliasing=True)
+    #     background = restoration.rolling_ball(img, radius=100)
 
-        im = img - background
-        im = np.uint16(transform.rescale(im, 8,))
-        return im
+    #     im = img - background
+    #     im = np.uint16(transform.rescale(im, 8,))
+    #     return im
 
-    def subtract_flatfield(self, img, tile):
-        im = img - self.flatfields[tile]
-        print('flatfield', np.min(self.flatfields[tile]), np.max(self.flatfields[tile]))
-        print('im', np.min(im), np.max(im))
-        im[im < 0] = 0
-        return im
+    # def subtract_flatfield(self, img, tile):
+    #     im = img - self.flatfields[tile]
+    #     print('flatfield', np.min(self.flatfields[tile]), np.max(self.flatfields[tile]))
+    #     print('im', np.min(im), np.max(im))
+    #     im[im < 0] = 0
+    #     return im
 
     def identity_bg(self, img, well, timepoint):
         return img
@@ -196,9 +198,10 @@ class Normalize(Ops):
             flat[flat < 1] = 1
             self.flatfields[i] = flat
 
-    def save_norm(self, normed_image, image_file, savedir):
+    def save_norm(self, normed_image, image_file, saveparentdir, well):
         name = os.path.basename(image_file)
         name = name.split('.t')[0]  # split by tiff suffix
+        savedir = os.path.join(saveparentdir, well)
         if not os.path.exists(savedir):
             os.makedirs(savedir)
         savepath = os.path.join(savedir, name + '_' + self.opt.img_norm_name + '-NORM.tif')
@@ -213,8 +216,8 @@ if __name__ == '__main__':
         help='Tiff image of last tile',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
-    parser.add_argument('--experiment', default='20231005-MS-10-minisog-IF', type=str)
-    parser.add_argument('--img_norm_name', default='division', choices=['division', 'subtraction', 'identity', 'rollingball'], type=str,
+    parser.add_argument('--experiment', default='JAK-COR7508012023-GEDI', type=str)
+    parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity', 'rollingball'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
@@ -223,12 +226,12 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw", 
-                        dest="chosen_wells", default='C8',
+                        dest="chosen_wells", default='B03',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='',
+                        dest="chosen_timepoints", default='T1',
                         help="Specify timepoints to include or exclude.")
-    parser.add_argument("--chosen_channels", "-cc", default='RFP1',
+    parser.add_argument("--chosen_channels", "-cc", default='all',
                         dest="chosen_channels",
                         help="Specify channels to include or exclude.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")

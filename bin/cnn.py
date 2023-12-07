@@ -455,7 +455,7 @@ class Train:
         print(f'Device {self.device}')
         assert self.device == 'cuda:0', 'gpu not used'
         df = self.get_classes()
-        df = self.apply_filters(df)
+        # df = self.apply_filters(df)
         print('df channels', df.channel.unique())
         df = df.drop_duplicates(subset=['croppath'])  # TODO: duplicate croppaths
         train_df, val_df, test_df = self.train_val_test_split(df, balance_method='cutoff')

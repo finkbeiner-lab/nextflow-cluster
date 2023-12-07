@@ -27,6 +27,7 @@ RUN Rscript -e 'install.packages("RPostgreSQL", repos="https://cloud.r-project.o
 RUN Rscript -e 'install.packages("vscDebugger", repos="https://cloud.r-project.org")'
 RUN apt-get install libpq5 -y
 RUN Rscript -e 'install.packages("RPostgres", repos="https://cloud.r-project.org")'
+RUN Rscript -e 'install.packages("tidyverse", repos="https://cloud.r-project.org")'
 RUN Rscript -e 'install.packages("jsonlite", repos="https://cloud.r-project.org")'
 
 # Install OpenJDK-8

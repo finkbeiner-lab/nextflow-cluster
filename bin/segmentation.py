@@ -196,7 +196,7 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
 
-    parser.add_argument('--experiment',default='20230928-MsNeu-RGEDItau1', type=str)
+    parser.add_argument('--experiment',default='0907-FB-1-JL-gedi-test', type=str)
 
     parser.add_argument('--segmentation_method', default='sd_from_mean', choices=['sd_from_mean', 'minimum', 'yen', 'local', 'li', 'isodata', 'mean',
                                                           'otsu', 'sauvola', 'triangle', 'manual', 'tryall'], type=str,
@@ -214,13 +214,13 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
-                        dest="chosen_wells", default='B1',
+                        dest="chosen_wells", default='E4',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
-                        dest="chosen_timepoints", default='T0',
+                        dest="chosen_timepoints", default='all',
                         help="Specify timepoints to include or exclude.")
     parser.add_argument("--chosen_channels", "-cc",
-                        dest="chosen_channels", default='Confocal-GFP16',
+                        dest="chosen_channels", default='GFP-DMD1',
                         help="Morphology channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()

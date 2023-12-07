@@ -65,6 +65,30 @@ process SEGMENTATION {
     """
 }
 
+
+process NORMALIZATION {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    input:
+    val ready
+    val exp
+    val img_norm_name
+    val chosen_wells
+    val chosen_channels
+    val chosen_timepoints
+    val wells_toggle
+    val channels_toggle
+    val timepoints_toggle
+
+    output:
+    val true
+
+    script:
+    """
+    normalization.py --experiment ${exp} --img_norm_name ${img_norm_name} --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle} 
+    """
+}
+
 process CELLPOSE {
     containerOptions "--gpus all --mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:

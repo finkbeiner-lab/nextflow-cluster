@@ -40,7 +40,7 @@ class UpdatePath:
         microscope = microscope[0][0]
         print(f'Updating paths for microscope: {microscope}')
         analysisdir = os.path.join(
-            f'/gladstone/finkbeiner/linsley/{author[0][0]}/GXYTMPS/GXYTMP-{self.opt.experiment}')
+            f'/gladstone/finkbeiner/linsley/GXYTMPS/{author[0][0]}/GXYTMP-{self.opt.experiment}')
         imagedir = os.path.join(
             f'/gladstone/finkbeiner/robodata/{self.robofolder[microscope]}/{self.opt.experiment}')
         if not os.path.exists(analysisdir):
@@ -75,7 +75,7 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
     parser.add_argument(
-        '--experiment', default='20231109-4-MsN-optocrispr', type=str)
+        '--experiment', default='0907-FB-1-JL-gedi-test', type=str)
     args = parser.parse_args()
     print(args)
     Up = UpdatePath(args)

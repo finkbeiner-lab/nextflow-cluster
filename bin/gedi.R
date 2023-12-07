@@ -2,7 +2,8 @@ library(dplyr)
 library(ggplot2)
 library(ggfortify)
 library(survival)
-
+library(dbplyr)
+library(dplyr)
 library(optparse)
 source("rsql.R")
 
@@ -24,25 +25,50 @@ args = commandArgs(trailingOnly=TRUE)
 
 experiment = opt$exp
 print(experiment)
-query <- sprintf("SELECT DISTINCT experimentdata.experiment, experimentdata.id, celldata.cellid, 
-celldata.randomcellid, tiledata.tile, tiledata.timepoint,
-intensitycelldata.celldata_id, intensitycelldata.intensity_max, intensitycelldata.intensity_mean, 
-channeldata.channel, welldata.well, dosagedata.name, celldata.stimulate
-    from experimentdata
-    inner join channeldata
-        on channeldata.experimentdata_id = experimentdata.id
-    inner join welldata
-        on welldata.id=channeldata.welldata_id
-    inner join tiledata
-    on tiledata.welldata_id = welldata.id
-    inner join intensitycelldata
-        on intensitycelldata.channeldata_id=channeldata.id
-    inner join celldata
-        on celldata.id=intensitycelldata.celldata_id and celldata.tiledata_id=tiledata.id
-    inner join dosagedata
-    on dosagedata.welldata_id=welldata.id
-    where experimentdata.experiment=\'%s\' and welldata.well=\'%s\';"
-    ,experiment, opt$well)
+
+
+db <- tbl(con, "experimentdata")
+
+result <- db %>%
+  inner_join(tbl(con, "channeldata"), by = c("id" = "experimentdata_id")) %>%
+  inner_join(tbl(con, "welldata"), by = "id") %>%
+  inner_join(tbl(con, "tiledata"), by = c("welldata_id" = "id")) %>%
+  inner_join(tbl(con, "intensitycelldata"), by = c("id" = "channeldata_id")) %>%
+  inner_join(tbl(con, "celldata"), by = c("id" = "celldata_id", "id" = "tiledata_id")) %>%
+  inner_join(tbl(con, "dosagedata"), by = c("welldata_id" = "id")) %>%
+  filter(
+    experimentdata.experiment == experiemnt & 
+    (welldata.well == opt$well | welldata.well == "all")
+  ) %>%
+  select(
+    experimentdata.experiment, experimentdata.id, celldata.cellid, celldata.randomcellid,
+    tiledata.tile, tiledata.timepoint, intensitycelldata.celldata_id,
+    intensitycelldata.intensity_max, intensitycelldata.intensity_mean,
+    channeldata.channel, welldata.well, dosagedata.name, celldata.stimulate
+  ) %>%
+  collect()
+
+# query <- sprintf("SELECT DISTINCT experimentdata.experiment, experimentdata.id, celldata.cellid, 
+# celldata.randomcellid, tiledata.tile, tiledata.timepoint,
+# intensitycelldata.celldata_id, intensitycelldata.intensity_max, intensitycelldata.intensity_mean, 
+# channeldata.channel, welldata.well, dosagedata.name, celldata.stimulate
+#     from experimentdata
+#     inner join channeldata
+#         on channeldata.experimentdata_id = experimentdata.id
+#     inner join welldata
+#         on welldata.id=channeldata.welldata_id
+#     inner join tiledata
+#     on tiledata.welldata_id = welldata.id
+#     inner join intensitycelldata
+#         on intensitycelldata.channeldata_id=channeldata.id
+#     inner join celldata
+#         on celldata.id=intensitycelldata.celldata_id and celldata.tiledata_id=tiledata.id
+#     inner join dosagedata
+#     on dosagedata.welldata_id=welldata.id
+#     where experimentdata.experiment=\'%s\' and welldata.well=\'%s\';"
+#     ,experiment, opt$well)
+
+
 print(query)
 exp_row = get_row('experimentdata', sprintf("experiment=\'%s\'", opt$exp))
 analysisdir = exp_row[1, 'analysisdir']

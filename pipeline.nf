@@ -165,7 +165,7 @@ optimizer_ch = Channel.of(params.optimizer)
 
 include { REGISTER_EXPERIMENT; SEGMENTATION;
     CELLPOSE; PUNCTA; TRACKING; INTENSITY;
-    CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX;UPDATEPATHS} from './modules.nf'
+    CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -179,6 +179,8 @@ log.info """\
     Register Experiment: ${params.DO_REGISTER_EXPERIMENT}
     Update Database Paths: ${params.DO_UPDATEPATHS}
     Segmentation: ${params.DO_SEGMENTATION}
+    Cellpose: ${params.DO_CELLPOSE_SEGMENTATION}
+    View Normalization: ${params.DO_VIEW_NORMALIZATION_IMAGES}
     Tracking: ${params.DO_TRACKING}
     Intensity: ${params.DO_INTENSITY}
     Crop: ${params.DO_CROP}
@@ -207,8 +209,17 @@ workflow {
     else {
         register_result = Channel.of(true)
     }
+    if (params.DO_VIEW_NORMALIZATION_IMAGES) {
+        norm_flag = updatepaths_result.mix(register_result).collect()
+        norm_view_ch = NORMALIZATION(norm_flag, experiment_ch, norm_ch, 
+        well_ch, chosen_channels_for_register_exp_ch, tp_ch, 
+        well_toggle_ch, channel_toggle_ch, tp_toggle_ch)
+        norm_view_ch.view {it}
+        norm_result = NORMALIZATION.out
+    }
     if (params.DO_SEGMENTATION) {
-        seg_ch = SEGMENTATION(register_result, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
+        register_flag = updatepaths_result.mix(register_result).collect()
+        seg_ch = SEGMENTATION(register_flag, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         seg_ch.view { it }
         seg_result = SEGMENTATION.out
@@ -217,8 +228,9 @@ workflow {
         seg_result = Channel.of(true)
     }
     if (params.DO_CELLPOSE_SEGMENTATION && !params.DO_SEGMENTATION) {
+        register_flag = updatepaths_result.mix(register_result).collect()
 
-        cellpose_ch = CELLPOSE(register_result, experiment_ch, batch_size_cellpose_ch, cell_diameter_ch, flow_threshold_ch, 
+        cellpose_ch = CELLPOSE(register_flag, experiment_ch, batch_size_cellpose_ch, cell_diameter_ch, flow_threshold_ch, 
         cell_probability_ch, model_type_ch, morphology_ch, seg_ch, lower_ch, upper_ch, sd_ch,
         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         cellpose_ch.view { it }
