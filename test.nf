@@ -43,6 +43,25 @@ process PYEXAMPLE {
     """
 }
 
+process generateStrings {
+
+    output:
+    stdout
+
+    script:
+    """
+    #!/bin/bash
+    echo "hello"
+    # Generate a list of strings with leading zeros for single-digit numbers
+    for LETTER in {A..C}; do
+        for number in {1..11}; do
+            echo "${LETTER}${number}"
+        done
+    done
+    """
+}
+
+
 process BASHEX {
     tag "Bash Script Test"
 

@@ -1,7 +1,7 @@
 #!/opt/conda/bin/python
 
 import argparse
-print('hiya')
+print('test.py imported successfully')
 def test(txt):
     print(txt)
     return txt

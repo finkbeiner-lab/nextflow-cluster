@@ -73,22 +73,22 @@ class Segmentation:
         
         jobs = []
         for (well, timepoint), df in g:
-            self.thresh_single(Db, df, well, timepoint)
+            # self.thresh_single(Db, df, well, timepoint)
 
-        #     thread = Thread(target=self.thresh_single, args=(Db, df, well, timepoint))
-        #     jobs.append(thread)
-        #     if len(jobs) > self.thread_lim:
-        #         for j in jobs:
-        #             j.start()
-        #         for j in jobs:
-        #             j.join()
-        #         jobs = []
-        # if len(jobs):
-        #     for j in jobs:
-        #         j.start()
-        #     for j in jobs:
-        #         j.join()
-        # jobs = []
+            thread = Thread(target=self.thresh_single, args=(Db, df, well, timepoint))
+            jobs.append(thread)
+            if len(jobs) > self.thread_lim:
+                for j in jobs:
+                    j.start()
+                for j in jobs:
+                    j.join()
+                jobs = []
+        if len(jobs):
+            for j in jobs:
+                j.start()
+            for j in jobs:
+                j.join()
+        jobs = []
         print('Done.')
 
     def thresh_single(self, Db, df, well, timepoint):
