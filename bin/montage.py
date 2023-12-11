@@ -30,6 +30,8 @@ class Montage:
         _, self.analysisdir = self.Norm.get_raw_and_analysis_dir()
         self.montage_folder_name = 'MontagedImages'
         self.montagedir = os.path.join(self.analysisdir, self.montage_folder_name)
+        if self.opt.tiletype!='filename':
+            self.opt.img_norm_name = 'identity'
 
     def run(self, savebool=True):
         tiledata_df = self.Norm.get_df_for_training(['channeldata'])
@@ -60,9 +62,10 @@ class Montage:
         logger.warning(f'Length of df: {len(df)} and max tile: {df.tile.max()}')
         print(f'Length of df: {len(df)} and max tile: {df.tile.max()}')
         df = df.sort_values('tile')
-        if len(df) == df.tile.max():
+        if len(df) == df.tile.max() and not df[self.opt.tiletype].isna().any():
             well= df.well.iloc[0]
             timepoint = df.timepoint.iloc[0]
+            print(f'Well {well}, Timepoint {timepoint}')
             if self.opt.img_norm_name != 'identity' and self.opt.tiletype=='filename':
                 self.get_background_image(df, well, timepoint)
             
@@ -77,10 +80,13 @@ class Montage:
                         os.makedirs(welldir)
                     savepath = os.path.join(welldir, name)
                 img = imageio.v3.imread(f)
+                
                 cleaned_im = self.Norm.image_bg_correction[self.opt.img_norm_name](img, row.well, row.timepoint)
                 images.append(cleaned_im)
+            if well in self.Norm.backgrounds and timepoint in self.Norm.backgrounds[well]:
+                del self.Norm.backgrounds[well][timepoint]
         num_tiles = len(images)
-        print(num_tiles)
+        print(f'Number of tiles processed: {num_tiles}')
         logger.warning(f'Num tiles: {num_tiles}')
         side = int(np.sqrt(num_tiles))
         if num_tiles:
@@ -100,8 +106,6 @@ class Montage:
             if savebool:
                 print(f'saved to {savepath}')
                 imageio.v3.imwrite(savepath, mont)
-        if well in self.Norm.backgrounds and timepoint in self.Norm.backgrounds[well]:
-            del self.Norm.backgrounds[well][timepoint]
         return mont
 
 
@@ -117,10 +121,10 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
-    parser.add_argument('--experiment', default='20230928-MsNeu-RGEDItau1', type=str)
-    parser.add_argument('--tiletype', default='filename', choices=['filename', 'maskpath', 'trackedmaskpath'], type=str,
+    parser.add_argument('--experiment', default='JAK-COR7508012023-GEDI', type=str)
+    parser.add_argument('--tiletype', default='trackedmaskpath', choices=['filename', 'maskpath', 'trackedmaskpath'], type=str,
                         help='Montage image, binary mask, or tracked mask.')
-    parser.add_argument('--img_norm_name', default='identity', choices=['division', 'subtraction', 'identity'], type=str,
+    parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument('--montage_pattern',default='standard', choices=['standard', 'legacy'], help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
     parser.add_argument("--wells_toggle", default='include',
@@ -130,7 +134,7 @@ if __name__ == '__main__':
     parser.add_argument("--channels_toggle", default='include',
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw", 
-                        dest="chosen_wells", default='A2',
+                        dest="chosen_wells", default='C15',
                         help="Specify wells to include or exclude")
     parser.add_argument("--chosen_timepoints", "-ct",
                         dest="chosen_timepoints", default='',
