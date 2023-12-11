@@ -61,6 +61,11 @@ class Montage:
         print(f'Length of df: {len(df)} and max tile: {df.tile.max()}')
         df = df.sort_values('tile')
         if len(df) == df.tile.max():
+            well= df.well.iloc[0]
+            timepoint = df.timepoint.iloc[0]
+            if self.opt.img_norm_name != 'identity' and self.opt.tiletype=='filename':
+                self.get_background_image(df, well, timepoint)
+            
             for i, row in df.iterrows():
                 f = row[self.opt.tiletype]
                 # overlap = row.overlap
@@ -95,6 +100,8 @@ class Montage:
             if savebool:
                 print(f'saved to {savepath}')
                 imageio.v3.imwrite(savepath, mont)
+        if well in self.Norm.backgrounds and timepoint in self.Norm.backgrounds[well]:
+            del self.Norm.backgrounds[well][timepoint]
         return mont
 
 
