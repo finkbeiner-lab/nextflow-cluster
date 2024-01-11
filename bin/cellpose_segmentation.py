@@ -82,12 +82,12 @@ class CellposeSegmentation:
             print('props_df', props_df)
 
             # Add to database
-            Db.update('tiledata', dict(maskpath=maskpath), kwargs=dict(experimentdata_id=row.experimentdata_id,
+            Db.update('tiledata', dict(maskpath=maskpath, segmentationmethod='cellpose'), kwargs=dict(experimentdata_id=row.experimentdata_id,
                                                                        welldata_id=row.welldata_id,
                                                                        channeldata_id=row.channeldata_id,
                                                                        tile=row.tile,
-                                                                       timepoint=row.timepoint,
-                                                                       segmentationmethod='cellpose'))
+                                                                       timepoint=row.timepoint
+                                                                       ))
             update_celldata_and_intensitycelldata(row, props_df, Db)
             logger.warning(f'Updated celldata and intensitycelldata for well {row.well} tile {row.tile}')
 
