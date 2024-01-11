@@ -64,7 +64,7 @@ class Intro:
         logger.warning(f'first file: {files_df.filename.iloc[0]}')
         fname_df = files_df['filepath'].str.split('/', expand=True)
         num_cols = len(fname_df.columns)
-        if robo_num == 0:
+        if robo_num == 0 or robo_num == 4:
 
             files_df[['pid', 'experiment', 'timepoint', 'hours', 'well', 'tile', 'channel', 'burstinterval',
                       'zstep', 'zstep_size']] = fname_df[num_cols-1].str.split('_', expand=True)

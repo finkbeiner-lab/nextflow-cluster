@@ -151,7 +151,7 @@ class App(tk.Tk):
                 row = cell[0]
                 col = str(cell[1])
                 well = row + col
-                updates.append({"well":well, "celltype": celltype, "condition":condition, "name": dosage_name, "type":dosage_type, "dosage": float_dosage, "units": units})
+                updates.append({"well":well, "celltype": celltype, "condition":condition, "name": dosage_name, "kind":dosage_type, "dosage": float_dosage, "units": units})
             update_df = pd.DataFrame(updates)
             self.df = pd.concat([self.df, update_df], ignore_index=True)
             self.selector.clear_selection()

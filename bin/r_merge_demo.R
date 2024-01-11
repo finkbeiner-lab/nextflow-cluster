@@ -1,6 +1,6 @@
 library(dplyr)
 
-folder = "/gladstone/finkbeiner/linsley/Kaushik/GXYTMPS/GXYTMP-20231109-4-MsN-optocrispr/CSVS"
+folder = "/gladstone/finkbeiner/linsley/TM_analysis/GXYTMP-20231207-2-MsN-lentieos/CSVS"
 
 
 experimentdata = read.csv(file.path(folder, "experimentdata.csv"))
@@ -18,7 +18,8 @@ colnames(tiledata)[colnames(tiledata) == "id"] = "tiledata_id"
 colnames(celldata)[colnames(celldata) == "id"] = "celldata_id"
 colnames(channeldata)[colnames(channeldata) == "id"] = "channeldata_id"
 
-channel_names <- c('GFP-DMD1', 'RFP1', 'Cy5', 'Brightfield', 'BLUE-DMD-blocked', 'DAPI-DMD')
+#channel_names <- c('GFP-DMD1', 'RFP1', 'Cy5', 'Brightfield', 'BLUE-DMD-blocked', 'DAPI-DMD')
+channel_names <- c('GFP-DMD1', 'GFP-DMD2', 'RFP1', 'RFP2')
 channeldata <- filter(channeldata, channel %in% channel_names)
 glimpse(channeldata)
 
@@ -41,7 +42,4 @@ df4 <- merge(intensitycelldata, df3, by='celldata_id', suffixes=c("", ".dontuse"
 glimpse(df4)
 df5 <- merge(df4, channeldata, by='channeldata_id', suffixes=c("", ".dontuse"))
 data <- df5 %>% select(-contains("dontuse"))
-print(unique(df4$channel))
-
-
-
+print(unique(data$channel))
