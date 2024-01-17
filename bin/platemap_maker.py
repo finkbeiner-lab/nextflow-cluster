@@ -162,7 +162,7 @@ class App(tk.Tk):
             messagebox.showerror("Error", "Please enter a valid number for Dosage.")
 
     def save(self):
-        self.df.to_csv("selected_squares.csv", index=False)
+        self.df.to_csv("platemap.csv", index=False)
 
 if __name__ == "__main__":
     app = App()

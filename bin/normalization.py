@@ -25,16 +25,17 @@ class Normalize(Ops):
                                         subtraction=self.subtract_bg,
                                         identity=self.identity_bg)
 
+                
     def test(self):
         """Save background corrected images for viewing"""
         _, analysisdir = self.get_raw_and_analysis_dir()
         savedir = os.path.join(analysisdir, 'NormalizedImages')
         if not os.path.exists(savedir):
             os.makedirs(savedir)
-        tiledata_df = self.get_tiledata_df()
+        tiledata_df = self.get_df_for_training(['channeldata'])
         tiledata_df.rename(columns={'id': 'tiledata_id'}, inplace=True)
-        g = tiledata_df.groupby(['well', 'timepoint'])
-        for (well, timepoint), df in g:
+        g = tiledata_df.groupby(['well', 'timepoint', 'channel'])
+        for (well, timepoint, channel), df in g:
             self.get_background_image(df, well, timepoint)
             
             for i, row in df.iterrows():
@@ -44,6 +45,7 @@ class Normalize(Ops):
                 img = np.uint16(self.image_bg_correction[self.opt.img_norm_name](img, well, timepoint))
                 normpath = self.save_norm(img, row.filename, savedir, well)
                 print('normpath', normpath)
+            del self.backgrounds[well][timepoint]
 
     def to_eight_bit(self, target):
         return np.uint8(target / np.max(target) * 255)
