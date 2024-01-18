@@ -207,7 +207,285 @@ If you want to know the location of your nextflow executable run `whereis nextfl
 
 ## Database
 
-The Image Analysis Pipeline and Roboscopes use a Postgres Database. The credentials are stored in OnePassword. If you need to check the credentials, ask IT. 
+We use a postgres database. 
+
+- Host: fb-postgres01.gladstone.internal
+- User: postgres
+- Database: galaxy
+- Port: 5432
+
+The password is on Onepassword. 
+
+The schema is currently public and should be migrated to make it easier to see the tables. 
+
+Schemas of the tables are below.
+
+Each table has a column `id` which is a uuid. Columns with the table name + '_id' is a foreign key linking the table's primary key to selected table.
+
+### experimentdata
+
+    id          uuid default uuid_generate_v4() not null
+        primary key,
+    experiment  varchar
+        constraint unique_experiment
+            unique,
+    researcher  varchar,
+    description varchar,
+    project     varchar,
+    platetype   varchar,
+    wellcount   integer,
+    imagedir    varchar,
+    analysisdir varchar,
+    platename   varchar,
+    fixed       boolean,
+    microscope  varchar
+
+### welldata
+
+This table is a lists wells, celltypes, and the conditions of the cells (control, disease, etc.). 
+
+    id                uuid default uuid_generate_v4() not null
+        primary key,
+    experimentdata_id uuid                            not null
+        references experimentdata
+            on delete cascade,
+    well              varchar,
+    celltype          varchar,
+    condition         varchar
+
+### tiledata
+
+This table, tiledata, includes information about the tile, foreign keys to the experiment and well it belongs to, as well as channel. The schema includes time imaged, the paths to the filename (raw image), path to the masks and tracked mask path. 
+
+    id                 uuid default uuid_generate_v4() not null
+        primary key,
+    experimentdata_id  uuid                            not null
+        references experimentdata
+            on delete cascade,
+    welldata_id        uuid                            not null
+        references welldata
+            on delete cascade,
+    channeldata_id     uuid                            not null
+        references channeldata
+            on delete cascade,
+    tile               integer,
+    pid                varchar,
+    hours              double precision,
+    timepoint          integer,
+    overlap            double precision,
+    zstep              integer,
+    zstep_size         double precision,
+    filename           varchar,
+    time_imaged        varchar,
+    maskpath           varchar,
+    trackedmaskpath    varchar,
+    segmentationmethod varchar,
+    backgroundpath     varchar, 
+    registeredpath     varchar
+
+### celldata
+
+Celldata includes foreign keys linking the table to experimentdata, welldata, and tiledata. It includes the centroid coordinates, cellid (tracked), randomcellid (untracked), features about the mask, and whether or not the cell was stimulated by the dmd. 
+
+    id                uuid not null
+        constraint celldata_pkey1
+            primary key,
+    experimentdata_id uuid not null
+        references experimentdata
+            on delete cascade,
+    welldata_id       uuid not null
+        references welldata
+            on delete cascade,
+    tiledata_id       uuid not null
+        references tiledata
+            on delete cascade,
+    cellid            integer,
+    randomcellid      integer,
+    centroid_x        double precision,
+    centroid_y        double precision,
+    area              double precision,
+    solidity          double precision,
+    extent            double precision,
+    perimeter         double precision,
+    eccentricity      double precision,
+    axis_major_length double precision,
+    axis_minor_length double precision,
+    stimulate         boolean default false
+
+### intensitycelldata
+
+This table, intensitycelldata, includes the intensity information about the cell from celldata. This table is linked to experimentdata, welldata, tiledata, celldata, and channeldata. It includes max, mean, min and std intensity. 
+
+    id                uuid default uuid_generate_v4() not null
+        primary key,
+    experimentdata_id uuid                            not null
+        references experimentdata
+            on delete cascade,
+    welldata_id       uuid                            not null
+        references welldata
+            on delete cascade,
+    tiledata_id       uuid                            not null
+        references tiledata
+            on delete cascade,
+    celldata_id       uuid                            not null
+        references celldata
+            on delete cascade,
+    channeldata_id    uuid                            not null
+        references channeldata
+            on delete cascade,
+    intensity_max     double precision,
+    intensity_mean    double precision,
+    intensity_min     double precision,
+    intensity_std     double precision
+
+### dosagedata
+
+This table, dosagedata, has information about the platemap. It links to experimentdata and welldata. It shows the name of the dose, kind of dose, and the quantity of the dosage. 
+
+**Todo: needs a units column**. 
+
+    id                uuid default uuid_generate_v4() not null
+        primary key,
+    experimentdata_id uuid                            not null
+        references experimentdata
+            on delete cascade,
+    welldata_id       uuid                            not null
+        references welldata
+            on delete cascade,
+    name              varchar,
+    dosage            double precision,
+    kind              varchar
+
+## punctadata
+
+Similar to celldata, this table records puncta. It links to experimentdata, welldata, tiledata, and celldata. There are  columns punctaid (tracked) and randompunctaid (untracked). It includes centroid information and features about the puncta. 
+
+Note tracking puncta is not implemented. 
+
+    id                uuid not null
+        primary key,
+    experimentdata_id uuid not null
+        references experimentdata
+            on delete cascade,
+    welldata_id       uuid not null
+        references welldata
+            on delete cascade,
+    tiledata_id       uuid not null
+        references tiledata
+            on delete cascade,
+    celldata_id       uuid not null
+        references celldata
+            on delete cascade,
+    punctaid          integer,
+    randompunctaid    integer,
+    centroid_x        double precision,
+    centroid_y        double precision,
+    area              double precision,
+    solidity          double precision,
+    extent            double precision,
+    perimeter         double precision,
+    eccentricity      double precision,
+    axis_major_length double precision,
+    axis_minor_length double precision
+
+### intensitypunctadata
+
+Similar to intensitycelldata, this table keeps track of the intensity of puncta. This table links to experimentdata, welldata, tiledata, celldata, punctadata, and channeldata. It records max, min, mean, and std intensity. 
+
+    id                uuid default uuid_generate_v4() not null
+        primary key,
+    experimentdata_id uuid                            not null
+        references experimentdata
+            on delete cascade,
+    welldata_id       uuid                            not null
+        references welldata
+            on delete cascade,
+    tiledata_id       uuid                            not null
+        references tiledata
+            on delete cascade,
+    celldata_id       uuid                            not null
+        references celldata
+            on delete cascade,
+    punctadata_id     uuid                            not null
+        references punctadata
+            on delete cascade,
+    channeldata_id    uuid                            not null
+        references channeldata
+            on delete cascade,
+    intensity_max     double precision,
+    intensity_mean    double precision,
+    intensity_min     double precision,
+    intensity_std     double precision
+
+## cropdata
+
+Crops enerated from the datastudy repo by the cropping module are stored in this table. This table links to experimentdata, welldata, channeldata, and celldata. The croppaths are used to build a list of files for training, rather than crawling through a directory. 
+
+    id                uuid not null
+        primary key,
+    experimentdata_id uuid not null
+        references experimentdata
+            on delete cascade,
+    welldata_id       uuid not null
+        references welldata
+            on delete cascade,
+    channeldata_id    uuid not null
+        references channeldata
+            on delete cascade,
+    celldata_id       uuid not null
+        references celldata
+            on delete cascade,
+    croppath          varchar
+
+## modeldata
+
+This table records results from training machine learning models from the CNN module of the datastudy repo. It links to experimentdata. It include the modelname, path to the saved model, path to the wandb file which was saved offline, and stats and parameters about the training. 
+
+    id                uuid not null
+        primary key,
+    experimentdata_id uuid not null
+        references experimentdata
+            on delete cascade,
+    modelname         varchar,
+    modelpath         varchar,
+    wandbpath         varchar,
+    train_loss        double precision,
+    val_loss          double precision,
+    train_acc         double precision,
+    val_acc           double precision,
+    epochs            integer,
+    n_samples         integer,
+    num_channels      integer,
+    learning_rate     double precision,
+    batch_size        integer,
+    momentum          double precision,
+    optimizer         varchar,
+    modeltype         varchar
+
+## modelcropdata
+
+This table, modelcropdata, keeps records of the prediction and ground truth of each crop after training with the CNN. This links to modeldata, experimentdata, welldata, and celldata. The column stage refers to training, validation, or testing. The prediction and groundtruth are numeric and the prediction_label and groundtruth_label are, if you're running classification, the corresponding label for the ground prediction and groundtruth. 
+
+    id                uuid not null
+        primary key,
+    model_id          uuid not null
+        references modeldata
+            on delete cascade,
+    experimentdata_id uuid not null
+        references experimentdata
+            on delete cascade,
+    welldata_id       uuid not null
+        references welldata
+            on delete cascade,
+    celldata_id       uuid not null
+        references celldata
+            on delete cascade,
+    stage             varchar,
+    output            double precision,
+    prediction        double precision,
+    groundtruth       double precision,
+    prediction_label  varchar,
+    groundtruth_label varchar
 
 ## Slurm
 
