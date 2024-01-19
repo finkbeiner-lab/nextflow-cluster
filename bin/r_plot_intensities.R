@@ -25,7 +25,7 @@ colnames(celldata)[colnames(celldata) == "id"] = "celldata_id"
 colnames(channeldata)[colnames(channeldata) == "id"] = "channeldata_id"
 
 #channel_names <- c('GFP-DMD1', 'RFP1', 'Cy5', 'Brightfield', 'BLUE-DMD-blocked', 'DAPI-DMD')
-channel_names <- c('GFP-DMD1', 'RFP1')
+channel_names <- c('GFP-DMD1', 'RFP1', 'BLUE-DMD-blocked')
 channeldata <- filter(channeldata, channel %in% channel_names)
 glimpse(channeldata)
 
@@ -33,6 +33,8 @@ glimpse(channeldata)
 intensitycelldata_channeldata <- merge(intensitycelldata, channeldata, by='channeldata_id', suffixes=c("", ".dontuse"))
 print(unique(intensitycelldata_channeldata$channel))
 
+
+# Merge to get intensities for celldata. include well, tile, dosage info. 
 df1 <- merge(tiledata, welldata, by='welldata_id',suffixes=c("", ".dontuse"))
 print(unique(df1$well))  # List wells
 print(unique(df1$timepoint))  # List timepoints
@@ -50,12 +52,37 @@ df5 <- merge(df4, channeldata, by='channeldata_id', suffixes=c("", ".dontuse"))
 data <- df5 %>% select(-contains("dontuse"))
 print(unique(data$channel))
 
+# link stimulation intensities from dmd to dataframe
+
+stim1 <- merge(df2, channeldata, by='channeldata_id', suffixes=c("", ".dontuse"))
+stim1 <- stim1%>% select(-contains("dontuse"))
+
+# Check channels are there
+print(unique(stim1$channel))
+
+# Filter only stim channel
+stim_channel_name <- c('BLUE-DMD-blocked')
+stim2 <- filter(stim1, channel %in% stim_channel_name)
+
+# Rename columns of interest to prevent conflict
+colnames(stim2)[colnames(stim2) == "channel"] = "stim_channel"
+colnames(stim2)[colnames(stim2) == "exposure"] = "stim_exposure"
+colnames(stim2)[colnames(stim2) == "blue"] = "stim_blue"
+
+# Identifier for tiles (tiledata_id identifies the stim channel only.)
+stim2$tileidentifier=paste(stim2$well,stim2$tile,stim2$timepoint, sep="_")
+data$tileidentifier=paste(data$well,data$tile,data$timepoint, sep="_")
+
+stim3  = stim2[c("tileidentifier", "stim_channel", "stim_exposure", "stim_blue")]
+
+datastim <- merge(data, stim3, by='tileidentifier', suffixes=c("", ".dontuse"))
+
 ###calculate GEDI ratio
 # data$GEDIratio=data[data$channel=='RFP1',]$intensity_mean/data[data$channel=='GFP-DMD1',]$intensity_mean
 # Calculate ratio
 data <- data[!is.na(data$intensity_mean),]
 
-data <- data %>% group_by(celldata_id) %>% filter(n() == 2)
+data <- data %>% group_by(celldata_id) %>% filter(n() > 1)
 
 data$track=paste(data$cellid,data$tile,data$well, sep="_")
 data$timepoint=as.numeric(data$timepoint)
