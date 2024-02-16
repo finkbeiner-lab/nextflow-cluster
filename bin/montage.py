@@ -67,7 +67,7 @@ class Montage:
             timepoint = df.timepoint.iloc[0]
             print(f'Well {well}, Timepoint {timepoint}')
             if self.opt.img_norm_name != 'identity' and self.opt.tiletype=='filename':
-                self.get_background_image(df, well, timepoint)
+                self.Norm.get_background_image(df, well, timepoint)#kaushik edit
             
             for i, row in df.iterrows():
                 f = row[self.opt.tiletype]
