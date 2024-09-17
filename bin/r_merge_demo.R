@@ -1,7 +1,8 @@
 library(dplyr)
 
-folder = "/gladstone/finkbeiner/linsley/TM_analysis/GXYTMP-20231207-2-MsN-lentieos/CSVS"
-
+# folder = "/gladstone/finkbeiner/linsley/TM_analysis/GXYTMP-20231207-2-MsN-lentieos/CSVS"
+folder = "/gladstone/finkbeiner/linsley/GXYTMPS/Kaushik/GXYTMP-20240222-1-MsN-Minisog/CSVS"
+# smb://finkbeinernas.gladstone.internal/finkbeiner-linsley/GXYTMPS/Kaushik/GXYTMP-20240222-1-MsN-Minisog/CSVS"
 
 experimentdata = read.csv(file.path(folder, "experimentdata.csv"))
 welldata = read.csv(file.path(folder, "welldata.csv"))
@@ -19,7 +20,7 @@ colnames(celldata)[colnames(celldata) == "id"] = "celldata_id"
 colnames(channeldata)[colnames(channeldata) == "id"] = "channeldata_id"
 
 #channel_names <- c('GFP-DMD1', 'RFP1', 'Cy5', 'Brightfield', 'BLUE-DMD-blocked', 'DAPI-DMD')
-channel_names <- c('GFP-DMD1', 'GFP-DMD2', 'RFP1', 'RFP2')
+channel_names <- c('GFP-DMD1', 'BLUE-DMD-blocked', 'RFP1')
 channeldata <- filter(channeldata, channel %in% channel_names)
 glimpse(channeldata)
 

@@ -121,6 +121,7 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
+    print("chosenchanneltest")
     parser.add_argument('--experiment', default='JAK-COR7508012023-GEDI', type=str)
     parser.add_argument('--tiletype', default='trackedmaskpath', choices=['filename', 'maskpath', 'trackedmaskpath'], type=str,
                         help='Montage image, binary mask, or tracked mask.')
@@ -142,6 +143,9 @@ if __name__ == '__main__':
     parser.add_argument("--chosen_channels", "-cc",
                         dest="chosen_channels", default='all',
                         help="Specify channels to include or exclude.")
+    parser.add_argument("--image_overlap", "-io",
+                        dest="image_overlap", default='all',
+                        help="Specify amount of overlap")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()
     print(args)

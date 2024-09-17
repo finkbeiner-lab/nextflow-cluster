@@ -13,6 +13,7 @@ process REGISTER_EXPERIMENT {
     val platemap_path
     val ixm_hts_file
     val robo_file
+    val illumination_file
     val overwrite_experiment
     val robo_num
     val chosen_wells
@@ -29,9 +30,10 @@ process REGISTER_EXPERIMENT {
     """
     register_experiment.py --input_path ${input_path} --output_path ${output_path} --template_path ${template_path} \
     --platemap_path ${platemap_path} --ixm_hts_file ${ixm_hts_file} --robo_file ${robo_file} --overwrite_experiment ${overwrite_experiment}  \
-    --robo_num ${robo_num} \
+     --robo_num ${robo_num} \
      --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
-     --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
+     --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle} \
+     --illumination_file ${illumination_file}
     """
 
 }
@@ -245,6 +247,7 @@ process MONTAGE {
     val wells_toggle
     val timepoints_toggle
     val channels_toggle
+    val image_overlap
 
     output:
     val true
@@ -253,7 +256,8 @@ process MONTAGE {
     """
     montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
     --chosen_channels ${chosen_channels} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
+    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --image_overlap ${image_overlap}
     """
 }
 
@@ -272,6 +276,7 @@ process PLATEMONTAGE {
     val wells_toggle
     val timepoints_toggle
     val channels_toggle
+
 
 
     output:

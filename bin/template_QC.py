@@ -182,6 +182,19 @@ class TemplateQC:
                         logger.error(f'Value {e} cannot be converted to int\n{err}')
                         print(f'Value {e} cannot be converted to int\n{err}')
                         raise err
+######### KS edit for single channel in IXM
+        #     # Handle ExcitationIntensity
+        # num_channels = 8
+        # if not pd.isna(row.ExcitationIntensity):
+        #     if isinstance(row.ExcitationIntensity, str):
+        #         excitations = row.ExcitationIntensity.split(':')
+        #     else:
+        #         # Single channel, so set other excitations to 0
+        #         excitations = [row.ExcitationIntensity] + [0] * (num_channels - 1)
+            
+        #     # Validate each excitation intensity
+        #     for e in excitations:
+        #         assert 1000 >= int(e) >= 0, f"Excitation intensity {e} is out of range (0-1000)."
 
             if not pd.isna(row.ExcitationIntensity):
                 excitations = df.ExcitationIntensity.iloc[0].split(':')

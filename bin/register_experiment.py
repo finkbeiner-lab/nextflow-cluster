@@ -98,12 +98,13 @@ class Intro:
         cell_masks = os.path.join(output_path, 'CellMasks')  # segmentation
         qc_path = os.path.join(output_path, 'QualityControl')  # segmentation visualization
         stacking_scratch_path = os.path.join(output_path, 'StackingTemp')
+        normalized_images_path = os.path.join(output_path, 'NormalizedImages')  # Normalization
 
         output_dir_names = ['BackgroundCorrected', 'MontagedImages',
                             'AlignedImages', 'CroppedImages', 'QualityControl',
-                            'OverlaysTablesResults', 'CellMasks', 'StackingTemp']
+                            'OverlaysTablesResults', 'CellMasks', 'StackingTemp','NormalizedImages']
         output_subdirs = [bg_corrected_path, montaged_path,
-                          aligned_path, cropped_path, qc_path, results, cell_masks]
+                          aligned_path, cropped_path, qc_path, results, cell_masks, normalized_images_path]
 
         utils.create_folder_hierarchy(output_subdirs, output_path)
 
@@ -148,7 +149,7 @@ class Intro:
             default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
         )
         args = parser.parse_args()
-        print('args', args)
+        print('\n\n\n ================================args', args)
         logger.warning(f'args {args}')
         # Set up I/O parameters
         input_path = str.strip(args.input_path)

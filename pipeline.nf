@@ -130,6 +130,7 @@ tp_ch = Channel.of(params.chosen_timepoints)
 well_toggle_ch = Channel.of(params.wells_toggle)
 tp_toggle_ch = Channel.of(params.timepoints_toggle)
 channel_toggle_ch = Channel.of(params.channels_toggle)
+image_overlap_ch = Channel.of(params.image_overlap) //austin added "_ch" 5/17
 target_channel_ch = Channel.from(params.target_channel)
 target_channel_crop_ch = Channel.from(params.target_channel_crop)
 puncta_target_channel_ch = Channel.from(params.puncta_target_channel)
@@ -202,7 +203,7 @@ workflow {
     }
     if (params.DO_REGISTER_EXPERIMENT) {
         REGISTER_EXPERIMENT(input_path_ch, output_path_ch, template_path_ch, platemap_path_ch, ixm_hts_file_ch, robo_file_ch, 
-        overwrite_experiment_ch, robo_num_ch,
+        overwrite_experiment_ch, robo_num_ch, illumination_file_ch,
         well_ch, tp_ch, chosen_channels_for_register_exp_ch, well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
         register_result = REGISTER_EXPERIMENT.out
     }
@@ -261,8 +262,8 @@ workflow {
     }   
     if (params.DO_MONTAGE) {
         montage_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
-        montage_ch = MONTAGE(montage_flag, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,
-        well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
+        montage_ch = MONTAGE(montage_flag, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_cnn_ch,
+        well_toggle_ch, tp_toggle_ch, channel_toggle_ch,image_overlap_ch)
         montage_result = MONTAGE.out
     }
     if (params.DO_PLATEMONTAGE) {

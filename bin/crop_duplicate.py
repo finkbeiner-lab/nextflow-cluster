@@ -18,8 +18,7 @@ class Crop:
         self.Dbops = Ops(opt)
         self.Db = Database()
         self.imagedir, self.analysisdir = self.Dbops.get_raw_and_analysis_dir()
-        self.cropdir = os.path.join(self.analysisdir, 'CroppedImages') #original
-        # self.cropdir = os.path.join(self.analysisdir, 'MaskCroppedImages') #KSedit
+        self.cropdir = os.path.join(self.analysisdir, 'CroppedImages')
         self.experimentdata_id = self.Db.get_table_uuid('experimentdata',
                                                         dict(experiment=self.opt.experiment))
         self.thread_lim = 2
@@ -59,12 +58,7 @@ class Crop:
                                                    dict(welldata_id=df.welldata_id.iloc[0],
                                                         channeldata_id=target_channeldata_id,
                                                         timepoint=int(df.timepoint.iloc[0]),
-                                                        tile=int(df.tile.iloc[0])))  ##original
-            # filename = self.Db.get_table_value('tiledata', 'maskpath',
-            #                                        dict(welldata_id=df.welldata_id.iloc[0],
-            #                                             channeldata_id=target_channeldata_id,
-            #                                             timepoint=int(df.timepoint.iloc[0]),
-            #                                             tile=int(df.tile.iloc[0])))  ##KSedit
+                                                        tile=int(df.tile.iloc[0])))
             if filename is None:
                 return
             filename = filename[0][0]

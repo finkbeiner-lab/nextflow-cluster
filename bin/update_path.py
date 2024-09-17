@@ -12,11 +12,11 @@ class UpdatePath:
     def __init__(self, opt):
         self.opt = opt
         self.Db = Database()
-        self.robofolder = dict(TM='ThinkingMicroscope', Robo4='Robo4Images')
-        self.origfolder = dict(TM=['D:/Images', 'X:'], Robo4=['E:/Images'])
+        self.robofolder = dict(TM='ThinkingMicroscope', ROBO4='Robo4Images',ROBO3='Robo3Images')
+        self.origfolder = dict(TM=['D:/Images', 'X:'], ROBO4=['E:/Images'],ROBO3=['C:/Test'])
         self.targetfolder = {'D:/Images':'/gladstone/finkbeiner/robodata',
                              'X:':'/gladstone/finkbeiner/robodata',
-                             'E:/Images':'/gladstone/finkbeiner/robodata'}
+                             'E:/Images':'/gladstone/finkbeiner/robodata','C:/Test':'/gladstone/finkbeiner/robodata'}
         
     def build_target_folder(self, src_folder, microscope):
         prefix = self.targetfolder[src_folder]
@@ -36,7 +36,7 @@ class UpdatePath:
         exp_uuid = self.Db.get_table_uuid(
             tablename='experimentdata', kwargs=dict(experiment=self.opt.experiment))
         print(microscope)
-        assert microscope[0][0] in ['TM', 'Robo4'], 'Experiment is not from Thinking Microscope or Robo4. Check if null or from other microscope.........'
+        assert microscope[0][0] in ['TM', 'ROBO4', 'ROBO3'], 'Experiment is not from Thinking Microscope or Robo4. Check if null or from other microscope.........'
         microscope = microscope[0][0]
         print(f'Updating paths for microscope: {microscope}')
         analysisdir = os.path.join(

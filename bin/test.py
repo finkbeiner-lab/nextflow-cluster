@@ -7,7 +7,7 @@ def test(txt):
     return txt
 
 if __name__=='__main__':
-    print('world')
+    print('hi world')
     parser = argparse.ArgumentParser()
 
     parser.add_argument(

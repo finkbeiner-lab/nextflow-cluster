@@ -128,20 +128,80 @@ class ConvertTemplate:
             cnt = int(line.split(',')[1])
             if cnt <= self.num_wavelengths:
                 self.plate['Exposure'].append((line.split(',')[-1]))
-
+### KS edit for sinlge channel IXM
+    # def set_up_plate(self):
+    #     intensity_mat = None
+    #     for intensity in self.plate['ExcitationIntensity']:
+    #         intensities = intensity.split(':')
+    #         intensities = np.array([int(i) for i in intensities])
+    #         if intensity_mat is None:
+    #             intensity_mat = intensities
+    #         else:
+    #             intensity_mat = np.vstack((intensity_mat, intensities))
+    
+    # # Get the maximum values along each column (channel)
+    #     max_result = intensity_mat.max(axis=0)
+    
+    # # Handle the case where there's only a single channel
+    #     if isinstance(max_result, np.ndarray):
+    #         intensity_maxes = list(max_result)
+    #     else:
+    #         intensity_maxes = [max_result]  # Wrap the single value in a list
+    
+    # # Convert the maximum values to strings
+    #     intensity_maxes = [str(i) for i in intensity_maxes]
+    
+    # # Join the maximum values into a single string separated by colons
+    #     intensity_str = ':'.join(intensity_maxes)
+######## Original
+    # def set_up_plate(self):
+    #     intensity_mat = None
+    #     for intensity in self.plate['ExcitationIntensity']:
+    #         intensities = intensity.split(':')
+    #         intensities = np.array([int(i) for i in intensities])
+    #         if intensity_mat is None:
+    #             intensity_mat = intensities
+    #         else:
+    #             intensity_mat = np.vstack((intensity_mat, intensities))
+    #     intensity_maxes = list(intensity_mat.max(axis=0))
+    #     # ##KS edit
+    #     # max_result = intensity_mat.max(axis=0)
+    #     # if isinstance(max_result, np.ndarray):
+    #     #     intensity_maxes = list(max_result)
+    #     # else:
+    #     #     intensity_maxes = [max_result]  # Wrap the single value in a list
+    #     ## End KS edit
+    #     intensity_maxes = [str(i) for i in intensity_maxes]
+    #     intensity_str = ':'.join(intensity_maxes)
+######## End Original
+        # todo: table to keep track of channels instead of list of values?
     def set_up_plate(self):
+        if len(self.plate['ExcitationIntensity']) == 0:
+            return
+
         intensity_mat = None
         for intensity in self.plate['ExcitationIntensity']:
             intensities = intensity.split(':')
             intensities = np.array([int(i) for i in intensities])
+
+        # Check if intensity_mat is None and initialize it
             if intensity_mat is None:
                 intensity_mat = intensities
             else:
+            # Stack the arrays if there are multiple intensities (i.e., multiple channels)
                 intensity_mat = np.vstack((intensity_mat, intensities))
-        intensity_maxes = list(intensity_mat.max(axis=0))
+
+    # If there's only one row (i.e., one channel), intensity_mat will be 1D.
+        if intensity_mat.ndim == 1:
+            intensity_maxes = intensity_mat
+        else:
+        # Otherwise, take the max along the columns (axis=0)
+            intensity_maxes = intensity_mat.max(axis=0)
+
+    # Convert the max intensities to a string
         intensity_maxes = [str(i) for i in intensity_maxes]
         intensity_str = ':'.join(intensity_maxes)
-        # todo: table to keep track of channels instead of list of values?
+   
 
         self.plate['ExcitationIntensity'] = intensity_str
         self.plate['Channel'] = ';'.join(self.plate['Channel'])
@@ -214,9 +274,12 @@ class ConvertTemplate:
 
 
 if __name__ == '__main__':
-    hts = '/home/jlamstein/Downloads/AH-carDIFF6-chemDNDA-ICC-06082023.HTS'
-    illumination = r'/gladstone/finkbeiner/robodata/IXM Documents/illumination-setting-2023-06-16.ILS'
-    savepath = '/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin/AH-carDIFF6-chemDNDA-ICC-06082023/AH-carDIFF6-chemDNDA-ICC-06082023.xlsx'
+    # hts = '/home/jlamstein/Downloads/AH-carDIFF6-chemDNDA-ICC-06082023.HTS'
+    hts = '/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin/XDP0-ICC-glass/XDP0-ICC-glass.HTS'
+    # illumination = r'/gladstone/finkbeiner/robodata/IXM Documents/illumination-setting-2023-06-16.ILS'
+    illumination = r'/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin/IXM-illumination-file-14MAR2024.ILS'
+    # savepath = '/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin/AH-carDIFF6-chemDNDA-ICC-06082023/AH-carDIFF6-chemDNDA-ICC-06082023.xlsx'
+    savepath = '/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin/XDP0-ICC-glass/XDP0-ICC-glass-template.xlsx'
     # dst = os.path.join(os.path.dirname(hts), os.path.basename(hts) + '.csv')
     # shutil.copyfile(hts, dst)
     print('running main file of ixm2galaxy')
