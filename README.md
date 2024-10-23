@@ -214,7 +214,7 @@ We use a postgres database.
 - Database: galaxy
 - Port: 5432
 
-The password is on Onepassword. 
+The password is available inside 1Password. Ask the lab for an invite to our 1Password vault if you don't have access.
 
 The schema is currently public and should be migrated to make it easier to see the tables. 
 
