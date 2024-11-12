@@ -6,6 +6,7 @@ from sql import Database
 import os
 import datetime
 import argparse
+import logging
 
 
 class UpdatePath:
@@ -13,17 +14,23 @@ class UpdatePath:
         self.opt = opt
         self.Db = Database()
         self.robofolder = dict(TM='ThinkingMicroscope', ROBO4='Robo4Images',ROBO3='Robo3Images')
-        self.origfolder = dict(TM=['D:/Images', 'X:'], ROBO4=['E:/Images'],ROBO3=['C:/Test'])
+        # self.origfolder = dict(TM=['D:/Images', 'X:'], ROBO4=['E:/Images'],ROBO3=['C:/Test']) #Original
+        self.origfolder = dict(TM=['D:/Images', 'Z:',], ROBO4=['E:/Images'],ROBO3=['C:/Test'])
+        # self.targetfolder = {'D:/Images':'/gladstone/finkbeiner/robodata',
+        #                      'X:':'/gladstone/finkbeiner/robodata',
+        #                      'E:/Images':'/gladstone/finkbeiner/robodata','C:/Test':'/gladstone/finkbeiner/robodata'} #Original
         self.targetfolder = {'D:/Images':'/gladstone/finkbeiner/robodata',
-                             'X:':'/gladstone/finkbeiner/robodata',
+                             'Z:':'/gladstone/finkbeiner/robodata',
                              'E:/Images':'/gladstone/finkbeiner/robodata','C:/Test':'/gladstone/finkbeiner/robodata'}
-        
+
     def build_target_folder(self, src_folder, microscope):
         prefix = self.targetfolder[src_folder]
-        if microscope=='TM' and src_folder in ['X:']:
+        # if microscope=='TM' and src_folder in ['X:']: #Original
+        if microscope=='TM' and src_folder in ['Z:']:
             return prefix
         else:
             return os.path.join(prefix, self.robofolder[microscope])
+        
 
     def run(self):
         # Add to database
@@ -36,7 +43,7 @@ class UpdatePath:
         exp_uuid = self.Db.get_table_uuid(
             tablename='experimentdata', kwargs=dict(experiment=self.opt.experiment))
         print(microscope)
-        assert microscope[0][0] in ['TM', 'ROBO4', 'ROBO3'], 'Experiment is not from Thinking Microscope or Robo4. Check if null or from other microscope.........'
+        assert microscope[0][0] in ['TM', 'ROBO4', 'ROBO3','IXM','ROBO5'], 'Experiment is not from Thinking Microscope or Robo4. Check if null or from other microscope.........'
         microscope = microscope[0][0]
         print(f'Updating paths for microscope: {microscope}')
         analysisdir = os.path.join(

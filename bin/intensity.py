@@ -87,7 +87,8 @@ class Intensity:
                 z = set(celldata_df.randomcellid).symmetric_difference(np.unique(labelled_mask))  # check df has same randomcellids as labelled mask
                 for i, crow in celldata_df.iterrows():
                     if crow.randomcellid not in labelled_mask:
-                        raise Exception(f'Cellid not in mask {crow.cellid} in {maskpath}')
+                        raise Exception(f'Cellid not in mask {crow.cellid} in {maskpath}') #original
+                        # raise Exception(f'Cellid not in mask {crow.cellid} in {row.maskpath}')
                     cell = img[labelled_mask == crow.randomcellid]  # array of intensity values for cell in target channel
                     intensity_max = float(np.max(cell)) 
 

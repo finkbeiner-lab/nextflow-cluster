@@ -103,6 +103,9 @@ class RoboConvertTemplate:
             elif self.microscope['Microscope'].lower()=='robo4':
                 epi = 'Violet;Blue;Cyan;Teal;Green;Red'
                 confocal = '405nm-5;447nm-6;488nm-7;516nm-2;561nm-4;642nm-3'
+            elif self.microscope['Microscope'].lower()=='robo5':
+                epi = 'Violet;Blue;Cyan;Teal;Green;Red'
+                confocal = '405nm-5;447nm-6;488nm-7;516nm-2;561nm-4;642nm-3'
             self.microscope['AvailableWavelengths'] = epi
             self.microscope['AvailableConfocalWavelengths'] = confocal
         if current_table==2:

@@ -109,6 +109,24 @@ class Configure:
             self.ConfocalLightSourceNameSecondary = 'Cobolt'
             self.spreadsheet_tab = 'IXM'
 
+        elif microscope.lower()=='robo5':
+            self.rowsign = 1  # Sign for zeroed at top right
+            self.colsign = 1
+            self.x_arm_coord = 500000
+            self.y_arm_coord = -300000
+            self.arm_dll_file = None
+            self.arm_param_file = None
+            self.arm_teach_file = None
+            self.arm_seq_file = None
+            self.a1_coordinate = (0,0)
+            self.fid_zheight = 7300
+            self.PFSDeviceNameInConfig = 'TIPFSStatus'
+            self.pfs_prop_name = 'Status'
+            self.incubator_com_port = 'COM6'
+            self.LightSourceHasVariableIntensity = False
+            self.spreadsheet_tab = 'Robo V'
+            
+
 
         else:
             raise Exception(f'Microscope {microscope} is not valid')

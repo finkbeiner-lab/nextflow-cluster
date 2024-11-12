@@ -2,7 +2,9 @@
 
 import argparse
 import os
+# import numpy as np #KS edit
 from cellpose import models
+# import matplotlib.pyplot as plt #KS edit
 from skimage import (
     color, feature, filters, measure, morphology, segmentation, util
 )
@@ -102,7 +104,18 @@ class CellposeSegmentation:
     def cellpose_single_image(self, model, chan, img):
         masks, flows, styles, diams = model.eval(img, batch_size=self.opt.batch_size, diameter=self.opt.cell_diameter, channels=chan,
                                                  flow_threshold=self.opt.flow_threshold, cellprob_threshold=self.opt.cell_probability)
-        print('Labelled masks with cellpose.')
+ 
+        # Convert the grayscale masks to a heatmap using a colormap (e.g., 'hot' or 'viridis')
+    #     cmap = plt.get_cmap('hot')  # You can also use 'viridis', 'plasma', etc.
+    
+    # # Normalize the masks for applying the colormap
+    #     mask_normalized = (masks - np.min(masks)) / (np.max(masks) - np.min(masks))
+
+    # # Apply colormap to normalized mask to create a heatmap
+    #     masks_heatmap = cmap(mask_normalized)[:, :, :3]  # Ignore alpha channel
+
+    
+        print('Labelled masks with cellpose and heatmap colors.')
         props = measure.regionprops_table(masks, intensity_image=img,
                                           properties=('label', 'area', 'centroid_weighted',
                                                       'orientation',
@@ -119,6 +132,7 @@ class CellposeSegmentation:
                                           )
         props_df = pd.DataFrame(props)
         return masks, props_df
+        # return masks_heatmap, props_df
 
     @staticmethod
     def _get_timepoint(f):
