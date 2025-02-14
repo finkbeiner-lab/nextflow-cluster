@@ -1,1 +1,1 @@
-docker run -itd --gpus all --mount type=bind,source="$HOME/datastudy/bin",target=/app --mount type=bind,source=/gladstone/finkbeiner,target=/gladstone/finkbeiner --mount type=bind,source=/opt/gurobi,target=/opt/gurobi jdlamstein/datastudy
+docker run -itd --gpus all --mount type=bind,source="$HOME/datastudy/bin",target=/app --mount type=bind,source=/gladstone/finkbeiner,target=/gladstone/finkbeiner,bind-propagation=rshared --mount type=bind,source=/opt/gurobi,target=/opt/gurobi jdlamstein/datastudy

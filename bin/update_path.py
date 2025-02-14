@@ -15,12 +15,12 @@ class UpdatePath:
         self.Db = Database()
         self.robofolder = dict(TM='ThinkingMicroscope', ROBO4='Robo4Images',ROBO3='Robo3Images')
         # self.origfolder = dict(TM=['D:/Images', 'X:'], ROBO4=['E:/Images'],ROBO3=['C:/Test']) #Original
-        self.origfolder = dict(TM=['D:/Images', 'Z:',], ROBO4=['E:/Images'],ROBO3=['C:/Test'])
+        self.origfolder = dict(TM=['D:/Images', 'Z:/ThinkingMicroscope',], ROBO4=['E:/Images'],ROBO3=['C:/Test'])
         # self.targetfolder = {'D:/Images':'/gladstone/finkbeiner/robodata',
         #                      'X:':'/gladstone/finkbeiner/robodata',
         #                      'E:/Images':'/gladstone/finkbeiner/robodata','C:/Test':'/gladstone/finkbeiner/robodata'} #Original
         self.targetfolder = {'D:/Images':'/gladstone/finkbeiner/robodata',
-                             'Z:':'/gladstone/finkbeiner/robodata',
+                             'Z:/ThinkingMicroscope':'/gladstone/finkbeiner/robodata',
                              'E:/Images':'/gladstone/finkbeiner/robodata','C:/Test':'/gladstone/finkbeiner/robodata'}
 
     def build_target_folder(self, src_folder, microscope):
@@ -83,6 +83,8 @@ if __name__ == '__main__':
     )
     parser.add_argument(
         '--experiment', default='0907-FB-1-JL-gedi-test', type=str)
+    parser.add_argument(
+        '--analysisdir', default='gladstone/finkbeiner/linsley/GXYTMPS/Kaushik', help='Analysis directory path')
     args = parser.parse_args()
     print(args)
     Up = UpdatePath(args)

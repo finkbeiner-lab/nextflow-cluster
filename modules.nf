@@ -207,6 +207,35 @@ process INTENSITY {
     """
 }
 
+// process CROP {
+//     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+//     memory '2 GB'
+//     cpus 4
+//     input:
+//     val ready
+//     val exp
+//     each target_channel_crop
+//     val morphology_channel
+//     val crop_size
+//     val chosen_wells
+//     val chosen_timepoints
+//     val wells_toggle
+//     val timepoints_toggle
+//     val do_mask_crop  // New parameter to decide mask cropping
+
+//     output:
+//     val true
+
+//     script:
+//     """
+//     crop.py --experiment ${exp} --crop_size ${crop_size} \
+//     --target_channel ${target_channel_crop} \
+//     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
+//     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+//     ${do_mask_crop ? '--mask_crop' : ''}
+//     """
+// }
+//original crop
 process CROP {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     memory '2 GB'
@@ -228,6 +257,32 @@ process CROP {
     script:
     """
     crop.py --experiment ${exp} --crop_size ${crop_size} \
+    --target_channel ${target_channel_crop} \
+    --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    """
+}
+process CROP_MASK {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    memory '2 GB'
+    cpus 4
+    input:
+    val ready
+    val exp
+    each target_channel_crop
+    val morphology_channel
+    val crop_size
+    val chosen_wells
+    val chosen_timepoints
+    val wells_toggle
+    val timepoints_toggle
+
+    output:
+    val true
+
+    script:
+    """
+    crop_mask.py --experiment ${exp} --crop_size ${crop_size} \
     --target_channel ${target_channel_crop} \
     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
@@ -331,6 +386,31 @@ process CNN {
     """
 }
 
+// process GETCSVS {
+//     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+//     input:
+//     val ready
+//     val exp
+//     val chosen_wells
+//     val chosen_timepoints
+//     val chosen_channels
+//     val wells_toggle
+//     val timepoints_toggle
+//     val channels_toggle
+
+//     output:
+//     path 'csv_outputs/*'
+
+//     script:
+//     """
+//     mkdir -p csv_outputs
+//     get_csvs.py --experiment ${exp} \
+//         --chosen_wells ${chosen_wells} --wells_toggle ${wells_toggle} \
+//         --chosen_timepoints ${chosen_timepoints} --timepoints_toggle ${timepoints_toggle} \
+//         --chosen_channels ${chosen_channels} --channels_toggle ${channels_toggle} \
+//         --output_dir csv_outputs
+//     """
+//Original
 process GETCSVS {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
@@ -404,4 +484,32 @@ workflow {
     results_ch = CONVERTTOUPPER(letters_ch.flatten())
     results_ch.view{ it }
 }
+// KS edit to include overlays
+process OVERLAY {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    
+    input:
+    val ready
+    val exp
+    val morphology_channel
+    val chosen_wells
+    val chosen_timepoints
+    val wells_toggle
+    val timepoints_toggle
+    val channels_toggle
+    val shift
+    val contrast
+    val tile
 
+    output:
+    val true
+
+    script:
+    """
+    overlay.py --experiment ${exp} --target_channel ${morphology_channel} \
+    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \
+    --tile ${tile}
+    """
+}

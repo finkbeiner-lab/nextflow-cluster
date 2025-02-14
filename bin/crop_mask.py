@@ -1,5 +1,5 @@
 #!/opt/conda/bin/python
-"""Get cell crops"""
+"""Get mask crops"""
 
 import imageio
 import os
@@ -18,14 +18,14 @@ class Crop:
         self.Dbops = Ops(opt)
         self.Db = Database()
         self.imagedir, self.analysisdir = self.Dbops.get_raw_and_analysis_dir()
-        self.cropdir = os.path.join(self.analysisdir, 'CroppedImages') #original
+        # self.cropdir = os.path.join(self.analysisdir, 'CroppedImages') #original
         # #KS edit check
         # if self.opt.mask_crop:
         #     self.cropdir = os.path.join(self.analysisdir, 'MaskCroppedImages')  
         # else:
         #     self.cropdir = os.path.join(self.analysisdir, 'CroppedImages')
 
-        # self.cropdir = os.path.join(self.analysisdir, 'MaskCroppedImages') #KSedit
+        self.cropdir = os.path.join(self.analysisdir, 'MaskCroppedImages') #KSedit
         self.experimentdata_id = self.Db.get_table_uuid('experimentdata',
                                                         dict(experiment=self.opt.experiment))
         self.thread_lim = 2
@@ -76,16 +76,16 @@ class Crop:
             #                                 timepoint=int(df.timepoint.iloc[0]),
             #                                 tile=int(df.tile.iloc[0])))
 
-            filename = self.Db.get_table_value('tiledata', 'filename',
-                                                   dict(welldata_id=df.welldata_id.iloc[0],
-                                                        channeldata_id=target_channeldata_id,
-                                                        timepoint=int(df.timepoint.iloc[0]),
-                                                        tile=int(df.tile.iloc[0])))  ##original
-            # filename = self.Db.get_table_value('tiledata', 'maskpath',
+            # filename = self.Db.get_table_value('tiledata', 'filename',
             #                                        dict(welldata_id=df.welldata_id.iloc[0],
             #                                             channeldata_id=target_channeldata_id,
             #                                             timepoint=int(df.timepoint.iloc[0]),
-            #                                             tile=int(df.tile.iloc[0])))  ##KSedit
+            #                                             tile=int(df.tile.iloc[0])))  ##original
+            filename = self.Db.get_table_value('tiledata', 'maskpath',
+                                                   dict(welldata_id=df.welldata_id.iloc[0],
+                                                        channeldata_id=target_channeldata_id,
+                                                        timepoint=int(df.timepoint.iloc[0]),
+                                                        tile=int(df.tile.iloc[0])))  ##KSedit
             if filename is None:
                 return
             filename = filename[0][0]
@@ -158,11 +158,6 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
     parser.add_argument('--experiment', default='20230807-KS1-neuron-optocrispr', type=str)
-    parser.add_argument(
-    '--mask_crop',
-    action='store_true',
-    help="Enable cropping from maskpath instead of filename."
-    )
     parser.add_argument('--crop_size', default=300, type=int, help="Side length of square")
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")

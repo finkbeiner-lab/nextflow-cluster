@@ -142,6 +142,8 @@ tiletype_ch = Channel.of(params.tiletype)
 montage_pattern_ch = Channel.of(params.montage_pattern)
 well_size_for_platemontage_ch = Channel.of(params.well_size_for_platemontage)
 norm_intensity_ch = Channel.of(params.norm_intensity)
+shift_ch = Channel.of(params.shift)//KS edit for overlay
+contrast_ch = Channel.of(params.contrast)//KS edit for overlay
 
 model_type_ch = Channel.of(params.model_type)
 batch_size_cellpose_ch = Channel.of(params.batch_size_cellpose)
@@ -164,9 +166,15 @@ learning_rate_ch = Channel.of(params.learning_rate)
 momentum_ch = Channel.of(params.momentum)
 optimizer_ch = Channel.of(params.optimizer)
 
-include { REGISTER_EXPERIMENT; SEGMENTATION;
+//Original
+/*include { REGISTER_EXPERIMENT; SEGMENTATION;
     CELLPOSE; PUNCTA; TRACKING; INTENSITY;
     CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION} from './modules.nf'
+*/
+//KS edit to include overlays
+include { OVERLAY;REGISTER_EXPERIMENT; SEGMENTATION;
+    CELLPOSE; PUNCTA; TRACKING; INTENSITY;
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -185,10 +193,12 @@ log.info """\
     Tracking: ${params.DO_TRACKING}
     Intensity: ${params.DO_INTENSITY}
     Crop: ${params.DO_CROP}
+    Mask Crop: ${params.DO_MASK_CROP}
     Montage: ${params.DO_MONTAGE}
     Plate Montage: ${params.DO_PLATEMONTAGE}
     CNN: ${params.DO_CNN}
     Get CSVS: ${params.DO_GET_CSVS}
+    Overlay: ${params.DO_OVERLAY} 
     """
     .stripIndent()
 
@@ -284,6 +294,14 @@ workflow {
     else {
         intensity_result = Channel.of(true)
     }
+    // if (params.DO_CROP || params.DO_MASK_CROP) {
+    // crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, crop_size_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch, params.DO_MASK_CROP)
+    // crop_ch.view { it }
+    // crop_result = CROP.out
+    // } else {
+    // crop_result = Channel.of(true)
+    // }
+//  Original crop
     if (params.DO_CROP) {
         crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, crop_size_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         crop_ch.view { it }
@@ -292,6 +310,14 @@ workflow {
     else {
         crop_result = Channel.of(true)
     }
+    if (params.DO_MASK_CROP) {
+        crop_mask_ch = CROP_MASK(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, crop_size_ch, 
+                                well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
+        crop_mask_ch.view { it }
+        crop_mask_result = CROP_MASK.out
+    } else {
+        crop_mask_result = Channel.of(true)
+    }    
     if (params.DO_CNN) {
         cnn_ch = CNN(crop_result, experiment_ch, cnn_model_type_ch, label_type_ch, label_name_ch, classes_ch, img_norn_name_cnn_ch, filters_ch, num_channels_ch, n_samples_ch,
         epochs_ch, batch_size_ch, learning_rate_ch, momentum_ch, optimizer_ch, well_ch, tp_ch, chosen_channels_for_cnn_ch,
@@ -307,6 +333,24 @@ workflow {
         csv_ch = GETCSVS(csv_ready, experiment_ch)
         csv_ch.view { it }
     }
+    // Run OVERLAY only if enabled--KS edit for overlay
+    if (params.DO_OVERLAY) {
+        overlay_ch = OVERLAY(
+            track_result,
+            experiment_ch,
+            morphology_ch,
+            well_ch,
+            tp_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            params.shift,
+            params.contrast,
+            tile_ch
+        )
+        overlay_ch.view { it } // Optional: Debugging output
+    }
+
 }
 
 workflow.onComplete {

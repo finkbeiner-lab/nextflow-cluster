@@ -1,3 +1,4 @@
+#!/opt/conda/bin/python
 """Overlay mask and numbers on image in 8-bit"""
 
 import imageio
@@ -19,7 +20,7 @@ class Overlay:
         self.Db = Database()
         self.imagedir, self.analysisdir = self.Dbops.get_raw_and_analysis_dir()
         self.overlaydir = os.path.join(self.analysisdir, 'Overlays')
-        self.font = ImageFont.truetype('/usr/share/fonts/dejavu/DejaVuSansMono.ttf', 20)
+        self.font = ImageFont.truetype('/usr/share/fonts/dejavu/DejaVuSansMono.ttf', 50)
         # try:
             # self.font = ImageFont.truetype('/usr/share/fonts/dejavu/DejaVuSansMono.ttf', 3)
         # except OSError:

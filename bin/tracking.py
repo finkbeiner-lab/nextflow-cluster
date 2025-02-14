@@ -77,6 +77,7 @@ class TrackCells:
         self.celldata = self.celldata.sort_values(by=['timepoint'])
         start_well = time.time()
         groups = self.celldata.groupby(by=['well', 'tile'])
+        
         # TODO: thread wells
         for (well, tile), df in groups:
             logger.warning(f'Tracking {well} {tile}')

@@ -1,5 +1,5 @@
 """Database handler"""
-
+import os
 from sqlalchemy import create_engine, and_, MetaData, ForeignKey, Table, Column, Integer, String, Float, select, update, func, delete, UniqueConstraint
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import functions
@@ -8,6 +8,7 @@ import uuid
 import pandas as pd
 from string import ascii_uppercase
 import warnings
+
 
 
 class Database:
@@ -36,7 +37,21 @@ class Database:
                         punctadata    organelledata
 
         """
-        _df = pd.read_csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
+        # _df = pd.read_csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
+
+        # Path to the CSV file
+        file_path = '/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv'
+
+        # Check if the file exists
+        if os.path.exists(file_path):
+            try:
+                _df = pd.read_csv(file_path)
+                print("CSV file read successfully:")
+                print(_df.head())  # Print the first few rows of the dataframe
+            except Exception as e:
+                print(f"An error occurred while reading the file: {e}")
+        else:
+            print(f"File '{file_path}' does not exist.")
         pw = _df.pw.iloc[0]
         conn_string = f'postgresql://postgres:{pw}@fb-postgres01.gladstone.internal:5432/galaxy'
         # url_object = URL.create(
