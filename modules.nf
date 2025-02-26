@@ -235,6 +235,32 @@ process INTENSITY {
 //     ${do_mask_crop ? '--mask_crop' : ''}
 //     """
 // }
+process COPY_MASK_TO_TRACKED {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    
+    input:
+    val ready
+    val experiment
+    val chosen_wells
+    val chosen_timepoints
+    val wells_toggle
+    val timepoints_toggle
+    val tile
+
+    output:
+    val true
+
+    script:
+    """
+    mask_to_masktracked.py --experiment ${experiment} \
+        --chosen_wells ${chosen_wells} \
+        --chosen_timepoints ${chosen_timepoints} \
+        --wells_toggle ${wells_toggle} \
+        --timepoints_toggle ${timepoints_toggle} \
+        --tile ${tile}
+    """
+}
+
 //original crop
 process CROP {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"

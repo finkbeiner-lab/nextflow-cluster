@@ -174,7 +174,7 @@ optimizer_ch = Channel.of(params.optimizer)
 //KS edit to include overlays
 include { OVERLAY;REGISTER_EXPERIMENT; SEGMENTATION;
     CELLPOSE; PUNCTA; TRACKING; INTENSITY;
-    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION} from './modules.nf'
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -187,6 +187,7 @@ log.info """\
     channels: ${params.chosen_channels}
     Register Experiment: ${params.DO_REGISTER_EXPERIMENT}
     Update Database Paths: ${params.DO_UPDATEPATHS}
+    Copy Mask to Masktracked: ${params.DO_COPY_MASK_TO_TRACKED}
     Segmentation: ${params.DO_SEGMENTATION}
     Cellpose: ${params.DO_CELLPOSE_SEGMENTATION}
     View Normalization: ${params.DO_VIEW_NORMALIZATION_IMAGES}
@@ -211,6 +212,23 @@ workflow {
     else{
         updatepaths_result = Channel.of(true)
     }
+    //KS edit start
+    if (params.DO_COPY_MASK_TO_TRACKED) {
+        copy_masktracked_ch = COPY_MASK_TO_TRACKED(
+            updatepaths_result,
+            experiment_ch,
+            well_ch,
+            tp_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            tile_ch
+        )
+        copy_masktracked_ch.view { it }
+        copy_masktracked_result = COPY_MASK_TO_TRACKED.out
+    } else {
+        copy_masktracked_result = Channel.of(true)
+    }
+    //KS edit end
     if (params.DO_REGISTER_EXPERIMENT) {
         REGISTER_EXPERIMENT(input_path_ch, output_path_ch, template_path_ch, platemap_path_ch, ixm_hts_file_ch, robo_file_ch, 
         overwrite_experiment_ch, robo_num_ch, illumination_file_ch,

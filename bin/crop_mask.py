@@ -81,7 +81,7 @@ class Crop:
             #                                             channeldata_id=target_channeldata_id,
             #                                             timepoint=int(df.timepoint.iloc[0]),
             #                                             tile=int(df.tile.iloc[0])))  ##original
-            filename = self.Db.get_table_value('tiledata', 'maskpath',
+            filename = self.Db.get_table_value('tiledata', 'trackedmaskpath',
                                                    dict(welldata_id=df.welldata_id.iloc[0],
                                                         channeldata_id=target_channeldata_id,
                                                         timepoint=int(df.timepoint.iloc[0]),
