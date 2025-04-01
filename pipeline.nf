@@ -173,7 +173,7 @@ optimizer_ch = Channel.of(params.optimizer)
 */
 //KS edit to include overlays
 include { OVERLAY;REGISTER_EXPERIMENT; SEGMENTATION;
-    CELLPOSE; PUNCTA; TRACKING; INTENSITY;
+    CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE;INTENSITY;
     CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED} from './modules.nf'
 
 params.outdir = 'results'
@@ -303,6 +303,24 @@ workflow {
     else {
         montage_result = Channel.of(true)
     }
+    if (params.DO_TRACKING_MONTAGE) {
+        tracking_montage_flag = seg_result.mix(cellpose_result).collect()
+        track_montage_ch = TRACKING_MONTAGE(
+            tracking_montage_flag,
+            experiment_ch,
+            distance_threshold_ch,
+            voronoi_bool_ch,
+            well_ch,
+            tp_ch,
+            morphology_ch,
+            well_toggle_ch,
+            tp_toggle_ch)
+    track_montage_ch.view { it }
+    tracking_montage_result = TRACKING_MONTAGE.out
+    } else {
+        tracking_montage_result = Channel.of(true)
+    }
+
     if (params.DO_INTENSITY) {
         intensity_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
         int_ch = INTENSITY(intensity_flag, experiment_ch, norm_ch, morphology_ch, target_channel_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)

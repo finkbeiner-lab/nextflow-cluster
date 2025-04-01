@@ -236,7 +236,8 @@ class TrackCells:
         curr_mask_relabelled = self.remap_labelled_mask(curr_mask, mapping)
         imageio.v3.imwrite(f_curr_mask_relabelled, curr_mask_relabelled)
         current_tile_uuid = self.filtered_celldata.loc[self.filtered_celldata.timepoint == current_timepoint, 'tiledata_id'].iloc[0]
-        self.Db.update('tiledata', update_dct=dict(trackedmaskpath=f_curr_mask_relabelled), kwargs=dict(id=current_tile_uuid))
+        self.Db.update('tiledata'
+                       , update_dct=dict(trackedmaskpath=f_curr_mask_relabelled), kwargs=dict(id=current_tile_uuid))
         return mapping
 
     def replace_appear_node_with_cell_id(self, decision, nodelist):

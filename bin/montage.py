@@ -7,6 +7,7 @@ import logging
 import numpy as np
 import os
 import imageio
+from sql import Database
 
 logger = logging.getLogger("Montage")
 # logger.propagate = False
@@ -26,6 +27,8 @@ logger.warning('Running Montage from Database.')
 class Montage:
     def __init__(self, opt):
         self.opt = opt
+        self.Db = Database()  # 🔹 Initialize database connection
+        logger.warning('Montage class initialized.')
         self.Norm = Normalize(self.opt)
         _, self.analysisdir = self.Norm.get_raw_and_analysis_dir()
         self.montage_folder_name = 'MontagedImages'
@@ -106,6 +109,50 @@ class Montage:
             if savebool:
                 print(f'saved to {savepath}')
                 imageio.v3.imwrite(savepath, mont)
+            
+            if os.path.exists(savepath):
+                experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
+                welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id, well=well))
+                
+                # Choose the appropriate column based on tiletype
+                if self.opt.tiletype == 'filename':
+                    update_field = 'imagemontage'
+                elif self.opt.tiletype == 'maskpath':
+                    update_field = 'maskmontage'
+                else:
+                    update_field = 'imagemontage'  # Default fallback; adjust if needed for trackedmaskpath
+                
+                self.Db.update(
+                    'welldata',
+                    update_dct={update_field: savepath},  # Store montage image path in the correct column
+                    kwargs={'id': welldata_id}  # Ensure correct well ID
+                )
+                
+                logger.warning(f'Updated {update_field} in welldata for well {well}')
+                logger.warning(f'  → {update_field}: {savepath}')
+            else:
+                logger.warning(f'Failed to save montage for well {well}')
+                logger.warning(f'  → Expected file: {savepath}')
+
+            # Ensure montage files are correctly saved before updating the database Original
+            # if os.path.exists(savepath):
+            #     # Get database IDs
+            #         experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
+            #         welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id, well=well))
+
+            #         # Update `imagemontage` in `welldata`
+            #         self.Db.update(
+            #             'welldata',
+            #             update_dct={'imagemontage': savepath},  # Store montage image path
+            #             kwargs={'id': welldata_id}  # Ensure correct well ID
+            #         )
+
+            #         logger.warning(f'Updated imagemontage in welldata for well {well}')
+            #         logger.warning(f'  → imagemontage: {savepath}')
+            # else:
+            #         logger.warning(f'Failed to save montage image for well {well}')
+            #         logger.warning(f'  → Expected file: {savepath}')
+            #         ## original end
         return mont
 
 

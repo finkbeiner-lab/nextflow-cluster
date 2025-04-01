@@ -117,6 +117,13 @@ class Ops:
         celldata_df = pd.merge(tiledata_df, celldata_df, on='tiledata_id', how='inner', suffixes=[None, '_dontuse'])
         return celldata_df
     
+    def get_welldata_df(self):
+        Db = Database()
+        exp_uuid = Db.get_table_uuid('experimentdata', dict(experiment=self.experiment))
+        welldata_df = Db.get_df_from_query('welldata', dict(experimentdata_id=exp_uuid))
+        return welldata_df
+
+    
     def get_df_for_training(self, tablenames:list):
         df = self.get_tiledata_df()
         df.rename(columns={'id': 'tiledata_id'}, inplace=True)
