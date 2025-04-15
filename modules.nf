@@ -367,6 +367,33 @@ process MONTAGE {
     """
 }
 
+process ALIGNMENT {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    input:
+    val exp
+    val chosen_wells
+    val chosen_timepoints
+    val morphology_channel
+    val alignment_algorithm
+    val robo_num
+    val dir_structure
+    val imaging_mode
+    val tiletype
+    val shift
+    
+    output:
+    val true
+
+    script:
+    """
+    dft_alignment.py --experiment ${exp} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
+    --morphology_channel ${morphology_channel} --alignment_algorithm ${alignment_algorithm} --robo_num ${robo_num} \
+    --dir_structure ${dir_structure} --imaging_mode ${imaging_mode} --tiletype ${tiletype} --shift ${shift}
+    """
+}
+
+
+
 process PLATEMONTAGE {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:

@@ -430,6 +430,16 @@ class Database:
             return None
         return result[0][0]
     
+    
+    def get_table_analysisdir(self, tablename: str, kwargs):
+        with self.engine.connect() as connection:
+            stmt = select(self.meta.tables[tablename].c['analysisdir']). \
+                filter_by(**kwargs)
+            result = connection.execute(stmt).all()
+        if len(result) == 0:
+            return None
+        return result[0][0]
+    
     def get_table_value(self, tablename: str, column: str, kwargs):
         with self.engine.connect() as connection:
             stmt = select(self.meta.tables[tablename].c[column]). \

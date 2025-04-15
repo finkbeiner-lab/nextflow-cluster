@@ -31,6 +31,7 @@
 // params.DO_INTENSITY = false
 // params.DO_CROP = false
 // params.DO_MONTAGE = true
+// params.DO_ALIGNMENT = true
 // params.DO_PLATEMONTAGE = false
 // params.DO_CNN = false
 // params.DO_GET_CSVS = true
@@ -86,6 +87,10 @@
 // params.montage_pattern = 'standard'  // ['standard', 'legacy']
 // params.well_size_for_platemontage = 300  // side length for well
 // params.norm_intensity = 2000 // normalization intensity for well  (img / norm_intensity)  * 255
+
+// // ALIGNMENT
+// params.
+
 
 // // CNN
 // params.label_type = 'stimulate'  // 'celltype', 'name', 'stimulate'
@@ -145,6 +150,13 @@ norm_intensity_ch = Channel.of(params.norm_intensity)
 shift_ch = Channel.of(params.shift)//KS edit for overlay
 contrast_ch = Channel.of(params.contrast)//KS edit for overlay
 
+alignment_algoritm_ch = Channel.of(params.alignment_algorithm)
+dir_structure_ch = Channel.of(params.dir_structure)
+imaging_mode_ch = Channel.of(params.imaging_mode)
+shift_dict_ch = Channel.of(params.shift_dict)
+
+
+
 model_type_ch = Channel.of(params.model_type)
 batch_size_cellpose_ch = Channel.of(params.batch_size_cellpose)
 cell_diameter_ch = Channel.of(params.cell_diameter)
@@ -173,7 +185,7 @@ optimizer_ch = Channel.of(params.optimizer)
 */
 //KS edit to include overlays
 include { OVERLAY;REGISTER_EXPERIMENT; SEGMENTATION;
-    CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE;INTENSITY;
+    CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY; 
     CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED} from './modules.nf'
 
 params.outdir = 'results'
@@ -196,6 +208,7 @@ log.info """\
     Crop: ${params.DO_CROP}
     Mask Crop: ${params.DO_MASK_CROP}
     Montage: ${params.DO_MONTAGE}
+    Alignment: ${params.DO_ALIGNMENT}
     Plate Montage: ${params.DO_PLATEMONTAGE}
     CNN: ${params.DO_CNN}
     Get CSVS: ${params.DO_GET_CSVS}
@@ -283,8 +296,7 @@ workflow {
         seg_flag = seg_result.mix(cellpose_result).collect()
         track_ch = TRACKING(seg_flag, experiment_ch, distance_threshold_ch, voronoi_bool_ch, well_ch, tp_ch, morphology_ch,
         well_toggle_ch, tp_toggle_ch)
-        track_result = TRACKING.out
-    }
+        track_result = TRACKING.out    }
     else {
         track_result = Channel.of(true)
     }   
@@ -293,6 +305,13 @@ workflow {
         montage_ch = MONTAGE(montage_flag, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_cnn_ch,
         well_toggle_ch, tp_toggle_ch, channel_toggle_ch,image_overlap_ch)
         montage_result = MONTAGE.out
+    }
+    if (params.DO_ALIGNMENT) {
+        alignment_ch = ALIGNMENT(experiment_ch,  well_ch, tp_ch, morphology_ch, alignment_algoritm_ch, robo_num_ch, dir_structure_ch, imaging_mode_ch, tiletype_ch, shift_dict_ch)
+        alignment_result = ALIGNMENT.out
+    }
+    else {
+        alignment_result = Channel.of(true)
     }
     if (params.DO_PLATEMONTAGE) {
         montage_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
