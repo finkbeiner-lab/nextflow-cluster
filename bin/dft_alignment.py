@@ -117,6 +117,7 @@ class dft_Alignment:
                     burst_idx_token = int(burst_idx_token)
                 else:
                     numofhours_token = int(name_tokens[3])
+
                     burst_idx_token = None
                 well_id_token = name_tokens[4]
                 if well_id_token not in self.opt.chosen_wells:
@@ -913,7 +914,7 @@ if __name__ == '__main__':
 
     # Make sure more than two timepoints to align
     assert len(args.chosen_timepoints) > 1, 'Less than two time points, no need to use alignment module.'
-    
+    args.chosen_timepoints=args.chosen_timepoints.split("-")
     # Run alignment
     alignment = dft_Alignment(args)
     
