@@ -311,7 +311,9 @@ class dft_Alignment:
         # Load previous calculated shifts if exist
         pre_calculated_shift_dict = {}
         if len(self.shift)>0 and (image_stack_experiment_well[0][2], image_stack_experiment_well[0][3]) in self.shift:
+            print("shift needs to be applied!")
             pre_calculated_shift_dict = self.shift[(image_stack_experiment_well[0][2], image_stack_experiment_well[0][3])]
+            print("pre_calculated_shift_dict", pre_calculated_shift_dict)
             # Sort Tx (e.g. T8) in order and loop
             sorted_morphology_timepoint_keys = sorted(morphology_timepoint_dict, key=lambda x: int(x[1:]))
             # Not loop last item to avoid idx+1 index overflow
@@ -353,6 +355,7 @@ class dft_Alignment:
                                 experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
                                 welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id, well=well))
                                 if self.opt.tiletype == 'maskpath':
+                                    print("mask path is updated!")
                                     update_field = 'maskAligned'
                                 else:
                                     update_field = 'imageAligned'
@@ -841,17 +844,52 @@ class dft_Alignment:
                 self.shift.update({(image_stack_experiment_well[0][2], image_stack_experiment_well[0][3]): shift_dict})
                 return [{(image_stack_experiment_well[0][2], image_stack_experiment_well[0][3][0], int(image_stack_experiment_well[0][3][1:])): (shift_logs, suspicious_misalignment_logs, asymmetric_missing_image_logs)}, {(image_stack_experiment_well[0][2], image_stack_experiment_well[0][3]): shift_dict}]
 
-
-    def variety_alignments(self):
+    def check_mask_present_and_separate(self):
+        image_list = []
+        mask_list = []
         input_image_stack_list = self.get_image_tokens_list()
-        print("input_image_stack_list", len(input_image_stack_list))
-        results = []
-        # Single instance test
-        for i in range(len(input_image_stack_list)):
-            results.append(self.register_stack(input_image_stack_list[i]))
-        for r in results:
-            LOG_INFO.update(r[0])
-            self.shift.update(r[1])
+        print(len(input_image_stack_list))
+        for i in input_image_stack_list[0]:
+            print(i)
+            if i[0].find("ENCODED")!=-1:
+                mask_list.append(i)
+            else:
+                image_list.append(i)
+        if len(mask_list)>0:
+            mask_present=True
+        else:
+            mask_present=False
+        return mask_present, image_list, mask_list
+
+        
+                
+        
+
+
+    def variety_alignments(self, input_image_stack_list, shift={}):
+        #input_image_stack_list = self.get_image_tokens_list()
+        #print("input_image_stack_list", input_image_stack_list)
+        if len(shift)==0:
+            results = []
+            # Single instance test
+            for i in range(len(input_image_stack_list)):
+                results.append(self.register_stack(input_image_stack_list[i]))
+            for r in results:
+                LOG_INFO.update(r[0])
+                self.shift.update(r[1])
+            return self.shift
+        else:
+            self.shift = shift
+            self.opt.tiletype="maskpath"
+            results = []
+            # Single instance test
+            for i in range(len(input_image_stack_list)):
+                results.append(self.register_stack(input_image_stack_list[i]))
+            #for r in results:
+            #    LOG_INFO.update(r[0])
+            #    self.shift.update(r[1])
+            return None
+            
         
         
     def save_logs(self):
@@ -914,13 +952,29 @@ if __name__ == '__main__':
 
     # Make sure more than two timepoints to align
     assert len(args.chosen_timepoints) > 1, 'Less than two time points, no need to use alignment module.'
-    args.chosen_timepoints=args.chosen_timepoints.split("-")
+    args.chosen_timepoints =  args.chosen_timepoints.split("-")
+    args.chosen_wells =  args.chosen_wells.split("-")
     # Run alignment
     alignment = dft_Alignment(args)
     
-    alignment.variety_alignments()
+    mask_present, image_list, mask_list = alignment.check_mask_present_and_separate()
+    
+    print("mask_present", mask_present)
+    
+    print("image_list", len(image_list))
+    
+    print("mask_list", len(mask_list))
+    
+    shift = alignment.variety_alignments([image_list], {})
+    
+    print("shift", shift)
     
     alignment.save_logs()
+    
+    if mask_present==True:
+        _ = alignment.variety_alignments([mask_list], shift)
+    
+    
     
     # Print Total process time
     end_time = datetime.datetime.utcnow()
