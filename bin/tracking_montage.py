@@ -1,463 +1,219 @@
 #!/opt/conda/bin/python
 
-import imageio
-import pickle
-import shutil
+import cv2
 import numpy as np
+import logging
+import argparse
+import os
+from sql import Database
 import pandas as pd
-import os
-import sys
-import argparse
-import time
-import datetime
-import logging
-from sql import Database
-from db_util import Ops
+import collections
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.dirname(SCRIPT_DIR))
+logger = logging.getLogger("TrackingDB")
+logging.basicConfig(level=logging.INFO)
 
-from track_cells_res.minimum_flow import MinimumFlow
-from track_cells_res.solver import SolverSmall
-from track_cells_res.output_helper import OutputSmall
-from track_cells_res.tracking_graph import Graph
-import os
-import warnings
-# import matplotlib.pyplot as plt
-import argparse
-import time
-from glob import glob
-import logging
-import datetime
-from sql import Database
-from db_util import Ops
+class Cell:
+    """A class that makes cells from contours or masks."""
+    def __init__(self, cnt):
+        self.cnt = cnt
 
-logger = logging.getLogger("Tracking")
-now = datetime.datetime.now()
-TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
+    def __repr__(self):
+        center, _ = self.get_circle()
+        return f"Cell instance at {center}"
 
-fink_log_dir = './finkbeiner_logs'
-os.makedirs(fink_log_dir, exist_ok=True)
-logname = os.path.join(fink_log_dir, f'TRACKING-log_{TIMESTAMP}.log')
-fh = logging.FileHandler(logname)
-logger = logging.getLogger("Tracking")
-logger.addHandler(fh)
-logger.warning('Tracking starting')
+    def get_circle(self):
+        center, radius = cv2.minEnclosingCircle(self.cnt)
+        return center, radius
 
-def str2bool(v):
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-class TrackCells:
-    def __init__(self, opt):
-        self.opt = opt
-        self.celldata = None
-        self.filtered_celldata = None
-        self.use_proximity = True
-        self.use_overlap = True
-        self.use_siamese = False
-        self.forward_bool = True
-        self.reverse_bool = True
-        self.midpoint = None
-        self.candidates = {}
-        self.thread_lim = 6
-        self.h, self.w = None, None
-        self.randomcellid_str = 'randomcellid'
-        self.centroid_x_str = 'centroid_x'
-        self.centroid_y_str = 'centroid_y'
-        logger.warning('Initialized Track Class.')
+    def evaluate_overlap(self, circle2):
+        c2, r2 = circle2
+        c1, r1 = self.get_circle()
+        dist = np.hypot(c1[0] - c2[0], c1[1] - c2[1])
+        return dist < (r1 + r2) * 0.8
+
+    def evaluate_dist(self, circle2):
+        c2, _ = circle2
+        c1, _ = self.get_circle()
+        return np.hypot(c1[0] - c2[0], c1[1] - c2[1])
+
+
+def sort_cell_info_by_index(time_dict, time_list):
+    for tp in time_list:
+        time_dict[tp] = sorted(
+            [(int(idx), obj) for idx, obj in time_dict[tp]],
+            key=lambda x: x[0]
+        )
+    return time_dict
+
+
+def populate_cell_ind_overlap(time_dict, time_list):
+    first = time_list[0]
+    for i, rec in enumerate(time_dict[first], 1): rec[0] = i
+    counter = len(time_dict[first]) + 1
+    for i in range(1, len(time_list)):
+        curr, prev = time_list[i], time_list[i-1]
+        for rec in time_dict[curr]:
+            circ = rec[1].get_circle(); matched = False
+            for p in time_dict[prev]:
+                if p[1].evaluate_overlap(circ): rec[0] = p[0]; matched = True; break
+            if not matched: rec[0] = counter; counter += 1
+    return time_dict
+
+
+def populate_cell_ind_closest(time_dict, time_list, max_dist=100):
+    first = time_list[0]
+    for i, rec in enumerate(time_dict[first],1): rec[0] = i
+    counter = len(time_dict[first]) + 1
+    for i in range(1, len(time_list)):
+        curr, prev = time_list[i], time_list[i-1]
+        for rec in time_dict[curr]:
+            circ = rec[1].get_circle(); best = float('inf')
+            for p in time_dict[prev]:
+                d = p[1].evaluate_dist(circ)
+                if d < best: best, rec[0] = d, p[0]
+            if best > max_dist: rec[0] = counter; counter += 1
+    return time_dict
+
+class MontageDBTracker:
+    def __init__(self, experiment, track_type, max_dist):
         self.Db = Database()
+        self.experiment = experiment
+        self.track_type = track_type
+        self.max_dist = max_dist
+        logger.info(f"Initialized MontageDBTracker for experiment {experiment}")
 
+    def gather_encoded_from_db(self, wells, channel_marker="_ENCODED_MONTAGE"):
+        """
+        Fetch montage paths from the `welldata` table via Ops.get_welldata_df().
+        Returns: dict of {well: OrderedDict(timepoint: [[label, Cell], ...])}
+        """
+        from db_util import Ops
+        import argparse
 
-    def remap_labelled_mask(self, labelled_mask, mapping: dict):
-        labelled_mask = np.float32(labelled_mask)
-        for randomcellid, cellid in mapping.items():
-            labelled_mask[labelled_mask == randomcellid] = cellid + .1
-        return np.uint16(labelled_mask)
-
-    def run(self):
-        Op = Ops(self.opt)
-        self.celldata = Op.get_celldata_df()
-        self.welldata = Op.get_welldata_df()  # Load welldata similarly to celldata
-        self.celldata.sort_values(by=['timepoint'], inplace=True)
+        opt_inner = argparse.Namespace(
+            experiment=self.experiment,
+            chosen_wells=','.join(wells),
+            wells_toggle='include',
+            chosen_timepoints='',
+            timepoints_toggle='include',
+            chosen_channels='all',
+            channels_toggle='include',
+            tile=0
+        )
         
-        groups = self.celldata.groupby(by=['well'])
-        for well, df in groups:
-            start_well = time.time()  # Define start_well at the beginning of processing this well
-            logger.warning(f'Tracking {well}')
-            print(f'Tracking {well}')
-            
-            experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
-            welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id, well=well))
-            
-            selected_channels = self.opt.chosen_channels.strip(' ').split(',')
-            logger.warning(f'Channels for tracking: {selected_channels}')
-            channel = selected_channels[0]
-            
-            channeldata_id = self.Db.get_table_uuid('channeldata', dict(
-                experimentdata_id=experimentdata_id, welldata_id=welldata_id, channel=channel))
-            
-            timepoints = df.timepoint.unique().tolist()
-            timepoints.sort()
-            logger.warning(f'Timepoints: {timepoints}')
-            
-            # Initialize cell IDs for the first timepoint
-            df = self.set_cellid_from_randomcellid(df, timepoints[0])
-            df0 = df[df.timepoint == timepoints[0]]
-            if df0.empty:
-                continue
-            
-            # Retrieve montage paths from the welldata DataFrame (stored in self.welldata)
-            welldata_row = self.welldata[self.welldata['id'] == welldata_id]
-            if welldata_row.empty or 'maskmontage' not in welldata_row.columns or 'imagemontage' not in welldata_row.columns:
-                logger.warning(f'No montage data found for well {well}')
-                continue
-            
-            # Get the montage image and mask paths (assuming they are static for the well)
-            f_prev = welldata_row['imagemontage'].iloc[0]
-            f_prev_mask = welldata_row['maskmontage'].iloc[0]
-            
-            if len(df) < 2:
-                continue
-            
-            start_tp = time.time()
-            for prev_timepoint, current_timepoint in zip(timepoints[:-1], timepoints[1:]):
-                elapsed_tp = time.time() - start_tp
-                start_tp = time.time()
-                logger.warning(f'Elapsed time for timepoint {current_timepoint}: {elapsed_tp}')
-                
-                if df[df.timepoint == current_timepoint].empty:
-                    continue
-                if df[df.timepoint == prev_timepoint].empty:
-                    # Set cellid from randomcellid for the first timepoint if missing
-                    max_cell_id = df.cellid.max()
-                    print('Max cell ID:', max_cell_id)
-                    cellids = df.loc[df.timepoint == current_timepoint, 'cellid']
-                    new_cellids = [i + 1 + max_cell_id for i in range(len(cellids))]
-                    df.loc[df.timepoint == current_timepoint, 'cellid'] = new_cellids
-                    tmp_df = df.loc[df.timepoint == current_timepoint]
-                    if not self.opt.DEBUG:
-                        for i, row in tmp_df.iterrows():
-                            self.Db.update('celldata', update_dct=dict(cellid=row.cellid),
-                                        kwargs=dict(welldata_id=welldata_id, randomcellid=row.randomcellid))
-                    continue
-                
-                # For the current timepoint, assume the montage paths remain the same
-                f_curr = welldata_row['imagemontage'].iloc[0]
-                f_curr_mask = welldata_row['maskmontage'].iloc[0]
-                f_curr_mask_relabelled = f_curr_mask.replace("ENCODED_MONTAGE", "TRACKED_MONTAGE")
-                
-                logger.warning(f'Tracking {self.opt.experiment} at well {well} for timepoint T{prev_timepoint} → T{current_timepoint}')
-                print(f'Tracking {self.opt.experiment} at well {well} for timepoint T{prev_timepoint} → T{current_timepoint}')
-                
-                mapping = self.run_one_timepoint(prev_timepoint, current_timepoint, f_prev, f_prev_mask,
-                                                f_curr, f_curr_mask, f_curr_mask_relabelled, well)
-                updated_celldata = self.update_mapping_to_dataframe(mapping, df, well, current_timepoint)
-                df.loc[updated_celldata.index] = updated_celldata
-                
-                assert np.all(updated_celldata.cellid != -1), '-1 in cellid after updating celldata'
-                print('Mapping:', mapping)
-                
-                if not self.opt.DEBUG:
-                    for random_lbl, lbl_from_prev_timepoint in mapping.items():
-                        self.Db.update('celldata', update_dct=dict(cellid=lbl_from_prev_timepoint),
-                                    kwargs=dict(welldata_id=welldata_id, randomcellid=random_lbl))
-                
-                # Update previous montage to be current montage for the next iteration (if needed)
-                f_prev = f_curr
-                f_prev_mask = f_curr_mask
-            
-            elapsed_well = time.time() - start_well
-            logger.warning(f'Elapsed time for well {well}: {elapsed_well}')
-            
-            # Optionally, update the welldata table with the final tracked montage mask
-            self.Db.update('welldata',
-                        update_dct=dict(trackedmaskmontage=f_curr_mask_relabelled),
-                        kwargs=dict(id=welldata_id))
-
-##Original
-    # def run(self):
-    #     Op = Ops(self.opt)
-    #     self.celldata = Op.get_celldata_df()
-    #     self.celldata.sort_values(by=['timepoint'], inplace=True)
-    #     groups = self.celldata.groupby(by=['well'])
-    #     for well, df in groups:
-    #         start_well = time.time()  # Define start_well at the beginning of processing this well
-    #         logger.warning(f'Tracking {well}')
-    #         print(f'Tracking {well}')
-            
-
-    #         experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
-    #         welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id, well=well))
-
-    #         selected_channels = self.opt.chosen_channels.strip(' ').split(',')
-    #         logger.warning(f'Channels for tracking: {selected_channels}')
-    #         channel = selected_channels[0]
-
-    #         channeldata_id = self.Db.get_table_uuid('channeldata', dict(experimentdata_id=experimentdata_id, 
-    #                                                                     welldata_id=welldata_id, 
-    #                                                                     channel=channel))
-
-    #         timepoints = df.timepoint.unique().tolist()
-    #         timepoints.sort()
-    #         logger.warning(f'Timepoints: {timepoints}')
-
-    #         # In case celldata starts after T0, copy randomlabel to cellid label
-    #         df = self.set_cellid_from_randomcellid(df, timepoints[0])
-    #         df0 = df[df.timepoint == timepoints[0]]
-
-    #         if df0.empty:
-    #             continue
-
-    #         # Get montage image and mask from the database
-    #         df_well = self.Db.fetch_df('welldata', dict(id=welldata_id))
-
-    #         if df_well.empty or 'maskmontage' not in df_well.columns or 'imagemontage' not in df_well.columns:
-    #             logger.warning(f'No montage data found for well {well}')
-    #             continue
-
-    #         f_prev = df_well['imagemontage'].iloc[0]
-    #         f_prev_mask = df_well['maskmontage'].iloc[0]
-
-    #         if len(df) < 2:
-    #             continue
-
-    #         start_tp = time.time()
-    #         for prev_timepoint, current_timepoint in zip(timepoints[:-1], timepoints[1:]):
-    #             elapsed_tp = time.time() - start_tp
-    #             start_tp = time.time()
-    #             logger.warning(f'Elapsed time for timepoint {current_timepoint}: {elapsed_tp}')
-
-    #             if df[df.timepoint == current_timepoint].empty:
-    #                 continue
-    #             if df[df.timepoint == prev_timepoint].empty:
-    #                 # Set cellid from randomcellid for the first timepoint
-    #                 max_cell_id = df.cellid.max()
-    #                 print('Max cell ID:', max_cell_id)
-    #                 cellids = df.loc[df.timepoint == current_timepoint, 'cellid']
-    #                 new_cellids = [i + 1 + max_cell_id for i in range(len(cellids))]
-    #                 df.loc[df.timepoint == current_timepoint, 'cellid'] = new_cellids
-
-    #                 tmp_df = df.loc[df.timepoint == current_timepoint]
-    #                 if not self.opt.DEBUG:
-    #                     for i, row in tmp_df.iterrows():
-    #                         self.Db.update('celldata', update_dct=dict(cellid=row.cellid),
-    #                                     kwargs=dict(welldata_id=welldata_id, randomcellid=row.randomcellid))
-    #                 continue
-
-    #             # Retrieve montage paths for current timepoint
-    #             f_curr = df_well['imagemontage'].iloc[0]
-    #             f_curr_mask = df_well['maskmontage'].iloc[0]
-    #             f_curr_mask_relabelled = f_curr_mask.replace("ENCODED_MONTAGE", "TRACKED_MONTAGE")
-
-    #             logger.warning(f'Tracking {self.opt.experiment} at well {well} for timepoint T{prev_timepoint} → T{current_timepoint}')
-    #             print(f'Tracking {self.opt.experiment} at well {well} for timepoint T{prev_timepoint} → T{current_timepoint}')
-
-    #             mapping = self.run_one_timepoint(prev_timepoint, current_timepoint, f_prev, f_prev_mask,
-    #                                             f_curr, f_curr_mask, f_curr_mask_relabelled, well)
-
-    #             updated_celldata = self.update_mapping_to_dataframe(mapping, df, well, current_timepoint)
-    #             df.loc[updated_celldata.index] = updated_celldata
-
-    #             assert np.all(updated_celldata.cellid != -1), '-1 in cellid after updating celldata'
-    #             print('Mapping:', mapping)
-
-    #             if not self.opt.DEBUG:
-    #                 for random_lbl, lbl_from_prev_timepoint in mapping.items():
-    #                     self.Db.update('celldata', update_dct=dict(cellid=lbl_from_prev_timepoint),
-    #                                 kwargs=dict(welldata_id=welldata_id, randomcellid=random_lbl))
-
-    #     elapsed_well = time.time() - start_well
-    #     logger.warning(f'Elapsed time for well {well}: {elapsed_well}')
-        
-
-    def run_one_timepoint(self, prev_timepoint, current_timepoint, f_prev, f_prev_mask,
-                      f_curr, f_curr_mask, f_curr_mask_relabelled, well, divisions=1, plot_bool=False):
-        logger.warning(f'previous file: {f_prev}')
-        logger.warning(f'previous mask: {f_prev_mask}')
-        logger.warning(f'current file: {f_curr}')
-        logger.warning(f'current mask: {f_curr_mask}')
-        logger.warning(f'current mask relabelled: {f_curr_mask_relabelled}')
-
-        mappings = {}
-
-        Gr = Graph(celldata=self.filtered_celldata, include_appear=True,
-                use_siamese=False, use_proximity=True, appear_cost=int(self.opt.DISTANCE_THRESHOLD),
-                voronoi_bool=self.opt.VORONOI_BOOL,
-                verbose=self.opt.VERBOSE,
-                debug=self.opt.DEBUG)
-
-        prev_img = imageio.v3.imread(f_prev)
-        curr_img = imageio.v3.imread(f_curr)
-        self.h, self.w = curr_img.shape
-        prev, current = Gr.get_prev_and_curr_df(current_timepoint=current_timepoint, prev_timepoint=prev_timepoint)
-        current = current.drop_duplicates('randomcellid')
-
-        if not prev.empty and not current.empty:
-            logger.warning('Getting edges from pandas dataframes')
-            Gr.edges_from_pandas(prev, current, prev_img, curr_img)
-            nodelist = list(Gr.g.nodes)
-            logger.warning('Running LP')
-            decision = self.linear_program(Gr, USE_GT=False)
-            final_choice = self.replace_appear_node_with_cell_id(decision, nodelist)
-            mappings.update(final_choice)
-        else:
-            logger.warning('One of the timepoint dataframes is empty')
-
-        mapping = {int(k[1:]): int(v[1:]) for k, v in mappings.items()}
-
-        curr_mask = imageio.v3.imread(f_curr_mask)
-        curr_mask_relabelled = self.remap_labelled_mask(curr_mask, mapping)
-        imageio.v3.imwrite(f_curr_mask_relabelled, curr_mask_relabelled)
-        self.Db.update(
-            'welldata',
-            update_dct=dict(trackedmaskmontage=f_curr_mask_relabelled),
-            kwargs=dict(experimentdata_id=self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment)),
-                        well=well))
-
-        experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
-        welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id, well=well))
-
-        if not self.opt.DEBUG:
-            self.Db.update('welldata', update_dct=dict(trackedmaskmontage=f_curr_mask_relabelled), kwargs=dict(id=welldata_id))
-
-        return mapping
-
-    def set_cellid_from_randomcellid(self, df, timepoint):
-        df.loc[(df.timepoint == timepoint), 'cellid'] = df.loc[(df.timepoint == timepoint), 'randomcellid']
-        return df
-    
-    def replace_appear_node_with_cell_id(self, decision, nodelist):
-        max_lbl = 0
-        if 'D' in decision.keys():
-            del decision['D']
-        print('nodelist', nodelist)
-        for node in nodelist:  # get max existing label
-            if node != 'A' and node != 'D':
-                n = int(node[1:])
-                if n > max_lbl:
-                    max_lbl = n
-    # set 'A' appear nodes to max label increasing
-        for rnode, lnode in decision.items():
-            if lnode == 'A':
-                max_lbl += 1
-                decision[rnode] = f'L{max_lbl}'
-        return decision
-
-
-    def linear_program(self, Gr, USE_GT=False):
-        if USE_GT:
-            warnings.warn('Duplicates set with GROUND TRUTH')
-        # Initialize solver
-        Solve = SolverSmall(debug=self.opt.DEBUG, verbose=False)
-        Grs = MinimumFlow(Gr.g, True, self.opt.DEBUG)
-        Outs = OutputSmall()
-
-        # Sparse minimum flow linear program
-        logger.warning('Getting incidence matrix and vertices')
-        a_incidence, a_vertices = Grs.incidence_matrix()  # prepare algorithm input
-        logger.warning(f'a_incidence {a_incidence}')
-        logger.warning(f'a_vertices {a_vertices}')
-
-        b_flow = Grs.b_flow(a_vertices)
-        logger.warning(f'b_flow, {b_flow}')
-        c_cost = Grs.c_cost(a_incidence, a_vertices)  # edge cost is distance between nodes
-        logger.warning(f'c_cost {c_cost}')
-        x = Solve.opto(a_incidence, b_flow, c_cost)  # solve
-        decision = Outs.update(Grs.g, a_incidence, x, a_vertices)
-        logger.warning(f'Decisions from linear program: {decision}')
-        return decision
-
-    def update_mapping_to_dataframe(self, mapping, celldata, well, timepoint):
-        for random_lbl, lbl_from_prev_timepoint in mapping.items():
-            celldata.loc[
-                (celldata.well == well)
-                & (celldata.timepoint == timepoint)
-                & (celldata.randomcellid == random_lbl),
-                'cellid'
-            ] = lbl_from_prev_timepoint
-        return celldata
-    
-    def load_celldata(self, celldata_csv):
-        self.celldata = pd.read_csv(celldata_csv, low_memory=False)
-        self.celldata['cellid'] = -1
-        self.celldata.loc[self.celldata.Timepoint == 0, 'cellid'] = self.celldata.loc[
-            self.celldata.Timepoint == 0, 'ObjectLabelsFound'
+        op = Ops(opt_inner)
+        # Pull tiledata (including your newmaskmontage column)
+        tiledata_df = op.get_tiledata_df()
+        # 1. Filter to only your newmaskmontage rows in the wells you care about
+        df = tiledata_df[
+            tiledata_df['well'].isin(wells) &
+            tiledata_df['newmaskmontage'].str.contains(channel_marker, na=False)
         ]
-        self.celldata = self.celldata.drop_duplicates(subset=['randomcellid', 'well', 'timepoint'])
 
-    def filter_celldata_func(self, well, prev_timepoint, current_timepoint):
-        logger.warning(f'Filtering celldata with exp: {self.opt.experiment}, well: {well}, previous timepoint: {prev_timepoint}, current timepoint: {current_timepoint}')
-        self.filtered_celldata = self.celldata[
-            (self.celldata.experiment == self.opt.experiment)
-            & (self.celldata.well == well)
-            & ((self.celldata.timepoint == prev_timepoint) | (self.celldata.timepoint == current_timepoint))
-        ].copy()
-    
-    def get_previous_and_current_tp_df(self, df, prev_timepoint, current_timepoint):
-        self.filtered_celldata = df[(df.timepoint == prev_timepoint) | (df.timepoint == current_timepoint)]
-    
+        # 2. Collapse to one mask per (well, timepoint) — take the first path in each group
+        df = (
+            df
+            .groupby(['well','timepoint'], as_index=False)
+            .agg({'newmaskmontage':'first'})
+        )
+        # # Only rows for our wells with the encoded‐montage suffix
+        # df = tiledata_df[
+        #     tiledata_df['well'].isin(wells) &
+        #     tiledata_df['newmaskmontage'].str.contains(channel_marker, na=False)
+        # ]
+#Original
+        # welldata_df = op.get_welldata_df()
 
-    # All other methods (replace_appear_node_with_cell_id, linear_program, etc.) remain unchanged.
+        # df = welldata_df[
+        #     welldata_df.well.isin(wells) &
+        #     welldata_df.maskmontage.str.contains(channel_marker, na=False)
+        # ]
+
+        results = {}
+        for well in wells:
+            df_w = df[df['well'] == well]
+            if df_w.empty:
+                logger.warning(f"No encoded masks for well {well}")
+                continue
+            time_dict = collections.OrderedDict()
+            for _, row in df_w.iterrows():
+                mask_path = row['newmaskmontage']
+                tp_label = os.path.basename(mask_path).split('_')[2]
+                tp = int(tp_label.lstrip('T')) if tp_label.startswith('T') else int(tp_label)
+                entries = time_dict.setdefault(tp, [])
+                mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
+                labels = np.unique(mask); labels = labels[labels > 0]
+                for lbl in labels:
+                    bin_mask = (mask == lbl).astype(np.uint8) * 255
+                    cnts, _ = cv2.findContours(bin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                    if cnts:
+                        cnt = max(cnts, key=cv2.contourArea)
+                        entries.append([lbl, Cell(cnt)])
+            results[well] = time_dict
+        return results
+
+    def run(self, wells):
+        exp_id = self.Db.get_table_uuid('experimentdata', {'experiment': self.experiment})
+        all_wells = self.gather_encoded_from_db(wells)
+        for well, time_dict in all_wells.items():
+            welldata_id = self.Db.get_table_uuid(
+                'welldata', {'experimentdata_id': exp_id, 'well': well}
+            )
+            tps = sorted(time_dict.keys())
+            tracked = (
+                populate_cell_ind_overlap(time_dict, tps)
+                if self.track_type == 'overlap'
+                else populate_cell_ind_closest(time_dict, tps, max_dist=self.max_dist)
+            )
+            sorted_td = sort_cell_info_by_index(tracked, tps)
+                        # ─── INSERT SUMMARY HERE ───
+            labels_per_tp = { tp: {idx for idx,_ in sorted_td[tp]} for tp in tps }
+            total    = len(labels_per_tp[tps[0]])
+            in_all   = set(labels_per_tp[tps[0]])
+            for tp in tps[1:]:
+                in_all &= labels_per_tp[tp]
+            count_all     = len(in_all)
+            count_missing = total - count_all
+            pct           = (count_all/total)*100 if total else 0.0
+
+            print(f"Summary for {well}:")
+            print(f"  total unique cells: {total}")
+            print(f"  cells in all {len(tps)} TPs: {count_all}")
+            print(f"  cells missing ≥1 TP: {count_missing}")
+            print(f"  % tracked in all {len(tps)} TPs: {pct:.1f}%")
+            # ────────────────────────────
+
+            # Update DB with new cellids per timepoint
+            for tp, recs in sorted_td.items():
+                # find corresponding tiledata_id for this timepoint
+                tiledata_id = self.Db.get_table_uuid(
+                    'tiledata',
+                    {'experimentdata_id': exp_id,
+                     'welldata_id': welldata_id,
+                     'timepoint': tp}
+                )
+                for new_id, _ in recs:
+                    self.Db.update(
+                        'celldata',
+                        update_dct={'cellid': int(new_id)},
+                        kwargs={
+                            'tiledata_id': tiledata_id,
+                            'randomcellid': int(new_id)
+                        }
+                    )
+
+            print(f"Well {well}:")
+            for tp, recs in sorted_td.items():
+                ids = [idx for idx, _ in recs]
+                print(f"  T{tp}: {len(ids)} cells, IDs = {ids}")
+
 if __name__ == '__main__':
-    DEBUG = 0
-    VERBOSE = 0
-    SAVEBOOL = 1
-    USE_SIAMESE = 1
-    USE_PROXIMITY = 1
-    SET_RANDOM_IDS = 0
-    USE_OVERLAP = 0
-    VORONOI_CALC = 0
-    VORONOI_BOOL = 0
-    FORWARD_BOOL = 1
-    REVERSE_BOOL = 1
-    GET_ENCODED_MASKS = 0
-    TIMEPOINT_BREAK = 0
-    BOOTSTRAPPING = 0
-
-    INIT_MINFLOW = 1
-    GET_CONFIDENCE = 0
-    PCA_BOOL = 0
-    GET_TRAINING_RECS = 0
-    DO_TRAINING = 0
-    THREEEIGHTYFOUR = 0
-    GET_EMBEDDING_REC = 0
-    SET_EMBEDDING = 0
-    _MIDPOINT = 0.0
-
-    weight = 1
-    alpha = 1
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--input_dict', default='/path/to/tmp.pkl')
-    parser.add_argument('--outfile', default='/path/to/output.pkl')
-    parser.add_argument('--experiment', default='20231130-1-MsN-cry2tdp43-optocrisprgedi-update')
-    parser.add_argument('--DISTANCE_THRESHOLD', default=300)
-    parser.add_argument('--USE_PROXIMITY', default=1, type=int)
-    parser.add_argument('--VORONOI_BOOL', default=0, type=str2bool)
-    parser.add_argument('--VERBOSE', default=0, type=int)
-    parser.add_argument('--DEBUG', default=0, type=int)
-    parser.add_argument('--chosen_channels', default='RFP1')
-    parser.add_argument('--wells_toggle', default='include')
-    parser.add_argument('--timepoints_toggle', default='include')
-    parser.add_argument('--channels_toggle', default='include')
-    parser.add_argument('--chosen_wells', '-cw', default='B2')
-    parser.add_argument('--chosen_timepoints', '-ct', default='T0,T1')
-    parser.add_argument('--tile', default=0, type=int)
-
-    args, _ = parser.parse_known_args()
-
-    Track = TrackCells(args)
-    Track.run()
-
-    handlers = logger.handlers[:]
-    for handler in handlers:
-        logger.removeHandler(handler)
-        handler.close()
-    logging.shutdown()
-
+    parser = argparse.ArgumentParser(description="Track montage masks stored in DB")
+    parser.add_argument('--experiment', required=True, help='Experiment name')
+    parser.add_argument('--track_type', choices=['overlap','proximity'], default='overlap', help='Tracking method')
+    parser.add_argument('--max_dist', type=int, default=100, help='Max distance for proximity')
+    parser.add_argument('--wells', required=True, help='Comma-separated list of wells, e.g. A1,B1')
+    args = parser.parse_args()
+    wells = [w.strip() for w in args.wells.split(',')]
+    tracker = MontageDBTracker(args.experiment, args.track_type, args.max_dist)
+    tracker.run(wells)

@@ -1,5 +1,6 @@
 #!/usr/bin/env nextflow
 
+
 // /*
 //  * pipeline input parameters
 //  https://nextflow-io.github.io/patterns/conditional-process/
@@ -132,6 +133,7 @@ sd_ch = Channel.of(params.sd_scale_factor)
 well_ch = Channel.of(params.chosen_wells)
 tile_ch = Channel.of(params.tile)
 tp_ch = Channel.of(params.chosen_timepoints)
+channel_ch = Channel.of(params.chosen_channels)
 well_toggle_ch = Channel.of(params.wells_toggle)
 tp_toggle_ch = Channel.of(params.timepoints_toggle)
 channel_toggle_ch = Channel.of(params.channels_toggle)
@@ -142,8 +144,15 @@ puncta_target_channel_ch = Channel.from(params.puncta_target_channel)
 morphology_ch = Channel.of(params.morphology_channel)
 distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
+track_type_ch           = Channel.of(params.track_type)
 crop_size_ch = Channel.of(params.crop_size)
+// Fallback if tiletype is missing from config
+if (!params.tiletype) {
+    params.tiletype = 'maskpath'
+}
+println ">>> [DEBUG] tiletype (after fallback check): ${params.tiletype}"
 tiletype_ch = Channel.of(params.tiletype)
+println ">>> [DEBUG] tiletype right after channel creation: ${params.tiletype}" 
 montage_pattern_ch = Channel.of(params.montage_pattern)
 well_size_for_platemontage_ch = Channel.of(params.well_size_for_platemontage)
 norm_intensity_ch = Channel.of(params.norm_intensity)
@@ -178,6 +187,7 @@ learning_rate_ch = Channel.of(params.learning_rate)
 momentum_ch = Channel.of(params.momentum)
 optimizer_ch = Channel.of(params.optimizer)
 
+
 //Original
 /*include { REGISTER_EXPERIMENT; SEGMENTATION;
     CELLPOSE; PUNCTA; TRACKING; INTENSITY;
@@ -197,6 +207,7 @@ log.info """\
     wells: ${params.chosen_wells}
     timepoints: ${params.chosen_timepoints}
     channels: ${params.chosen_channels}
+    tiletype: ${params.tiletype}
     Register Experiment: ${params.DO_REGISTER_EXPERIMENT}
     Update Database Paths: ${params.DO_UPDATEPATHS}
     Copy Mask to Masktracked: ${params.DO_COPY_MASK_TO_TRACKED}
@@ -209,6 +220,7 @@ log.info """\
     Mask Crop: ${params.DO_MASK_CROP}
     Montage: ${params.DO_MONTAGE}
     Alignment: ${params.DO_ALIGNMENT}
+    Tracking Montage: ${params.DO_TRACKING_MONTAGE}
     Plate Montage: ${params.DO_PLATEMONTAGE}
     CNN: ${params.DO_CNN}
     Get CSVS: ${params.DO_GET_CSVS}
@@ -302,7 +314,7 @@ workflow {
     }   
     if (params.DO_MONTAGE) {
         montage_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
-        montage_ch = MONTAGE(montage_flag, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_cnn_ch,
+        montage_ch = MONTAGE(montage_flag, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, channel_ch,
         well_toggle_ch, tp_toggle_ch, channel_toggle_ch,image_overlap_ch)
         montage_result = MONTAGE.out
     }
@@ -323,22 +335,67 @@ workflow {
         montage_result = Channel.of(true)
     }
     if (params.DO_TRACKING_MONTAGE) {
-        tracking_montage_flag = seg_result.mix(cellpose_result).collect()
-        track_montage_ch = TRACKING_MONTAGE(
-            tracking_montage_flag,
-            experiment_ch,
-            distance_threshold_ch,
-            voronoi_bool_ch,
-            well_ch,
-            tp_ch,
-            morphology_ch,
-            well_toggle_ch,
-            tp_toggle_ch)
-    track_montage_ch.view { it }
-    tracking_montage_result = TRACKING_MONTAGE.out
-    } else {
+    // prepare your input‑ready flag
+    tracking_montage_flag = seg_result.mix(cellpose_result).collect()
+
+    // invoke the process; this returns a channel of all stdout lines
+    track_montage_ch = TRACKING_MONTAGE(
+        experiment_ch,
+        track_type_ch,
+        distance_threshold_ch,
+        well_ch
+    )
+
+    // print each line your Python script outputs
+    track_montage_ch.view { line ->
+        println line
+    }
+
+    // wire it downstream
+    tracking_montage_result = track_montage_ch
+    }
+    else {
         tracking_montage_result = Channel.of(true)
     }
+    // if (params.DO_TRACKING_MONTAGE) {
+    // // prepare your input‐ready flag channel
+    // tracking_montage_flag = seg_result.mix(cellpose_result).collect()
+
+    // // invoke the process; this returns a channel
+    // track_montage_ch = TRACKING_MONTAGE(
+    //     experiment_ch,
+    //     track_type_ch,
+    //     distance_threshold_ch,
+    //     well_ch
+    // )
+    // // print every line of stdout from the Python script
+    // track_montage.stdout.view { line ->
+    //     println line
+    // }
+    // // optional debug
+    // track_montage_ch.view { it }
+
+    // // use the returned channel directly
+    // tracking_montage_result = track_montage_ch
+    // }
+    // else {
+    //     tracking_montage_result = Channel.of(true)
+    // }
+
+    //     if (params.DO_TRACKING_MONTAGE) {
+    //     tracking_montage_flag = seg_result.mix(cellpose_result).collect()
+    //     track_montage_ch = TRACKING_MONTAGE(
+    //         experiment_ch,
+    //         track_type_ch,
+    //         distance_threshold_ch,
+    //         well_ch
+    //     )
+    //     track_montage_ch.view { it }
+    //     tracking_montage_result = track_montage_ch.out
+    // } else {
+    //     tracking_montage_result = Channel.of(true)
+    // }
+
 
     if (params.DO_INTENSITY) {
         intensity_flag = seg_result.mix(cellpose_result).mix(track_result).collect()

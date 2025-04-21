@@ -8,6 +8,7 @@ import numpy as np
 import os
 import imageio
 from sql import Database
+import pdb
 
 logger = logging.getLogger("Montage")
 # logger.propagate = False
@@ -37,6 +38,10 @@ class Montage:
             self.opt.img_norm_name = 'identity'
 
     def run(self, savebool=True):
+        print(f"[DEBUG] Running montage with tiletype: {self.opt.tiletype}")
+        print(f"[DEBUG] Chosen wells: {self.opt.chosen_wells}")
+        print(f"[DEBUG] Chosen channels: {self.opt.chosen_channels}")
+
         tiledata_df = self.Norm.get_df_for_training(['channeldata'])
         # tiledata_df = self.Norm.get_flatfields()
         tiledata_df = tiledata_df.sort_values(by=['timepoint', 'well', 'tile',])
@@ -67,13 +72,16 @@ class Montage:
         df = df.sort_values('tile')
         if len(df) == df.tile.max() and not df[self.opt.tiletype].isna().any():
             well= df.well.iloc[0]
-            timepoint = df.timepoint.iloc[0]
+            timepoint = int(df.timepoint.iloc[0])
             print(f'Well {well}, Timepoint {timepoint}')
             if self.opt.img_norm_name != 'identity' and self.opt.tiletype=='filename':
                 self.Norm.get_background_image(df, well, timepoint)#kaushik edit
             
+            
+            
             for i, row in df.iterrows():
                 f = row[self.opt.tiletype]
+                print("\n\n\n-------------------", f)
                 # overlap = row.overlap
                 if not savepath:
                     name = os.path.basename(f)
@@ -110,29 +118,88 @@ class Montage:
                 print(f'saved to {savepath}')
                 imageio.v3.imwrite(savepath, mont)
             
+            # if os.path.exists(savepath):
             if os.path.exists(savepath):
-                experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
-                welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id, well=well))
-                
-                # Choose the appropriate column based on tiletype
-                if self.opt.tiletype == 'filename':
-                    update_field = 'imagemontage'
-                elif self.opt.tiletype == 'maskpath':
-                    update_field = 'maskmontage'
-                else:
-                    update_field = 'imagemontage'  # Default fallback; adjust if needed for trackedmaskpath
-                
-                self.Db.update(
-                    'welldata',
-                    update_dct={update_field: savepath},  # Store montage image path in the correct column
-                    kwargs={'id': welldata_id}  # Ensure correct well ID
+                # Get IDs
+                experimentdata_id = self.Db.get_table_uuid(
+                    'experimentdata',
+                    dict(experiment=self.opt.experiment)
                 )
+                welldata_id = self.Db.get_table_uuid(
+                    'welldata',
+                    dict(experimentdata_id=experimentdata_id, well=well)
+                )
+                channel = df.channel.iloc[0]
+                channeldata_id = self.Db.get_table_uuid(
+                    'channeldata',
+                    dict(
+                        experimentdata_id=experimentdata_id,
+                        welldata_id=welldata_id,
+                        channel=channel
+                    )
+                )
+
+                # Choose your new tiledata column
+                if self.opt.tiletype == 'filename':
+                    update_field = 'newimagemontage'
+                elif self.opt.tiletype == 'maskpath':
+                    update_field = 'newmaskmontage'
+                else:
+                    update_field = 'newtrackedmontage'
+
+                # Write into tiledata keyed by timepoint
+                self.Db.update(
+                    'tiledata',
+                    update_dct={update_field: savepath},
+                    kwargs={
+                        'experimentdata_id': experimentdata_id,
+                        'welldata_id':       welldata_id,
+                        'channeldata_id':    channeldata_id,
+                        'timepoint':         int(timepoint)
+                    }
+                )
+                logger.warning(
+                    f'Updated {update_field} in tiledata for {well} T{timepoint}'
+                )
+
+
+            #Original
+            #     experimentdata_id = self.Db.get_table_uuid('experimentdata', dict(experiment=self.opt.experiment))
+            #     welldata_id = self.Db.get_table_uuid('welldata', dict(experimentdata_id=experimentdata_id, well=well))
                 
-                logger.warning(f'Updated {update_field} in welldata for well {well}')
-                logger.warning(f'  → {update_field}: {savepath}')
-            else:
-                logger.warning(f'Failed to save montage for well {well}')
-                logger.warning(f'  → Expected file: {savepath}')
+            #     # Choose the appropriate column based on tiletype
+            #     if self.opt.tiletype == 'filename':
+            #         update_field = 'imagemontage'
+            #     elif self.opt.tiletype == 'maskpath':
+            #         update_field = 'maskmontage'
+            #     else:
+            #         update_field = 'imagemontage'  # Default fallback; adjust if needed for trackedmaskpath
+                
+            #     #     # write into channeldata (one row per well+timepoint+channel)
+            #     # channeldata_id = self.Db.get_table_uuid(
+            #     #     'channeldata',
+            #     #     dict(
+            #     #         welldata_id=welldata_id,
+            #     #         timepoint=timepoint,
+            #     #         channel=df.channel.iloc[0]
+            #     #     )
+            #     # )
+            #     # self.Db.update(
+            #     #     'channeldata',
+            #     #     update_dct={update_field: savepath},
+            #     #     kwargs={'id': channeldata_id}
+            #     # )
+            #     self.Db.update(
+            #         'welldata',
+            #         update_dct={update_field: savepath},  # Store montage image path in the correct column
+            #         kwargs={'id': welldata_id}  # Ensure correct well ID
+            #     )
+                
+            #     logger.warning(f'Updated {update_field} in welldata for well {well}')
+            #     logger.warning(f'  → {update_field}: {savepath}')
+            # else:
+            #     logger.warning(f'Failed to save montage for well {well}')
+            #     logger.warning(f'  → Expected file: {savepath}')
 
             # Ensure montage files are correctly saved before updating the database Original
             # if os.path.exists(savepath):
@@ -170,7 +237,7 @@ if __name__ == '__main__':
     )
     print("chosenchanneltest")
     parser.add_argument('--experiment', default='JAK-COR7508012023-GEDI', type=str)
-    parser.add_argument('--tiletype', default='trackedmaskpath', choices=['filename', 'maskpath', 'trackedmaskpath'], type=str,
+    parser.add_argument('--tiletype', default='maskpath', choices=['filename', 'maskpath', 'trackedmaskpath'], type=str,
                         help='Montage image, binary mask, or tracked mask.')
     parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')

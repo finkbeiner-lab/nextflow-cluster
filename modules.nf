@@ -183,26 +183,20 @@ process TRACKING {
 process TRACKING_MONTAGE {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/ --mount type=bind,src=/opt/gurobi/,target=/opt/gurobi/"
     
-    input:
-    val ready
-    val exp
-    val distance_threshold
-    val voronoi_bool
-    val chosen_wells
-    val chosen_timepoints
-    val morphology_channel
-    val wells_toggle
-    val timepoints_toggle
 
+    input:
+    val exp                  // your experiment name
+    val track_type           // "overlap" or "proximity"
+    val distance_threshold   // integer → --max_dist
+    val chosen_wells         // comma‑sep list → --wells
     output:
-    val true
+       // send everything that the Python script prints to STDOUT
+
+    stdout
 
     script:
     """
-    tracking_montage.py --experiment ${exp} --DISTANCE_THRESHOLD ${distance_threshold} --VORONOI_BOOL ${voronoi_bool} \
-    --chosen_channels ${morphology_channel} \
-    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    tracking_montage.py --experiment  ${exp} --track_type  ${track_type} --max_dist    ${distance_threshold} --wells       ${chosen_wells}
     """
 }
 
