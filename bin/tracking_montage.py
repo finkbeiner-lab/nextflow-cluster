@@ -150,11 +150,13 @@ class MontageDBTracker:
                         cnt = max(cnts, key=cv2.contourArea)
                         entries.append([lbl, Cell(cnt)])
             results[well] = time_dict
-        return results
+        # return results #Original
+        return results, df, tiledata_df
 
     def run(self, wells):
         exp_id = self.Db.get_table_uuid('experimentdata', {'experiment': self.experiment})
-        all_wells = self.gather_encoded_from_db(wells)
+        # all_wells = self.gather_encoded_from_db(wells) #Original
+        all_wells, df, tiledata_df = self.gather_encoded_from_db(wells)
         for well, time_dict in all_wells.items():
             welldata_id = self.Db.get_table_uuid(
                 'welldata', {'experimentdata_id': exp_id, 'well': well}
@@ -182,17 +184,18 @@ class MontageDBTracker:
             print(f"  cells missing ≥1 TP: {count_missing}")
             print(f"  % tracked in all {len(tps)} TPs: {pct:.1f}%")
             # ────────────────────────────
-
-            # Update DB with new cellids per timepoint
             for tp, recs in sorted_td.items():
-                # find corresponding tiledata_id for this timepoint
+            # find corresponding tiledata_id for this timepoint
                 tiledata_id = self.Db.get_table_uuid(
                     'tiledata',
                     {'experimentdata_id': exp_id,
-                     'welldata_id': welldata_id,
-                     'timepoint': tp}
+                    'welldata_id': welldata_id,
+                    'timepoint': tp}
                 )
+                print(tiledata_id)
+
                 for new_id, _ in recs:
+                    #print("new_id", new_id)
                     self.Db.update(
                         'celldata',
                         update_dct={'cellid': int(new_id)},
@@ -201,6 +204,87 @@ class MontageDBTracker:
                             'randomcellid': int(new_id)
                         }
                     )
+
+                # Generate tracked mask and update newtrackedmontage path
+                df_wtp = df[(df['well'] == well) & (df['timepoint'] == tp)]
+                if df_wtp.empty:
+                    logger.warning(f"No montage found for well {well} TP {tp}")
+                    continue
+
+                original_mask_path = df_wtp['newmaskmontage'].values[0]
+
+                # Read original mask
+                orig_mask = cv2.imread(original_mask_path, cv2.IMREAD_UNCHANGED)
+                tracked_mask = np.zeros_like(orig_mask, dtype=np.uint16)
+
+                for new_id, cell in recs:
+                    bin_mask = np.zeros_like(orig_mask, dtype=np.uint8)
+                    cv2.drawContours(bin_mask, [cell.cnt], -1, 255, -1)
+                    tracked_mask[bin_mask > 0] = new_id
+
+                tracked_mask_path = original_mask_path.replace('.tif', '_TRACKED.tif')
+                cv2.imwrite(tracked_mask_path, tracked_mask)
+
+                logger.warning(f"[TRACKED UPDATE] Well={well} TP={tp}")
+                logger.warning(f"[TRACKED UPDATE] tracked_mask_path = {tracked_mask_path}")
+                # Update all tiledata rows for this well + timepoint
+                df_tiles_all = tiledata_df[
+                    (tiledata_df['welldata_id'] == welldata_id) &
+                    (tiledata_df['timepoint'] == tp)
+                ]
+
+                if df_tiles_all.empty:
+                    logger.warning(f"No tiledata rows found for {well} TP {tp}")
+                else:
+                    for tile_id in df_tiles_all['id']:
+                        self.Db.update(
+                            'tiledata',
+                            update_dct={'newtrackedmontage': tracked_mask_path},
+                            kwargs={'id': tile_id}
+                        )
+                    logger.warning(f"Updated newtrackedmontage for {len(df_tiles_all)} tiles at {well} TP {tp}")
+
+
+
+
+
+
+
+                # if tiledata_id is None:
+                #     logger.warning(f"Tiledata ID is None for well {well}, tp {tp} — DB update skipped")
+                # else:
+                #     self.Db.update(
+                #         'tiledata',
+                #         update_dct={'newtrackedmontage': tracked_mask_path},
+                #         kwargs={'id': tiledata_id}
+                #     )
+
+                # # Update newtrackedmontage in tiledata
+                # self.Db.update(
+                #     'tiledata',
+                #     update_dct={'newtrackedmontage': tracked_mask_path},
+                #     kwargs={'id': tiledata_id}
+                # )
+
+            # Update DB with new cellids per timepoint, ORIGINAL
+            # for tp, recs in sorted_td.items():
+            #     # find corresponding tiledata_id for this timepoint
+            #     tiledata_id = self.Db.get_table_uuid(
+            #         'tiledata',
+            #         {'experimentdata_id': exp_id,
+            #          'welldata_id': welldata_id,
+            #          'timepoint': tp}
+            #     )
+        
+            #     for new_id, _ in recs:
+            #         self.Db.update(
+            #             'celldata',
+            #             update_dct={'cellid': int(new_id)},
+            #             kwargs={
+            #                 'tiledata_id': tiledata_id,
+            #                 'randomcellid': int(new_id)
+            #             }
+            #         )
 
             print(f"Well {well}:")
             for tp, recs in sorted_td.items():

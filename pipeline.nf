@@ -159,6 +159,8 @@ norm_intensity_ch = Channel.of(params.norm_intensity)
 shift_ch = Channel.of(params.shift)//KS edit for overlay
 contrast_ch = Channel.of(params.contrast)//KS edit for overlay
 
+
+aligntiletype_ch = Channel.of(params.aligntiletype)
 alignment_algoritm_ch = Channel.of(params.alignment_algorithm)
 dir_structure_ch = Channel.of(params.dir_structure)
 imaging_mode_ch = Channel.of(params.imaging_mode)
@@ -194,7 +196,7 @@ optimizer_ch = Channel.of(params.optimizer)
     CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION} from './modules.nf'
 */
 //KS edit to include overlays
-include { OVERLAY;REGISTER_EXPERIMENT; SEGMENTATION;
+include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;SEGMENTATION;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY; 
     CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED} from './modules.nf'
 
@@ -263,10 +265,18 @@ workflow {
     else {
         register_result = Channel.of(true)
     }
-    if (params.DO_VIEW_NORMALIZATION_IMAGES) {
+    // if (params.DO_VIEW_NORMALIZATION_IMAGES) {
+    //     norm_flag = updatepaths_result.mix(register_result).collect()
+    //     norm_view_ch = NORMALIZATION(norm_flag, experiment_ch, norm_ch, 
+    //     well_ch, chosen_channels_for_register_exp_ch, tp_ch, 
+    //     well_toggle_ch, channel_toggle_ch, tp_toggle_ch)
+    //     norm_view_ch.view {it}
+    //     norm_result = NORMALIZATION.out
+    // }
+        if (params.DO_VIEW_NORMALIZATION_IMAGES) {
         norm_flag = updatepaths_result.mix(register_result).collect()
         norm_view_ch = NORMALIZATION(norm_flag, experiment_ch, norm_ch, 
-        well_ch, chosen_channels_for_register_exp_ch, tp_ch, 
+        well_ch, channel_ch, tp_ch, 
         well_toggle_ch, channel_toggle_ch, tp_toggle_ch)
         norm_view_ch.view {it}
         norm_result = NORMALIZATION.out
@@ -319,12 +329,30 @@ workflow {
         montage_result = MONTAGE.out
     }
     if (params.DO_ALIGNMENT) {
-        alignment_ch = ALIGNMENT(experiment_ch,  well_ch, tp_ch, morphology_ch, alignment_algoritm_ch, robo_num_ch, dir_structure_ch, imaging_mode_ch, tiletype_ch, shift_dict_ch)
+        alignment_ch = ALIGNMENT(experiment_ch,  well_ch, tp_ch, morphology_ch, alignment_algoritm_ch, robo_num_ch, dir_structure_ch, imaging_mode_ch, aligntiletype_ch, shift_dict_ch)
         alignment_result = ALIGNMENT.out
     }
     else {
         alignment_result = Channel.of(true)
     }
+    if (params.DO_ALIGN_TILES_DFT) {
+        align_tiles_dft_ch = ALIGN_TILES_DFT(
+            experiment_ch,
+            morphology_ch,
+            well_ch,
+            tp_ch,
+            channel_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            tile_ch,
+            shift_dict_ch
+        )
+        align_tiles_dft_ch.view { it }
+        align_tiles_dft_result = ALIGN_TILES_DFT.out
+} else {
+    align_tiles_dft_result = Channel.of(true)
+}
     if (params.DO_PLATEMONTAGE) {
         montage_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
         platemontage_ch = PLATEMONTAGE(montage_flag, experiment_ch, well_size_for_platemontage_ch, norm_intensity_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, chosen_channels_for_register_exp_ch,

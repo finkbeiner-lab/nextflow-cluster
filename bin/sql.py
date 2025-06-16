@@ -98,6 +98,7 @@ class Database:
                 self.create_modeldata_table()
             if not self.engine.dialect.has_table(connection, 'modelcropdata'):
                 self.create_modelcropdata_table()
+            self.meta.reflect(bind=self.engine, resolve_fks = True)
     def create_experimentdata_table(self):
         # TODO: default uuid4 isn't working through sqlalchemy so I added the default with SQL
         # ALTER TABLE experimentdata
@@ -179,6 +180,8 @@ class Database:
             Column('time_imaged', String),
             Column('maskpath', String),
             Column('trackedmaskpath', String),
+            Column('newtrackedmontage', String),  # <- your missing column
+
         )
         self.meta.create_all(self.engine)
 
@@ -371,7 +374,14 @@ class Database:
             ins = self.meta.tables[tablename].insert().values(dct)
             db = connection.execute(ins)
             connection.commit()
+    # def update(self, tablename: str, update_dct: dict, kwargs):
+    #     with self.engine.connect() as connection:
+    #         stmt = update(self.meta.tables[tablename]).filter_by(**kwargs).values(**update_dct)
+    #         result = connection.execute(stmt)
+    #         connection.commit()
+    #         return result.rowcount
 
+    # #Original
     def update(self, tablename: str, update_dct: dict, kwargs):
         with self.engine.connect() as connection:
             ins = update(self.meta.tables[tablename]).filter_by(**kwargs).values(update_dct)

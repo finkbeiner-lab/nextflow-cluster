@@ -8,11 +8,13 @@ RUN apt-get update && apt-get install ffmpeg libsm6 libxext6  -y
 RUN apt-get install git -y
 RUN apt-get install wget
 
-RUN conda install pandas imageio psycopg2 scikit-image
+#RUN conda install pandas imageio psycopg2 scikit-image
+RUN conda install -y -c conda-forge pandas=1.5.3 imageio psycopg2 scikit-image
+
 RUN conda install -c conda-forge 'sqlalchemy>=2.0.4'
 #RUN conda install -y -c conda-forge -c gurobi \
 #    pandas imageio psycopg2 scikit-image matplotlib openpyxl \
-#    sqlalchemy>=2.0.4 gurobi
+#    sqlalchemy>=2.0.4 gurobiss
 
 RUN python -m pip install opencv-python
 RUN python -m pip install wandb
@@ -52,7 +54,9 @@ RUN conda install openpyxl
 #RUN conda install -y -c conda-forge pylibtiff
 RUN pip install pyomo
 RUN conda install -c gurobi gurobi
-# Setup JAVA_HOME -- useful for docker commandline
+#RUN conda install pandas
+
+# Setup JAVA_HOME -- useful for docker sssssssssssssssssscommandline
 ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64/
 RUN export JAVA_HOME
 

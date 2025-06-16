@@ -48,10 +48,10 @@ class TrackCells:
         self.opt = opt
         self.celldata = None
         self.use_proximity = True
-        self.use_overlap = True
         self.use_siamese = False
         self.forward_bool = True
         self.reverse_bool = True
+        self.use_overlap = self.opt.USE_OVERLAP if hasattr(self.opt, "USE_OVERLAP") else False #KS edit
         self.midpoint = None
         self.candidates = {}
         self.thread_lim = 6
@@ -178,12 +178,18 @@ class TrackCells:
         print(f'current mask: {f_curr_mask}')
         print(f'current mask relabelled: {f_curr_mask_relabelled}')
         mappings = {}
-
+        #Original
+        # Gr = Graph(celldata=self.filtered_celldata, include_appear=True,
+        #            use_siamese=False, use_proximity=True, appear_cost=int(self.opt.DISTANCE_THRESHOLD),
+        #            voronoi_bool=self.opt.VORONOI_BOOL,
+        #            verbose=self.opt.VERBOSE,
+        #            debug=self.opt.DEBUG)
         Gr = Graph(celldata=self.filtered_celldata, include_appear=True,
-                   use_siamese=False, use_proximity=True, appear_cost=int(self.opt.DISTANCE_THRESHOLD),
-                   voronoi_bool=self.opt.VORONOI_BOOL,
-                   verbose=self.opt.VERBOSE,
-                   debug=self.opt.DEBUG)
+            use_siamese=False, use_proximity=not self.use_overlap, appear_cost=int(self.opt.DISTANCE_THRESHOLD),
+            voronoi_bool=self.opt.VORONOI_BOOL,
+            verbose=self.opt.VERBOSE,
+            debug=self.opt.DEBUG, use_overlap=self.use_overlap)
+
         logger.warning(f'Divisions of image in tracking: {divisions}')
         prev_img = imageio.v3.imread(f_prev)
         curr_img = imageio.v3.imread(f_curr)
@@ -408,6 +414,14 @@ if __name__ == '__main__':
         default=DEBUG,
         type=int,
         dest='DEBUG')
+    parser.add_argument(
+        '--USE_OVERLAP',
+        action='store',
+        help='Use overlap tracking instead of proximity',
+        default=0,
+        type=int,
+        dest='USE_OVERLAP')
+
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle", default='include',

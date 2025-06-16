@@ -78,12 +78,14 @@ class Intro:
             print(files_df['zstep']=='s8')
 
             files_df[['timepoint', 'tile', 'burstindex', 'zstep']] = files_df[['timepoint', 'tile', 'burstindex', 'zstep']].astype(int)
-            files_df.sort_index(level=['well', 'timepoint', 'channel', 'tile', 'burstindex', 'zstep'], inplace=True)
+            files_df.sort_values(by=['well', 'timepoint', 'channel', 'tile', 'burstindex', 'zstep'], inplace=True)
+            #files_df.sort_index(level=['well', 'timepoint', 'channel', 'tile', 'burstindex', 'zstep'], inplace=True)
         elif robo_num == 3:
             files_df[['pid', 'experiment', 'timepoint', 'hours', 'well', 'tile', 'channel']] = fname_df[num_cols-1].str.split('_', expand=True)
             files_df['timepoint'] = files_df['timepoint'].str.replace('T', '')
             files_df[['timepoint', 'tile']] = files_df[['timepoint', 'tile']].astype(int)
-            files_df.sort_index(level=['well', 'timepoint', 'tile', 'channel'], inplace=True)
+            #files_df.sort_index(level=['well', 'timepoint', 'tile', 'channel'], inplace=True)
+            files_df.sort_values(by=['well', 'timepoint', 'tile', 'channel'], inplace=True)
         return files_df
 
     @staticmethod

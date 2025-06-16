@@ -96,14 +96,39 @@ class Segmentation:
         df.sort_values(by='tile', inplace=True)
         img, thresh, regions, masks = None, None, None, None
         print(f'Thresholding well {well} at timepoint {timepoint}')
-        self.Norm.get_background_image(df, well, timepoint)
+        # self.Norm.get_background_image(df, well, timepoint)
         for i, row in df.iterrows():
             tile_strt = time()
             print('row', row)
-            img = imageio.imread(row.filename)  # TODO: is opencv faster/ more memory efficient?
+            # Select aligned image if requested and available
+# pick aligned image if available, otherwise raw
+            # pick aligned image if available, otherwise raw
+            img_path = row.alignedtilepath if pd.notna(row.alignedtilepath) else row.filename
+            img      = imageio.imread(img_path)
 
-            smoothed_im = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)
-            smoothed_im = self.Norm.gaussian_filter(smoothed_im)
+            # skip normalization when using an aligned tile
+            skip_norm = pd.notna(row.alignedtilepath)
+
+            if not skip_norm:
+                self.Norm.get_background_image(df, well, timepoint)
+
+            if skip_norm:
+                smoothed_im = img
+            else:
+                smoothed_im = self.Norm.image_bg_correction[self.opt.img_norm_name](
+                    img, well, timepoint
+                )
+                smoothed_im = self.Norm.gaussian_filter(smoothed_im)
+
+            
+            # #Original
+            # img_path = row.alignedtilepath if pd.notna(row.alignedtilepath) else row.filename
+            # img = imageio.imread(img_path)
+
+            # # img = imageio.imread(row.filename)  # TODO: is opencv faster/ more memory efficient?
+
+            # smoothed_im = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)
+            # smoothed_im = self.Norm.gaussian_filter(smoothed_im)
             if self.segmentation_method=='manual':
                 thresh = self.opt.manual_thresh
             elif self.segmentation_method=='tryall':
@@ -142,7 +167,10 @@ class Segmentation:
             # props['intensity_mean'] *= 65535/255
             # props['intensity_min'] *= 65535/255
             savedir = os.path.join(self.analysisdir, self.mask_folder_name, row.well)
-            maskpath = save_mask(masks, row.filename, savedir)
+            # maskpath = save_mask(masks, row.filename, savedir)
+            maskpath = save_mask(masks, img_path, savedir)
+
+            # maskpath = save_mask(masks,img_path,savedir)
             print(f'Saved {self.segmentation_method} segmentation mask to {maskpath}')
 
                 # update tiledata with maskpath (not tracked)
@@ -223,6 +251,9 @@ if __name__ == '__main__':
                         dest="chosen_channels", default='GFP-DMD1',
                         help="Morphology channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
+    parser.add_argument('--use_aligned_tiles', action='store_true',
+                    help="Use aligned tile images if available")
+
     args = parser.parse_args()
     print(args)
     Seg = Segmentation(args)

@@ -15,8 +15,10 @@ _logger = logging.getLogger("Tracking")
 
 
 class Graph:
+    # def __init__(self, celldata, include_appear, appear_cost, use_siamese, use_proximity, voronoi_bool,
+    #              verbose, debug):
     def __init__(self, celldata, include_appear, appear_cost, use_siamese, use_proximity, voronoi_bool,
-                 verbose, debug):
+                verbose, debug,use_overlap=False):
         assert len(celldata), 'Celldata is empty, check filtering'
         self.debug = debug
         self.verbose = verbose
@@ -28,6 +30,8 @@ class Graph:
         self.include_appear = include_appear  # include appear disappear nodes
         self.use_siamese = use_siamese
         self.use_proximity = use_proximity
+        self.use_overlap=use_overlap
+
         # Initialize graph
         self.g = nx.DiGraph()
         # Get csv data
@@ -90,6 +94,8 @@ class Graph:
         return prev, current
 
 
+
+
     # def get_neighbors(self, prev, current):
     #     r_cnt = 0
     #     for i, cell in prev.iterrows():
@@ -122,6 +128,33 @@ class Graph:
         prev_y = prev_df[self.centroid_y_str].to_numpy()
         curr_x = current_df[self.centroid_x_str].to_numpy()
         curr_y = current_df[self.centroid_y_str].to_numpy()
+        #KS edit for overlap
+        if self.use_overlap:
+            _logger.info("Using overlap-based edge creation")
+            self.g = nx.DiGraph()
+            for _, row_prev in prev_df.iterrows():
+                for _, row_curr in current_df.iterrows():
+                    src = f"L{int(row_prev[self.randomcellid_str])}"
+                    tgt = f"R{int(row_curr[self.randomcellid_str])}"
+
+                    # Compute overlap based on centroid distance and radius from area
+                    try:
+                        r1 = (row_prev['area'] / np.pi) ** 0.5
+                        r2 = (row_curr['area'] / np.pi) ** 0.5
+                    except:
+                        r1 = r2 = 10.0  # fallback default radius
+
+                    dist = np.sqrt(
+                        (row_prev[self.centroid_x_str] - row_curr[self.centroid_x_str]) ** 2 +
+                        (row_prev[self.centroid_y_str] - row_curr[self.centroid_y_str]) ** 2
+                    )
+
+                    if dist < (r1 + r2) * 0.6:
+                        self.g.add_edge(src, tgt, weight=0.1)  # low cost for high-confidence edge
+
+            _logger.info(f'Edges from overlap: {self.g.edges}')
+            return current_df  # ✅ done early
+        # End KS edit
 
         # Concatenate past and present timepoints to create adjacency matrix for pandas / networkx
         both_centroid_x = np.concatenate((prev_x, curr_x))

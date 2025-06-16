@@ -55,13 +55,36 @@ class Overlay:
                 # get channeldata id
             target_channeldata_id = self.Db.get_table_uuid('channeldata', dict(welldata_id=df.welldata_id.iloc[0],
                                                                             channel=self.opt.target_channel))
+            #KS edit
+            filename = self.Db.get_table_value(
+                'tiledata',
+                'alignedtilepath',
+                dict(welldata_id=df.welldata_id.iloc[0],
+                    channeldata_id=target_channeldata_id,
+                    timepoint=int(df.timepoint.iloc[0]),
+                    tile=int(df.tile.iloc[0]))
+            )[0][0]
 
-            filename = self.Db.get_table_value('tiledata', 'filename',
-                                                   dict(welldata_id=df.welldata_id.iloc[0],
-                                                        channeldata_id=target_channeldata_id,
-                                                        timepoint = int(df.timepoint.iloc[0]),
-                                                        tile=int(df.tile.iloc[0])))
-            filename = filename[0][0]
+            # If alignedtilepath is None, fall back to filename
+            if filename is None:
+                filename = self.Db.get_table_value(
+                    'tiledata',
+                    'filename',
+                    dict(welldata_id=df.welldata_id.iloc[0],
+                        channeldata_id=target_channeldata_id,
+                        timepoint=int(df.timepoint.iloc[0]),
+                        tile=int(df.tile.iloc[0]))
+                )[0][0]
+
+            print(f"Using image: {filename}")
+
+
+            # filename = self.Db.get_table_value('tiledata', 'filename',
+            #                                        dict(welldata_id=df.welldata_id.iloc[0],
+            #                                             channeldata_id=target_channeldata_id,
+            #                                             timepoint = int(df.timepoint.iloc[0]),
+            #                                             tile=int(df.tile.iloc[0])))
+            # filename = filename[0][0]
             print(f'Running {well} for tile {df.tile.iloc[0]} for channel {self.opt.target_channel}')
             print(f'Running {filename}')
             img = imageio.imread(filename)

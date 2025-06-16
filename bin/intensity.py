@@ -60,19 +60,67 @@ class Intensity:
                 logger.warning(f'row {row}')
                 print('maskpath', row.maskpath)
                 labelled_mask = imageio.v3.imread(row.maskpath)  
-                # Get filename of target channel tile
-                filename = Db.get_table_value('tiledata', column='filename', kwargs=dict(welldata_id=welldata_id,
-                                                                          channeldata_id=target_channel_uuid,
-                                                                          tile=int(row.tile),
-                                                                          timepoint=int(timepoint)
-                                                                          ))
-                # if filename is None: raise Exception(f'Filename for channel {self.opt.target_channel} is not found.')
-                if filename is None: 
-                    logger.warning(f'Filename for channel {self.opt.target_channel} is not found.')
-                    continue
-                logger.info(f'filename {filename}')
-                img = imageio.v3.imread(filename[0][0])  # read target tile
-                img = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)  # background correction
+                # # Get filename of target channel tile -ORIGINAL
+                # filename = Db.get_table_value('tiledata', column='filename', kwargs=dict(welldata_id=welldata_id,
+                #                                                           channeldata_id=target_channel_uuid,
+                #                                                           tile=int(row.tile),
+                #                                                           timepoint=int(timepoint)
+                #                                                           ))
+                # # if filename is None: raise Exception(f'Filename for channel {self.opt.target_channel} is not found.')
+                # if filename is None: 
+                #     logger.warning(f'Filename for channel {self.opt.target_channel} is not found.')
+                #     continue
+                # logger.info(f'filename {filename}')
+                # img = imageio.v3.imread(filename[0][0])  # read target tile
+                # Get full tiledata row for this tile/channel
+                #### KS edit to use aligned images
+                # tiledata_row = Db.get_df_from_query('tiledata', dict(
+                #     welldata_id=welldata_id,
+                #     channeldata_id=target_channel_uuid,
+                #     tile=int(row.tile),
+                #     timepoint=int(timepoint)
+                # ))
+
+                # if tiledata_row.empty:
+                #     logger.warning(f'No tiledata found for well={well}, timepoint={timepoint}, tile={row.tile}')
+                #     continue
+
+                # # Use aligned image if available
+                # image_path = tiledata_row.iloc[0]['alignedtilepath'] if pd.notna(tiledata_row.iloc[0]['alignedtilepath']) else tiledata_row.iloc[0]['filename']
+
+                # if not os.path.exists(image_path):
+                #     logger.warning(f'Image file not found: {image_path}')
+                #     continue
+
+                # logger.info(f'Using image path: {image_path}')
+                # img = imageio.v3.imread(image_path)
+                                # fetch that tiledata row (same as you already have)
+                trow = Db.get_df_from_query(
+                    'tiledata',
+                    dict(
+                        welldata_id=welldata_id,
+                        channeldata_id=target_channel_uuid,
+                        tile=int(row.tile),
+                        timepoint=int(timepoint)
+                    )
+                ).iloc[0]
+
+                # always pick the aligned TIFF if it exists
+                img_path = trow.alignedtilepath if pd.notna(trow.alignedtilepath) else trow.filename
+                logger.info(f'Loading target image from: {img_path}')
+                img = imageio.v3.imread(img_path)
+
+                
+                #####
+                        # skip background subtraction when using an already‐normalized aligned TIFF
+                skip_norm = pd.notna(trow.alignedtilepath)
+                if not skip_norm:
+                    # build background only for raw images
+                    self.Norm.get_background_image(tdf, well, timepoint)
+
+                    # then apply correction
+                    img = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)
+                # img = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)  # background correction
                 # celldata df for this tile
                 celldata_df = Db.get_df_from_query('celldata', dict(tiledata_id=row.tiledata_id))
                 # Merge tiledata df for morphology with celldata (also for morphology)

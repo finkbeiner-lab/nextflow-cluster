@@ -168,6 +168,7 @@ process TRACKING {
     val wells_toggle
     val timepoints_toggle
 
+
     output:
     val true
 
@@ -372,7 +373,7 @@ process ALIGNMENT {
     val robo_num
     val dir_structure
     val imaging_mode
-    val tiletype
+    val aligntiletype
     val shift
     
     output:
@@ -382,12 +383,46 @@ process ALIGNMENT {
     """
     dft_alignment.py --experiment ${exp} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --morphology_channel ${morphology_channel} --alignment_algorithm ${alignment_algorithm} --robo_num ${robo_num} \
-    --dir_structure ${dir_structure} --imaging_mode ${imaging_mode} --tiletype ${tiletype} --shift ${shift}
+    --dir_structure ${dir_structure} --imaging_mode ${imaging_mode} --tiletype ${aligntiletype} --shift ${shift}
     """
 }
 
 
+process ALIGN_TILES_DFT {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    tag "$experiment"
+    publishDir "$params.outdir/AlignedTiles", mode: 'copy'
 
+    input:
+    val experiment
+    val morphology_channel
+    val wells
+    val timepoints
+    val channels
+    val wells_toggle
+    val timepoints_toggle
+    val channels_toggle
+    val tile
+    val shift_dict
+
+    output:
+    path "AlignedTiles/**", optional: true
+
+    script:
+    """
+    align_tiles_dft.py \
+      --experiment "$experiment" \
+      --morphology_channel "$morphology_channel" \
+      --chosen_wells "$wells" \
+      --chosen_timepoints "$timepoints" \
+      --chosen_channels "$channels" \
+      --wells_toggle "$wells_toggle" \
+      --timepoints_toggle "$timepoints_toggle" \
+      --channels_toggle "$channels_toggle" \
+      --tile "$tile" \
+      --shift_dict "$shift_dict" 
+    """
+}
 process PLATEMONTAGE {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
