@@ -263,5 +263,6 @@ if __name__ == '__main__':
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()
     print(args)
+    
     Mt = Montage(args)
     Mt.run()

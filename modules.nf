@@ -53,6 +53,7 @@ process SEGMENTATION {
     val chosen_timepoints
     val wells_toggle
     val timepoints_toggle
+    val use_aligned_tiles
 
     output: 
     val true
@@ -63,7 +64,7 @@ process SEGMENTATION {
     --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
     --sd_scale_factor ${sd_scale_factor} \
     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --use_aligned_tiles ${use_aligned_tiles}
     """
 }
 
@@ -423,6 +424,46 @@ process ALIGN_TILES_DFT {
       --shift_dict "$shift_dict" 
     """
 }
+
+
+process ALIGN_MONTAGE_DFT {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    tag "$experiment"
+    publishDir "$params.outdir/AlignedMontages", mode: 'copy'
+
+    input:
+    val experiment
+    val morphology_channel
+    val wells
+    val timepoints
+    val channels
+    val wells_toggle
+    val timepoints_toggle
+    val channels_toggle
+    val tile
+    val shift_dict
+
+    output:
+    path "AlignedTiles/**", optional: true
+
+    script:
+    """
+    align_montage_dft.py \
+      --experiment "$experiment" \
+      --morphology_channel "$morphology_channel" \
+      --chosen_wells "$wells" \
+      --chosen_timepoints "$timepoints" \
+      --chosen_channels "$channels" \
+      --wells_toggle "$wells_toggle" \
+      --timepoints_toggle "$timepoints_toggle" \
+      --channels_toggle "$channels_toggle" \
+      --tile "$tile" \
+      --shift_dict "$shift_dict" 
+    """
+}
+
+
+
 process PLATEMONTAGE {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:

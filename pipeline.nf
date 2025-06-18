@@ -196,7 +196,7 @@ optimizer_ch = Channel.of(params.optimizer)
     CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION} from './modules.nf'
 */
 //KS edit to include overlays
-include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;SEGMENTATION;
+include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY; 
     CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED} from './modules.nf'
 
@@ -352,6 +352,25 @@ workflow {
         align_tiles_dft_result = ALIGN_TILES_DFT.out
 } else {
     align_tiles_dft_result = Channel.of(true)
+}
+
+if (params.DO_ALIGN_MONTAGE_DFT) {
+        align_montage_dft_ch = ALIGN_MONTAGE_DFT(
+            experiment_ch,
+            morphology_ch,
+            well_ch,
+            tp_ch,
+            channel_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            tile_ch,
+            shift_dict_ch
+        )
+        align_montage_dft_ch.view { it }
+        align_montage_dft_result = ALIGN_MONTAGE_DFT.out
+} else {
+    align_montage_dft_result = Channel.of(true)
 }
     if (params.DO_PLATEMONTAGE) {
         montage_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
