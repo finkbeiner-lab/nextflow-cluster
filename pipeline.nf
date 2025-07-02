@@ -196,7 +196,7 @@ optimizer_ch = Channel.of(params.optimizer)
     CROP; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION} from './modules.nf'
 */
 //KS edit to include overlays
-include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;
+include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;SEGMENTATION_MONTAGE;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY; 
     CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED} from './modules.nf'
 
@@ -221,7 +221,9 @@ log.info """\
     Crop: ${params.DO_CROP}
     Mask Crop: ${params.DO_MASK_CROP}
     Montage: ${params.DO_MONTAGE}
-    Alignment: ${params.DO_ALIGNMENT}
+    Align Tiles: ${params.DO_ALIGN_TILES_DFT}
+    Align Montage: ${params.DO_ALIGN_MONTAGE_DFT}
+    Segmentation Montage: ${params.DO_SEGMENTATION_MONTAGE}
     Tracking Montage: ${params.DO_TRACKING_MONTAGE}
     Plate Montage: ${params.DO_PLATEMONTAGE}
     CNN: ${params.DO_CNN}
@@ -287,6 +289,16 @@ workflow {
         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         seg_ch.view { it }
         seg_result = SEGMENTATION.out
+    }
+    else {
+        seg_result = Channel.of(true)
+    }
+    if (params.DO_SEGMENTATION_MONTAGE) {
+        register_flag = updatepaths_result.mix(register_result).collect()
+        seg_ch = SEGMENTATION_MONTAGE(register_flag, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
+        well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
+        seg_ch.view { it }
+        seg_result = SEGMENTATION_MONTAGE.out
     }
     else {
         seg_result = Channel.of(true)

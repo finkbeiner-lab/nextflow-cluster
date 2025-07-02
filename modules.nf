@@ -69,6 +69,39 @@ process SEGMENTATION {
 }
 
 
+
+process SEGMENTATION_MONTAGE {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    input:
+    val ready
+    val exp
+    val morphology_channel
+    val segmentation_method
+    val img_norm_name
+    val lower_area_thresh
+    val upper_area_thresh
+    val sd_scale_factor
+    val chosen_wells
+    val chosen_timepoints
+    val wells_toggle
+    val timepoints_toggle
+    val use_aligned_tiles
+
+    output: 
+    val true
+
+    script:
+    """
+    segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
+    --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
+    --sd_scale_factor ${sd_scale_factor} \
+    --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --use_aligned_tiles ${use_aligned_tiles}
+    """
+}
+
+
+
 process NORMALIZATION {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
