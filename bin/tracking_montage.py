@@ -205,7 +205,7 @@ class MontageDBTracker:
                     #print("new_id", new_id)
                     self.Db.update(
                         'celldata',
-                        update_dct={'cellid': int(new_id)},
+                        update_dct={'cellid_montage': int(new_id)},
                         kwargs={
                             'tiledata_id': tiledata_id,
                             'randomcellid_montage': int(new_id)
