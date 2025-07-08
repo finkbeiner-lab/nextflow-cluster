@@ -8,6 +8,7 @@ import os
 from sql import Database
 import pandas as pd
 import collections
+import pdb
 
 logger = logging.getLogger("TrackingDB")
 logging.basicConfig(level=logging.INFO)
@@ -82,7 +83,7 @@ class MontageDBTracker:
         self.max_dist = max_dist
         logger.info(f"Initialized MontageDBTracker for experiment {experiment}")
 
-    def gather_encoded_from_db(self, wells, channel_marker="_ENCODED_MONTAGE"):
+    def gather_encoded_from_db(self, wells, channel_marker="_MONTAGE_ALIGNED_ENCODED"):
         """
         Fetch montage paths from the `welldata` table via Ops.get_welldata_df().
         Returns: dict of {well: OrderedDict(timepoint: [[label, Cell], ...])}
@@ -107,14 +108,14 @@ class MontageDBTracker:
         # 1. Filter to only your newmaskmontage rows in the wells you care about
         df = tiledata_df[
             tiledata_df['well'].isin(wells) &
-            tiledata_df['newmaskmontage'].str.contains(channel_marker, na=False)
+            tiledata_df['alignedmontagemaskpath'].str.contains(channel_marker, na=False)
         ]
 
         # 2. Collapse to one mask per (well, timepoint) — take the first path in each group
         df = (
             df
             .groupby(['well','timepoint'], as_index=False)
-            .agg({'newmaskmontage':'first'})
+            .agg({'alignedmontagemaskpath':'first'})
         )
         # # Only rows for our wells with the encoded‐montage suffix
         # df = tiledata_df[
@@ -128,22 +129,28 @@ class MontageDBTracker:
         #     welldata_df.well.isin(wells) &
         #     welldata_df.maskmontage.str.contains(channel_marker, na=False)
         # ]
+        
 
         results = {}
         for well in wells:
+            print('\nTracking wells', well)
             df_w = df[df['well'] == well]
             if df_w.empty:
                 logger.warning(f"No encoded masks for well {well}")
                 continue
             time_dict = collections.OrderedDict()
-            for _, row in df_w.iterrows():
-                mask_path = row['newmaskmontage']
+            for i, row in df_w.iterrows():
+                if i >= 3:
+                    break
+                print("Row:", row['alignedmontagemaskpath'])
+                mask_path = row['alignedmontagemaskpath']
                 tp_label = os.path.basename(mask_path).split('_')[2]
                 tp = int(tp_label.lstrip('T')) if tp_label.startswith('T') else int(tp_label)
                 entries = time_dict.setdefault(tp, [])
                 mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
                 labels = np.unique(mask); labels = labels[labels > 0]
                 for lbl in labels:
+                    print("Labels:", lbl)
                     bin_mask = (mask == lbl).astype(np.uint8) * 255
                     cnts, _ = cv2.findContours(bin_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                     if cnts:
@@ -201,7 +208,7 @@ class MontageDBTracker:
                         update_dct={'cellid': int(new_id)},
                         kwargs={
                             'tiledata_id': tiledata_id,
-                            'randomcellid': int(new_id)
+                            'randomcellid_montage': int(new_id)
                         }
                     )
 
@@ -211,7 +218,7 @@ class MontageDBTracker:
                     logger.warning(f"No montage found for well {well} TP {tp}")
                     continue
 
-                original_mask_path = df_wtp['newmaskmontage'].values[0]
+                original_mask_path = df_wtp['alignedmontagemaskpath'].values[0]
 
                 # Read original mask
                 orig_mask = cv2.imread(original_mask_path, cv2.IMREAD_UNCHANGED)
