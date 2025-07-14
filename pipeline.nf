@@ -198,7 +198,7 @@ optimizer_ch = Channel.of(params.optimizer)
 //KS edit to include overlays
 include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;SEGMENTATION_MONTAGE;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY; 
-    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED} from './modules.nf'
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -228,7 +228,8 @@ log.info """\
     Plate Montage: ${params.DO_PLATEMONTAGE}
     CNN: ${params.DO_CNN}
     Get CSVS: ${params.DO_GET_CSVS}
-    Overlay: ${params.DO_OVERLAY} 
+    Overlay: ${params.DO_OVERLAY}
+    Overlay Montage: ${params.DO_OVERLAY_MONTAGE}
     """
     .stripIndent()
 
@@ -521,6 +522,26 @@ if (params.DO_ALIGN_MONTAGE_DFT) {
         )
         overlay_ch.view { it } // Optional: Debugging output
     }
+
+    if (params.DO_OVERLAY_MONTAGE) {
+        overlay_ch = OVERLAY_MONTAGE(
+            track_result,
+            experiment_ch,
+            morphology_ch,
+            well_ch,
+            tp_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            params.shift,
+            params.contrast,
+            tile_ch
+        )
+        
+    }
+
+
+    
 
 }
 

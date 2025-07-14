@@ -85,7 +85,7 @@ process SEGMENTATION_MONTAGE {
     val chosen_timepoints
     val wells_toggle
     val timepoints_toggle
-    val use_aligned_tiles
+    //val use_aligned_tiles
 
     output: 
     val true
@@ -96,7 +96,8 @@ process SEGMENTATION_MONTAGE {
     --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
     --sd_scale_factor ${sd_scale_factor} \
     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --use_aligned_tiles ${use_aligned_tiles}
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} 
+    
     """
 }
 
@@ -694,3 +695,34 @@ process OVERLAY {
     --tile ${tile}
     """
 }
+
+process OVERLAY_MONTAGE {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    
+    input:
+    val ready
+    val exp
+    val morphology_channel
+    val chosen_wells
+    val chosen_timepoints
+    val wells_toggle
+    val timepoints_toggle
+    val channels_toggle
+    val shift
+    val contrast
+    val tile
+   
+
+    output:
+    val true
+
+    script:
+    """
+    overlay_montage.py --experiment ${exp} --target_channel ${morphology_channel} \
+    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \
+    --tile ${tile}
+    """
+}
+

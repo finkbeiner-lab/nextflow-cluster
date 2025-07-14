@@ -251,8 +251,8 @@ if __name__ == '__main__':
                         dest="chosen_channels", default='GFP-DMD1',
                         help="Morphology channel.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
-    parser.add_argument('--use_aligned_tiles', action='store_true',
-                    help="Use aligned tile images if available")
+   # parser.add_argument('--use_aligned_tiles', action='store_true',
+                   # help="Use aligned tile images if available")
 
     args = parser.parse_args()
     print(args)
