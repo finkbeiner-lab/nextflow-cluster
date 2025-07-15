@@ -25,7 +25,6 @@ From: ubuntu:22.04
         ca-certificates \
         software-properties-common \
         build-essential \
-        openjdk-11-jdk \
         ant \
         libpq5 \
         unzip \
@@ -34,7 +33,9 @@ From: ubuntu:22.04
         python3-pip
 
     # Install the latest version of Java (OpenJDK 11)
-    apt-get install -y openjdk-11-jdk
+    #apt-get install -y openjdk-11-jdk
+    
+    apt-get install -y openjdk-17-jdk
 
     # Install the latest version of Nextflow
     curl -s https://get.nextflow.io | bash
@@ -54,7 +55,7 @@ From: ubuntu:22.04
     /opt/conda/bin/conda install -n datastudy pandas imageio psycopg2 scikit-image matplotlib openpyxl -y
     /opt/conda/bin/conda install -n datastudy -c conda-forge 'sqlalchemy>=2.0.4' -y
     /opt/conda/bin/conda install -n datastudy -c gurobi gurobi -y
-    /opt/conda/bin/conda run -n datastudy pip install opencv-python wandb cellpose pyomo numpy
+    /opt/conda/bin/conda run -n datastudy pip install opencv-python wandb cellpose pyomo numpy imreg_dft
 
     # Clean up
     apt-get clean
@@ -62,7 +63,7 @@ From: ubuntu:22.04
 
 %environment
     # Set environment variables for Java, Gurobi, Maven, etc.
-    export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64/  # Use OpenJDK 11 instead of 8
+    export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64/  # Use OpenJDK 11 instead of 8
     export GUROBI_HOME="/opt/gurobi"
     export PATH="/opt/conda/envs/datastudy/bin:$PATH"
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
@@ -75,4 +76,3 @@ From: ubuntu:22.04
     source /opt/conda/etc/profile.d/conda.sh
     conda activate datastudy
     export CONDA_DEFAULT_ENV=datastudy
-

@@ -99,7 +99,8 @@ process SEGMENTATION {
     --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
     --sd_scale_factor ${sd_scale_factor} \
     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --use_aligned_tiles ${use_aligned_tiles}
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+   ${ use_aligned_tiles ? '--use_aligned_tiles' : '' }
     """
 }
 
@@ -135,8 +136,7 @@ process SEGMENTATION_MONTAGE {
     --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
     --sd_scale_factor ${sd_scale_factor} \
     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} 
-    
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}  ${use_aligned_tiles ? '--use_aligned_tiles' : ''}
     """
 }
 
@@ -449,6 +449,7 @@ process MONTAGE {
 }
 
 process ALIGNMENT {
+     // Force bash shell so `conda activate` works
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
     val exp
@@ -467,7 +468,8 @@ process ALIGNMENT {
 
     script:
     """
-    dft_alignment.py --experiment ${exp} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
+
+    align_tiles_dft.py --experiment ${exp} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --morphology_channel ${morphology_channel} --alignment_algorithm ${alignment_algorithm} --robo_num ${robo_num} \
     --dir_structure ${dir_structure} --imaging_mode ${imaging_mode} --tiletype ${aligntiletype} --shift ${shift}
     """
@@ -496,6 +498,7 @@ process ALIGN_TILES_DFT {
 
     script:
     """
+
     align_tiles_dft.py \
       --experiment "$experiment" \
       --morphology_channel "$morphology_channel" \
