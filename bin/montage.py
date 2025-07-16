@@ -235,6 +235,7 @@ if __name__ == '__main__':
         help='Text status',
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
+    
     print("chosenchanneltest")
     parser.add_argument('--experiment', default='JAK-COR7508012023-GEDI', type=str)
     parser.add_argument('--tiletype', default='maskpath', choices=['filename', 'maskpath', 'trackedmaskpath'], type=str,
