@@ -8,7 +8,6 @@ import numpy as np
 import pandas as pd
 import argparse
 from sql import Database
-import pdb
 
 
 class OverlayBatch:
@@ -27,14 +26,17 @@ class OverlayBatch:
         if not result or not result[0][0]:
             raise ValueError(f"[ERROR] analysisdir not found for experiment '{self.experiment_name}'")
 
-        self.experiment_root = result[0][0].rstrip('/')
+        self.experiment_root = result[0][0].rstrip('/')  # Ensure no trailing slash
         print(f"[INFO] Found experiment root: {self.experiment_root}")
 
+        # Set aligned montage and overlay directories
         self.montage_root = os.path.join(self.experiment_root, "AlignedMontages")
         self.overlay_root = os.path.join(self.experiment_root, "Overlay_Montages")
 
+        # Set font
         self.font = ImageFont.truetype('/usr/share/fonts/dejavu/DejaVuSansMono.ttf', 50)
 
+        # Load tracking CSV
         summary_path = os.path.join(
             self.experiment_root,
             f"{self.experiment_name}_tracked_montage_summary.csv"
@@ -46,42 +48,17 @@ class OverlayBatch:
         print(f"[INFO] Loaded tracking summary: {summary_path}")
 
     def run(self):
-        
         for well in os.listdir(self.montage_root):
             well_path = os.path.join(self.montage_root, well)
             if not os.path.isdir(well_path):
                 continue
 
-            # Filter wells
-            if self.opt.wells_toggle == "include" and self.opt.chosen_wells != "all":
-                if well not in self.opt.chosen_wells.split(","):
-                    continue
-            elif self.opt.wells_toggle == "exclude":
-                if well in self.opt.chosen_wells.split(","):
-                    continue
-
             for fname in os.listdir(well_path):
                 if "_MONTAGE_ALIGNED.tif" not in fname:
                     continue
 
-                # if self.opt.target_channel not in fname:
-                #     continue  # skip non-target channel images
-
-                # if not any(ch in fname for ch in self.opt.target_channel):
-                #     continue
-
                 aligned_path = os.path.join(well_path, fname)
                 timepoint = self.extract_timepoint(fname)
-
-                # Filter timepoints
-                if self.opt.timepoints_toggle == "include" and self.opt.chosen_timepoints != "all":
-                    tp_range = self.parse_timepoints(self.opt.chosen_timepoints)
-                    if timepoint not in tp_range:
-                        continue
-                elif self.opt.timepoints_toggle == "exclude":
-                    tp_range = self.parse_timepoints(self.opt.chosen_timepoints)
-                    if timepoint in tp_range:
-                        continue
 
                 self.overlay_image(
                     aligned_path=aligned_path,
@@ -90,20 +67,12 @@ class OverlayBatch:
                 )
 
     def extract_timepoint(self, filename):
+        """Extract timepoint number from filename"""
         parts = filename.split('_')
         for part in parts:
             if part.startswith('T') and part[1:].isdigit():
                 return int(part[1:])
         raise ValueError(f"Could not find timepoint in filename: {filename}")
-
-    def parse_timepoints(self, tp_string):
-        if tp_string == "all":
-            return list(range(100))  # Assume max 100 timepoints
-        elif "-" in tp_string:
-            start, end = map(int, tp_string.replace("T", "").split("-"))
-            return list(range(start, end + 1))
-        else:
-            return [int(tp_string.replace("T", ""))]
 
     def overlay_image(self, aligned_path, well, timepoint):
         df_filtered = self.df[
@@ -147,12 +116,6 @@ class OverlayBatch:
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--experiment_name', required=True, help="Experiment name")
-    parser.add_argument('--target_channel', required=True, help="Channel to use (e.g., Epi-GFP16)")
-    parser.add_argument('--chosen_wells', default="all", help="Comma-separated wells (e.g., D3,E4) or 'all'")
-    parser.add_argument('--chosen_timepoints', default="all", help="e.g. 'T0', 'T0-T2', or 'all'")
-    parser.add_argument('--wells_toggle', default="include", choices=["include", "exclude"])
-    parser.add_argument('--timepoints_toggle', default="include", choices=["include", "exclude"])
-    parser.add_argument('--channels_toggle', default="include", choices=["include", "exclude"])
     parser.add_argument('--shift', default=20, type=int, help="Pixel shift for label placement")
     parser.add_argument('--contrast', default=1.3, type=float, help="Adjust contrast")
     args = parser.parse_args()

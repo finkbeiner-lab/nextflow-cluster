@@ -701,7 +701,6 @@ process OVERLAY_MONTAGE {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     
     input:
-    val ready
     val exp
     val morphology_channel
     val chosen_wells
@@ -711,8 +710,7 @@ process OVERLAY_MONTAGE {
     val channels_toggle
     val shift
     val contrast
-    val tile
-   
+
 
     output:
     val true
@@ -722,8 +720,6 @@ process OVERLAY_MONTAGE {
     overlay_montage.py --experiment ${exp} --target_channel ${morphology_channel} \
     --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
-    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \
-    --tile ${tile}
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast}
     """
 }
-
