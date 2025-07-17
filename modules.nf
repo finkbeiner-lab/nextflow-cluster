@@ -225,6 +225,7 @@ process TRACKING_MONTAGE {
     val track_type           // "overlap" or "proximity"
     val distance_threshold   // integer → --max_dist
     val chosen_wells         // comma‑sep list → --wells
+    val target_channel 
     output:
        // send everything that the Python script prints to STDOUT
 
@@ -232,7 +233,7 @@ process TRACKING_MONTAGE {
 
     script:
     """
-    tracking_montage.py --experiment  ${exp} --track_type  ${track_type} --max_dist    ${distance_threshold} --wells       ${chosen_wells}
+    tracking_montage.py --experiment  ${exp} --track_type  ${track_type} --max_dist    ${distance_threshold} --wells ${chosen_wells} --target_channel ${target_channel } 
     """
 }
 

@@ -5,9 +5,12 @@ import numpy as np
 import logging
 import argparse
 import os
+from db_util import Ops
 from sql import Database
 import pandas as pd
 import collections
+import ast  # Safe way to evaluate a string representation of a list
+
 
 logger = logging.getLogger("TrackingDB")
 logging.basicConfig(level=logging.INFO)
@@ -85,11 +88,16 @@ def populate_cell_ind_closest(time_dict, time_list, max_dist=100):
     return time_dict
 
 class MontageDBTracker:
-    def __init__(self, experiment, track_type, max_dist):
+    def __init__(self, experiment, track_type, max_dist, target_channel):
         self.Db = Database()
         self.experiment = experiment
         self.track_type = track_type
         self.max_dist = max_dist
+        self.target_channel = target_channel.split(',')
+
+
+
+        self.analysisdir = ""
         logger.info(f"Initialized MontageDBTracker for experiment {experiment}")
 
     def gather_encoded_from_db(self, wells, channel_marker="_MONTAGE_ALIGNED_ENCODED"):
@@ -185,6 +193,8 @@ class MontageDBTracker:
                 if df_wtp.empty:
                     continue
                 mask_path = df_wtp['alignedmontagemaskpath'].iloc[0]
+              
+                self.analysisdir = os.path.dirname(mask_path.split('CellMasksMontage')[0])
                 mask = cv2.imread(mask_path, cv2.IMREAD_UNCHANGED)
                 base_path = mask_path.replace('_MONTAGE_ALIGNED_ENCODED.tif', '')
                 
@@ -195,11 +205,9 @@ class MontageDBTracker:
                     tracked_mask[mask == cell.randomcellid_montage] = new_id
 
                 # Construct the output path for the tracked TIFF
-                tracked_folder = os.path.join(
-                    os.path.dirname(os.path.dirname(mask_path)),
-                    'CellMasksMontage',
-                    well
-                )
+            
+                tracked_folder = os.path.join(self.analysisdir, 'TrackedCellMasksMontage', well)
+               
                 os.makedirs(tracked_folder, exist_ok=True)
 
                 tracked_filename = os.path.basename(mask_path).replace(
@@ -213,36 +221,56 @@ class MontageDBTracker:
                 channel_imgs = {}
                 aligned_img_dir = f"/gladstone/finkbeiner/steve/WeiyiLiu/GXYTMP/{self.experiment}/AlignedMontages/{well}"
 
-                import pdb
-                pdb.set_trace()
+                # Target channenl only for calculate the intensities, not tracking
 
-
-
-                for ch in ['Epi-GFP16', 'Epi-RFP16', 'DAPI']:
-                    aligned_path = mask_path.replace('/CellMasksMontage/', '/AlignedMontages/')
+                # for ch in self.target_channel :
+                #     aligned_path = mask_path.replace('/CellMasksMontage/', '/AlignedMontages/')
     
-                    # Step 2: Replace "_MONTAGE_ALIGNED_ENCODED.tif" with "_MONTAGE_ALIGNED.tif"
+                #     # Step 2: Replace "_MONTAGE_ALIGNED_ENCODED.tif" with "_MONTAGE_ALIGNED.tif"
+                #     aligned_path = aligned_path.replace('_MONTAGE_ALIGNED_ENCODED.tif', '_MONTAGE_ALIGNED.tif')
+
+                #     img_path = os.path.join(aligned_img_dir, aligned_path)
+                    
+                #     if os.path.exists(img_path):
+                #         channel_imgs[ch] = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
+                #     else:
+                #         logger.warning(f"[WARN] Missing aligned image for {ch} at: {img_path}")
+
+                # import pdb
+                # pdb.set_trace()
+                # Split comma-separated string into a list
+                
+                for ch in self.target_channel:
+                    print("Intensity calcuation ", ch)
+                  
+                    aligned_path = mask_path.replace('/CellMasksMontage/', '/AlignedMontages/')
+
+                    # Ensure the correct channel name is in the filename
+                    # Extract the filename part
+                    filename = os.path.basename(aligned_path)
+                    dirname = os.path.dirname(aligned_path)
+
+                    # Replace the channel name in the filename (the part before "_MONTAGE_ALIGNED_ENCODED.tif")
+                    parts = filename.split('_')
+                    # The channel is usually at index -5; replace it safely
+                    for i, part in enumerate(parts):
+                        if part.startswith('Epi-') or part.startswith('DAPI') or part.startswith('Cy'):
+                            parts[i] = ch
+                            break
+                    filename = '_'.join(parts)
+
+                    # Rebuild the aligned_path with corrected channel
+                    aligned_path = os.path.join(dirname, filename)
+
+                    # Then convert "_MONTAGE_ALIGNED_ENCODED.tif" to "_MONTAGE_ALIGNED.tif"
                     aligned_path = aligned_path.replace('_MONTAGE_ALIGNED_ENCODED.tif', '_MONTAGE_ALIGNED.tif')
 
                     img_path = os.path.join(aligned_img_dir, aligned_path)
-                    
+
                     if os.path.exists(img_path):
                         channel_imgs[ch] = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                     else:
                         logger.warning(f"[WARN] Missing aligned image for {ch} at: {img_path}")
-
-
-                # channel_imgs = {}
-                # for ch in ['Epi-GFP16', 'Epi-RFP16', 'DAPI']:
-                #     img_path = base_path.replace('maskpath', ch).replace('_ENCODED', '')
-                #     print(f"\n[DEBUG] base_path: {base_path}")
-                #     for ch in ['Epi-GFP16', 'Epi-RFP16', 'DAPI']:
-                #         img_path = base_path.replace('maskpath', ch).replace('_ENCODED', '')
-                #         exists = os.path.exists(img_path)
-                #         print(f"[DEBUG] Channel {ch}: {img_path} → exists={exists}")
-
-                #     if os.path.exists(img_path):
-                #         channel_imgs[ch] = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
 
 
 
@@ -264,7 +292,7 @@ class MontageDBTracker:
                     out_records.append(row)
 
         out_df = pd.DataFrame(out_records)
-        outfile = f"{self.experiment}_tracked_montage_summary.csv"
+        outfile = os.path.join(self.analysisdir, f"{self.experiment}_tracked_montage_summary.csv")
         out_df.to_csv(outfile, index=False)
         logger.info(f"Wrote tracked data to {outfile}")
 
@@ -274,8 +302,11 @@ if __name__ == '__main__':
     parser.add_argument('--track_type', choices=['overlap','proximity'], default='overlap', help='Tracking method')
     parser.add_argument('--max_dist', type=int, default=100, help='Max distance for proximity')
     parser.add_argument('--wells', required=True, help='Comma-separated list of wells, e.g. A1,B1')
+    parser.add_argument("--target_channel",  type=str, default='Cy5',
+                        dest="target_channel",
+                        help="Get intensity of this channel.")
     args = parser.parse_args()
 
     wells = [w.strip() for w in args.wells.split(',')]
-    tracker = MontageDBTracker(args.experiment, args.track_type, args.max_dist)
+    tracker = MontageDBTracker(args.experiment, args.track_type, args.max_dist, args.target_channel)
     tracker.run(wells)

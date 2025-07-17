@@ -398,12 +398,21 @@ if (params.DO_ALIGN_MONTAGE_DFT) {
     // prepare your input‑ready flag
     tracking_montage_flag = seg_result.mix(cellpose_result).collect()
 
+       // convert list to comma-separated string if needed
+    def target_channel_str = params.target_channel instanceof List 
+        ? params.target_channel.join(',') 
+        : params.target_channel
+
+    // create a value channel from the string
+    target_channel_ch = Channel.value(target_channel_str)
+
     // invoke the process; this returns a channel of all stdout lines
     track_montage_ch = TRACKING_MONTAGE(
         experiment_ch,
         track_type_ch,
         distance_threshold_ch,
-        well_ch
+        well_ch,
+        target_channel_ch
     )
 
     // print each line your Python script outputs
