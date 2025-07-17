@@ -221,6 +221,7 @@ process TRACKING_MONTAGE {
     
 
     input:
+    val ready
     val exp                  // your experiment name
     val track_type           // "overlap" or "proximity"
     val distance_threshold   // integer → --max_dist
@@ -467,6 +468,7 @@ process ALIGN_MONTAGE_DFT {
     publishDir "$params.outdir/AlignedMontages", mode: 'copy'
 
     input:
+    val ready
     val experiment
     val morphology_channel
     val wells
@@ -479,7 +481,7 @@ process ALIGN_MONTAGE_DFT {
     val shift_dict
 
     output:
-    path "AlignedTiles/**", optional: true
+    val true
 
     script:
     """
@@ -701,6 +703,7 @@ process OVERLAY_MONTAGE {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     
     input:
+    val ready
     val exp
     val morphology_channel
     val chosen_wells

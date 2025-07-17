@@ -254,7 +254,7 @@ class MontageDBTracker:
                     parts = filename.split('_')
                     # The channel is usually at index -5; replace it safely
                     for i, part in enumerate(parts):
-                        if part.startswith('Epi-') or part.startswith('DAPI') or part.startswith('Cy'):
+                        if part.startswith('Epi-') or part.startswith('DAPI') or part.startswith('Cy') or part.startswith('FITC') or part.startswith('RFP') or part.startswith('Confocal-') :
                             parts[i] = ch
                             break
                     filename = '_'.join(parts)

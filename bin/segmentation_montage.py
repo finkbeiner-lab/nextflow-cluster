@@ -103,7 +103,7 @@ class Segmentation:
             # Select aligned image if requested and available
 # pick aligned image if available, otherwise raw
             # pick aligned image if available, otherwise raw
-            img_path = row.alignedmontagepath if pd.notna(row.alignedmontagepath) else row.filename
+            img_path = row.alignedmontagepath if pd.notna(row.alignedmontagepath) else row.newimagemontage
             img      = imageio.imread(img_path)
 
             # skip normalization when using an aligned tile

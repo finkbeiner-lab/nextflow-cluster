@@ -115,6 +115,8 @@ log.info """\
     Get CSVS: ${params.DO_GET_CSVS}
     Overlay: ${params.DO_OVERLAY}
     Overlay Montage: ${params.DO_OVERLAY_MONTAGE}
+    Standard Workflow: ${params.DO_STD_WORKFLOW}
+    Standard IXM Workflow: ${params.DO_STD_WORKFLOW_IXM}
     """
     .stripIndent()
 
@@ -433,6 +435,172 @@ if (params.DO_ALIGN_MONTAGE_DFT) {
         )
         
     }
+
+
+    if (params.DO_STD_WORKFLOW) {
+
+        log.info "▶ Running DO_STD_WORKFLOW: MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
+
+        // Step 1: MONTAGE
+        montage_ready_ch = Channel.of(true)
+        montage_ch = MONTAGE(
+            montage_ready_ch,
+            experiment_ch,
+            tiletype_ch,
+            montage_pattern_ch,
+            well_ch,
+            tp_ch,
+            channel_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            image_overlap_ch
+        )
+        montage_result = MONTAGE.out
+
+        // Step 2: ALIGN_MONTAGE_DFT
+        align_ready_ch = montage_result.collect()
+        align_montage_ch = ALIGN_MONTAGE_DFT(
+            align_ready_ch,
+            experiment_ch,
+            morphology_ch,
+            well_ch,
+            tp_ch,
+            channel_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            tile_ch,
+            shift_dict_ch
+        )
+        align_result = ALIGN_MONTAGE_DFT.out
+
+        // Step 3: SEGMENTATION_MONTAGE
+        segmont_ready_ch = align_result.collect()
+        segmentation_montage_ch = SEGMENTATION_MONTAGE(
+            segmont_ready_ch,
+            experiment_ch,
+            morphology_ch,
+            seg_ch,
+            norm_ch,
+            lower_ch,
+            upper_ch,
+            sd_ch,
+            well_ch,
+            tp_ch,
+            well_toggle_ch,
+            tp_toggle_ch
+        )
+        segmont_result = SEGMENTATION_MONTAGE.out
+
+        // Step 4: TRACKING_MONTAGE
+        trackmont_ready_ch = segmont_result.collect()
+        def target_channel_str = params.target_channel instanceof List 
+            ? params.target_channel.join(',')
+            : params.target_channel
+        target_channel_ch = Channel.value(target_channel_str)
+
+        tracking_montage_ch = TRACKING_MONTAGE(
+            trackmont_ready_ch,
+            experiment_ch,
+            track_type_ch,
+            distance_threshold_ch,
+            well_ch,
+            target_channel_ch
+        )
+        trackmont_result = TRACKING_MONTAGE.out
+
+        // Step 5: OVERLAY_MONTAGE
+        overlay_ready_ch = trackmont_result.collect()
+        overlay_montage_ch = OVERLAY_MONTAGE(
+            overlay_ready_ch,
+            experiment_ch,
+            morphology_ch,
+            well_ch,
+            tp_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            shift_ch,
+            contrast_ch
+        )
+        overlay_result = OVERLAY_MONTAGE.out
+}
+
+
+if (params.DO_STD_WORKFLOW_IXM) {
+
+        log.info "▶ Running DO_STD_WORKFLOW: MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
+
+        // Step 1: MONTAGE
+        montage_ready_ch = Channel.of(true)
+        montage_ch = MONTAGE(
+            montage_ready_ch,
+            experiment_ch,
+            tiletype_ch,
+            montage_pattern_ch,
+            well_ch,
+            tp_ch,
+            channel_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            image_overlap_ch
+        )
+        montage_result = MONTAGE.out
+
+
+        // Step 2: SEGMENTATION_MONTAGE
+        segmont_ready_ch = montage_result.collect()
+        segmentation_montage_ch = SEGMENTATION_MONTAGE(
+            segmont_ready_ch,
+            experiment_ch,
+            morphology_ch,
+            seg_ch,
+            norm_ch,
+            lower_ch,
+            upper_ch,
+            sd_ch,
+            well_ch,
+            tp_ch,
+            well_toggle_ch,
+            tp_toggle_ch
+        )
+        segmont_result = SEGMENTATION_MONTAGE.out
+
+        // Step 4: TRACKING_MONTAGE
+        trackmont_ready_ch = segmont_result.collect()
+        def target_channel_str = params.target_channel instanceof List 
+            ? params.target_channel.join(',')
+            : params.target_channel
+        target_channel_ch = Channel.value(target_channel_str)
+
+        tracking_montage_ch = TRACKING_MONTAGE(
+            trackmont_ready_ch,
+            experiment_ch,
+            track_type_ch,
+            distance_threshold_ch,
+            well_ch,
+            target_channel_ch
+        )
+        trackmont_result = TRACKING_MONTAGE.out
+
+        // Step 5: OVERLAY_MONTAGE
+        overlay_ready_ch = trackmont_result.collect()
+        overlay_montage_ch = OVERLAY_MONTAGE(
+            overlay_ready_ch,
+            experiment_ch,
+            morphology_ch,
+            well_ch,
+            tp_ch,
+            well_toggle_ch,
+            tp_toggle_ch,
+            channel_toggle_ch,
+            shift_ch,
+            contrast_ch
+        )
+        overlay_result = OVERLAY_MONTAGE.out
+}
 
 
     
