@@ -72,6 +72,10 @@ process SEGMENTATION {
 
 process SEGMENTATION_MONTAGE {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+
+    tag "$well"
+    publishDir "$params.outdir/CellMasksMontage/${well}", mode: 'copy'
+    
     input:
     val ready
     val exp

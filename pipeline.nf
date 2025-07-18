@@ -255,7 +255,9 @@ workflow {
 }
 
 if (params.DO_ALIGN_MONTAGE_DFT) {
+    align_montage_ch = Channel.of(true)
         align_montage_dft_ch = ALIGN_MONTAGE_DFT(
+            align_montage_ch,
             experiment_ch,
             morphology_ch,
             well_ch,
@@ -283,7 +285,8 @@ if (params.DO_ALIGN_MONTAGE_DFT) {
     }
     if (params.DO_TRACKING_MONTAGE) {
     // prepare your input‑ready flag
-    tracking_montage_flag = seg_result.mix(cellpose_result).collect()
+    tracking_montage_ch = Channel.of(true)
+    //tracking_montage_flag = seg_result.mix(cellpose_result).collect()
 
        // convert list to comma-separated string if needed
     def target_channel_str = params.target_channel instanceof List 
@@ -295,6 +298,7 @@ if (params.DO_ALIGN_MONTAGE_DFT) {
 
     // invoke the process; this returns a channel of all stdout lines
     track_montage_ch = TRACKING_MONTAGE(
+        tracking_montage_ch,
         experiment_ch,
         track_type_ch,
         distance_threshold_ch,
@@ -420,8 +424,10 @@ if (params.DO_ALIGN_MONTAGE_DFT) {
     }
 
     if (params.DO_OVERLAY_MONTAGE) {
+        overlay_montage_ch = Channel.of(true)
         
         overlay_ch = OVERLAY_MONTAGE(
+            overlay_montage_ch,
             experiment_ch,
             morphology_ch,
             well_ch,
@@ -530,7 +536,7 @@ if (params.DO_ALIGN_MONTAGE_DFT) {
 
 if (params.DO_STD_WORKFLOW_IXM) {
 
-        log.info "▶ Running DO_STD_WORKFLOW: MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
+        log.info "▶ Running DO_STD_WORKFLOW: MONTAGE → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
 
         // Step 1: MONTAGE
         montage_ready_ch = Channel.of(true)

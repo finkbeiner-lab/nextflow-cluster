@@ -16,6 +16,7 @@ import datetime
 from time import time
 from segmentation_helper_montage import save_mask, update_celldata_and_intensitycelldata
 from threading import Thread  # todo: dispy.SharedJobCluster library? distribute jobs across nodes
+import pdb
 
 
 logger = logging.getLogger("Segmentation")
@@ -66,31 +67,54 @@ class Segmentation:
         thresh = int(np.mean(img) + np.std(img) * self.opt.sd_scale_factor)
         return thresh
 
+    #Orignal with parallel threads
+    # def run_threshold(self):
+    #     Db = Database()
+    #     tiledata_df = self.Norm.get_tiledata_df()
+    #     g = tiledata_df.groupby(['well', 'timepoint'])
+        
+    #     jobs = []
+    #     for (well, timepoint), df in g:
+    #         # self.thresh_single(Db, df, well, timepoint)
+
+    #         thread = Thread(target=self.thresh_single, args=(Db, df, well, timepoint))
+    #         jobs.append(thread)
+    #         if len(jobs) > self.thread_lim:
+    #             for j in jobs:
+    #                 j.start()
+    #             for j in jobs:
+    #                 j.join()
+    #             jobs = []
+    #     if len(jobs):
+    #         for j in jobs:
+    #             j.start()
+    #         for j in jobs:
+    #             j.join()
+    #     jobs = []
+    #     print('Done.')
+
+
+
     def run_threshold(self):
         Db = Database()
         tiledata_df = self.Norm.get_tiledata_df()
-        g = tiledata_df.groupby(['well', 'timepoint'])
-        
-        jobs = []
-        for (well, timepoint), df in g:
-            # self.thresh_single(Db, df, well, timepoint)
 
-            thread = Thread(target=self.thresh_single, args=(Db, df, well, timepoint))
-            jobs.append(thread)
-            if len(jobs) > self.thread_lim:
-                for j in jobs:
-                    j.start()
-                for j in jobs:
-                    j.join()
-                jobs = []
-        if len(jobs):
-            for j in jobs:
-                j.start()
-            for j in jobs:
-                j.join()
-        jobs = []
-        print('Done.')
+        # Filter by well
+        tiledata_df = tiledata_df[tiledata_df['well'] == self.opt.chosen_wells]
 
+        # Filter by timepoint if not "all"
+        # if self.opt.chosen_timepoints != 'all':
+        #     tiledata_df = tiledata_df[tiledata_df['timepoint'] == int(self.opt.chosen_timepoints)]
+
+        if tiledata_df.empty:
+            logger.warning(f"No tile data found for well {self.opt.chosen_wells} and timepoint {self.opt.chosen_timepoints}")
+            return
+
+        grouped = tiledata_df.groupby(['well', 'timepoint'])
+        for (well, timepoint), df in grouped:
+            self.thresh_single(Db, df, well, timepoint)
+
+    
     def thresh_single(self, Db, df, well, timepoint):
         strt = time()
         df.sort_values(by='tile', inplace=True)
@@ -104,6 +128,14 @@ class Segmentation:
 # pick aligned image if available, otherwise raw
             # pick aligned image if available, otherwise raw
             img_path = row.alignedmontagepath if pd.notna(row.alignedmontagepath) else row.newimagemontage
+
+            if pd.notna(row.alignedmontagepath):
+                print("Selected: aligned montage path")
+            else:
+                print("Selected: new image montage path")
+
+            print(f"Image path: {img_path}")
+            
             img      = imageio.imread(img_path)
 
             # skip normalization when using an aligned tile
@@ -120,15 +152,7 @@ class Segmentation:
                 )
                 smoothed_im = self.Norm.gaussian_filter(smoothed_im)
 
-            
-            # #Original
-            # img_path = row.alignedtilepath if pd.notna(row.alignedtilepath) else row.filename
-            # img = imageio.imread(img_path)
-
-            # # img = imageio.imread(row.filename)  # TODO: is opencv faster/ more memory efficient?
-
-            # smoothed_im = self.Norm.image_bg_correction[self.opt.img_norm_name](img, well, timepoint)
-            # smoothed_im = self.Norm.gaussian_filter(smoothed_im)
+        
             if self.segmentation_method=='manual':
                 thresh = self.opt.manual_thresh
             elif self.segmentation_method=='tryall':
@@ -188,7 +212,11 @@ class Segmentation:
 
             last_tile = np.hstack((img, regions))
             imageio.imwrite(self.opt.outfile, last_tile)
-        del self.Norm.backgrounds[well][timepoint]
+
+        try:
+            del self.Norm.backgrounds[well][timepoint]
+        except KeyError:
+            print(f"⚠️  No background found for well {well}, timepoint {timepoint}. Skipping delete.")
         print(f'Finished well + timepoint in {time() - strt:.2f}')
         
     def filter_by_area(self, props_df:pd.DataFrame, labelled_mask):
