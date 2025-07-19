@@ -1,0 +1,96 @@
+Bootstrap: docker
+From: ubuntu:22.04
+
+# Metadata
+%labels
+    Author="Vivek Gopal Ramaswamy"
+    Email="vivek.gopalramaswamy@gladstone.ucsf.edu"
+    Version="1.0"
+    Description="A container for data study with PyTorch, OpenCV, R, Nextflow, and additional tools."
+    Maintainer="Vivek Gopal Ramaswamy <vivek.gopalramaswamy@gladstone.ucsf.edu>"
+
+%post
+    # Install dependencies
+    apt-get update && apt-get install -y \
+        curl \
+        ffmpeg \
+        libsm6 \
+        libxext6 \
+        git \
+        wget \
+        dirmngr \
+        gnupg \
+        apt-transport-https \
+        ca-certificates \
+        software-properties-common \
+        build-essential \
+        openjdk-8-jdk \
+        ant \
+        libpq5
+
+    # Download and install Miniconda for x86_64
+    curl -o /tmp/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    bash /tmp/miniconda.sh -b -p /opt/conda
+    rm /tmp/miniconda.sh
+
+    # Initialize Conda environment
+    export PATH="/opt/conda/bin:$PATH"
+    /opt/conda/bin/conda init bash
+
+    # Create Conda environment and install packages
+    /opt/conda/bin/conda create -n datastudy python=3.9 -y
+    /opt/conda/bin/conda install -n datastudy pandas imageio psycopg2 scikit-image matplotlib openpyxl -y
+    /opt/conda/bin/conda install -n datastudy -c conda-forge 'sqlalchemy>=2.0.4'
+    /opt/conda/bin/conda install -n datastudy -c gurobi gurobi
+    /opt/conda/bin/conda run -n datastudy pip install opencv-python wandb cellpose pyomo
+
+    # Install Nextflow
+    wget -qO- https://get.nextflow.io | bash
+    mv nextflow /usr/local/bin/
+
+    # Download and setup Fiji and Maven
+    wget -q https://downloads.imagej.net/fiji/latest/fiji-nojre.zip && unzip fiji-nojre.zip && rm fiji-nojre.zip
+    wget https://dlcdn.apache.org/maven/maven-3/3.9.5/binaries/apache-maven-3.9.5-bin.tar.gz
+    tar -xvf apache-maven-3.9.5-bin.tar.gz
+    mv apache-maven-3.9.5 /opt/
+    rm apache-maven-3.9.5-bin.tar.gz
+
+    # Setup Maven environment
+    export M2_HOME="/opt/apache-maven-3.9.5"
+    export PATH="$M2_HOME/bin:$PATH"
+
+    # Download the ij.jar file to /opt directory
+    wget "https://wsr.imagej.net/jars/ij.jar" -O /opt/ij.jar
+
+    # Install the jar file using Maven
+    mvn install:install-file -Dfile=/opt/ij.jar -DgroupId=com.finkbeiner -DartifactId=ij -Dversion=1.0 -Dpackaging=jar
+
+    # Setup environment variables
+    export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64/
+    export GUROBI_HOME="/opt/gurobi"
+    export PATH="${PATH}:${GUROBI_HOME}/bin"
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
+    export NUMBA_CACHE_DIR=/tmp
+    mkdir /.cellpose
+    chmod 777 /.cellpose
+
+%environment
+    # Set environment variables for Java, Gurobi, Maven, etc.
+    export JAVA_HOME=/usr/lib/jvm/java-8-openjdk-amd64/
+    export GUROBI_HOME="/opt/gurobi"
+    export PATH="/opt/conda/envs/datastudy/bin:$PATH"
+    export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
+    export NUMBA_CACHE_DIR=/tmp
+    export M2_HOME="/opt/apache-maven-3.9.5"
+    export PATH="$M2_HOME/bin:$PATH"
+
+    # Ensure Conda is available in every session
+    export PATH="/opt/conda/bin:$PATH"
+    source /opt/conda/etc/profile.d/conda.sh
+    conda activate datastudy
+    export CONDA_DEFAULT_ENV=datastudy
+
+%runscript
+    # Default command to run
+    exec /bin/bash "$@"
+

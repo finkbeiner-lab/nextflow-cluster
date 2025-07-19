@@ -616,3 +616,4 @@ if (params.DO_STD_WORKFLOW_IXM) {
 workflow.onComplete {
     log.info(workflow.success ? "\n The pipeline is successfully completed! Open the following report in your browser --> $params.outdir/pyexample_report.html\n" : 'Oops .. something went wrong')
 }
+
