@@ -138,19 +138,23 @@ class Segmentation:
             
             img      = imageio.imread(img_path)
 
-            # skip normalization when using an aligned tile
-            skip_norm = pd.notna(row.alignedmontagepath)
+            smoothed_im = img
 
-            if not skip_norm:
-                self.Norm.get_background_image(df, well, timepoint)
+            # # skip normalization when using an aligned tile
+            # skip_norm = pd.notna(row.alignedmontagepath)
 
-            if skip_norm:
-                smoothed_im = img
-            else:
-                smoothed_im = self.Norm.image_bg_correction[self.opt.img_norm_name](
-                    img, well, timepoint
-                )
-                smoothed_im = self.Norm.gaussian_filter(smoothed_im)
+            # if not skip_norm:
+            #     self.Norm.get_background_image(df, well, timepoint)
+
+            # pdb.set_trace()
+
+            # if skip_norm:
+            #     smoothed_im = img
+            # else:
+            #     smoothed_im = self.Norm.image_bg_correction[self.opt.img_norm_name](
+            #         img, well, timepoint
+            #     )
+            #     smoothed_im = self.Norm.gaussian_filter(smoothed_im)
 
         
             if self.segmentation_method=='manual':
