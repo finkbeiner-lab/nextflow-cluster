@@ -8,7 +8,7 @@ mkdir -p /gladstone/finkbeiner/steve/work/projects/datastudy/slurm-logs
 #SBATCH --time=08:00:00
 #SBATCH -N 1
 #SBATCH --output=/gladstone/finkbeiner/steve/work/projects/datastudy/slurm-logs/slurm-%j.out
-#SBATCH --gres=gpu:v100:1
+##SBATCH --gres=gpu:v100:1
 
 # Disable color output in Nextflow
 export NXF_CLI_COLOR=false

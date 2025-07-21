@@ -1,4 +1,4 @@
-#!/opt/conda/bin/python
+#!/usr/bin/env python
 """
 Aligns tile images using phase cross-correlation and DFT fallback.
 Computes shifts only on the morphology channel; applies those shifts to other channels as defined by params.chosen_channels (or all if "all").

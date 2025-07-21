@@ -136,7 +136,7 @@ process SEGMENTATION_MONTAGE {
     --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
     --sd_scale_factor ${sd_scale_factor} \
     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}  ${use_aligned_tiles ? '--use_aligned_tiles' : ''}
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}  
     """
 }
 
@@ -266,8 +266,8 @@ process TRACKING {
 }
 
 process TRACKING_MONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/ --mount type=bind,src=/opt/gurobi/,target=/opt/gurobi/"
     
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 
     input:
     val ready
@@ -441,6 +441,15 @@ process MONTAGE {
 
     script:
     """
+    echo ">>> MONTAGE  is starting on \$(hostname)"
+    #echo "Current working directory is: \$(pwd)"
+    #echo "Current LD_LIBRARY_PATH before: \$LD_LIBRARY_PATH"
+    #export LD_LIBRARY_PATH=/lib/x86_64-linux-gnu\$LD_LIBRARY_PATH
+    #unset PYTHONPATH
+    #unset PYTHONHOME
+    #unset PYTHONUSERBASE
+
+    #echo "Current LD_LIBRARY_PATH after: \$LD_LIBRARY_PATH"
     montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
     --chosen_channels ${chosen_channels} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle} \

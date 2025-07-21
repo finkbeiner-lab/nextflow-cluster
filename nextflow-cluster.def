@@ -1,8 +1,6 @@
-# Base image
 Bootstrap: docker
 From: ubuntu:22.04
 
-# Metadata
 %labels
     Author="Vivek Gopal Ramaswamy"
     Email="vivek.gopalramaswamy@gladstone.ucsf.edu"
@@ -11,7 +9,10 @@ From: ubuntu:22.04
     Maintainer="Vivek Gopal Ramaswamy <vivek.gopalramaswamy@gladstone.ucsf.edu>"
 
 %post
-    # Install dependencies
+    # Enable noninteractive install
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Basic packages
     apt-get update && apt-get install -y \
         curl \
         ffmpeg \
@@ -27,52 +28,68 @@ From: ubuntu:22.04
         build-essential \
         ant \
         libpq5 \
+        libpq-dev \
         unzip \
         bash \
-        zip \
+        zip
+
+    # Install Python 3.9 from deadsnakes
+    add-apt-repository ppa:deadsnakes/ppa -y
+    apt-get update && apt-get install -y \
+        python3.9 \
+        python3.9-distutils \
+        python3.9-dev \
         python3-pip
 
-    # Install the latest version of Java (OpenJDK 11)
-    #apt-get install -y openjdk-11-jdk
-    
+    # Use python3.9 as default
+    ln -s /usr/bin/python3.9 /usr/local/bin/python
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python
+
+    # Upgrade pip and install Python packages
+    pip install --upgrade pip setuptools wheel
+
+    pip install pandas \
+                imageio \
+                psycopg2-binary \
+                scikit-image \
+                matplotlib \
+                openpyxl \
+                'sqlalchemy>=2.0.4' \
+                opencv-python \
+                wandb \
+                cellpose \
+                pyomo \
+                numpy \
+                imreg_dft
+
+    # Install Java 17
     apt-get install -y openjdk-17-jdk
 
-    # Install the latest version of Nextflow
+    # Install Nextflow
     curl -s https://get.nextflow.io | bash
     mv nextflow /usr/local/bin/nextflow
-
-    # Download and install Miniconda for x86_64
-    curl -o /tmp/miniconda.sh https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-    bash /tmp/miniconda.sh -b -p /opt/conda
-    rm /tmp/miniconda.sh
-
-    # Initialize Conda environment
-    export PATH="/opt/conda/bin:$PATH"
-    /opt/conda/bin/conda init bash
-
-    # Create Conda environment and install necessary packages
-    /opt/conda/bin/conda create -n datastudy python=3.9 -y
-    /opt/conda/bin/conda install -n datastudy pandas imageio psycopg2 scikit-image matplotlib openpyxl -y
-    /opt/conda/bin/conda install -n datastudy -c conda-forge 'sqlalchemy>=2.0.4' -y
-    /opt/conda/bin/conda install -n datastudy -c gurobi gurobi -y
-    /opt/conda/bin/conda run -n datastudy pip install opencv-python wandb cellpose pyomo numpy imreg_dft
+    chmod +x /usr/local/bin/nextflow
 
     # Clean up
     apt-get clean
     rm -rf /var/lib/apt/lists/*
+    
+    # Clone the Repo
+    git clone https://github.com/finkbeiner-lab/datastudy.git
+
+%runscript
+    
+    echo "Pulling latest code..."
+    cd datastudy/
+    git pull origin main || echo "Git pull failed. Proceeding with existing code."
+    exec "$@"
 
 %environment
-    # Set environment variables for Java, Gurobi, Maven, etc.
-    export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64/  # Use OpenJDK 11 instead of 8
+    export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
     export GUROBI_HOME="/opt/gurobi"
-    export PATH="/opt/conda/envs/datastudy/bin:$PATH"
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
     export NUMBA_CACHE_DIR=/tmp
     export M2_HOME="/opt/apache-maven-3.9.5"
-    export PATH="$M2_HOME/bin:$PATH"
+    export PATH="$JAVA_HOME/bin:$M2_HOME/bin:/usr/local/bin:$PATH"
+    export PYTHONUNBUFFERED=1
 
-    # Ensure Conda is available in every session
-    export PATH="/opt/conda/bin:$PATH"
-    source /opt/conda/etc/profile.d/conda.sh
-    conda activate datastudy
-    export CONDA_DEFAULT_ENV=datastudy

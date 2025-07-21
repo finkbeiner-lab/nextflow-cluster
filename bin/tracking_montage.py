@@ -1,4 +1,4 @@
-#!/opt/conda/bin/python
+#!/usr/bin/env python
 
 import cv2
 import numpy as np
@@ -100,7 +100,7 @@ class MontageDBTracker:
         self.analysisdir = ""
         logger.info(f"Initialized MontageDBTracker for experiment {experiment}")
 
-    def gather_encoded_from_db(self, wells, channel_marker="_MONTAGE_ALIGNED_ENCODED"):
+    def gather_encoded_from_db(self, wells, channel_marker="_MONTAGE_ENCODED"):
         from db_util import Ops
         import argparse
 
@@ -116,12 +116,20 @@ class MontageDBTracker:
         )
         op = Ops(opt_inner)
         tiledata_df = op.get_tiledata_df()
-
-        df = (
-            tiledata_df
-            [tiledata_df['well'].isin(wells)]
-            [tiledata_df['alignedmontagemaskpath'].str.contains(channel_marker, na=False)]
-        )
+        
+        if tiledata_df['alignedmontagemaskpath'].str.contains(channel_marker, na=False).any():
+            df = tiledata_df[
+                tiledata_df['well'].isin(wells) &
+                tiledata_df['alignedmontagemaskpath'].str.contains(channel_marker, na=False)
+            ]
+        elif tiledata_df['montagemaskpath'].str.contains("_MONTAGE_ENCODED", na=False).any():
+            df = tiledata_df[
+                tiledata_df['well'].isin(wells) &
+                tiledata_df['montagemaskpath'].str.contains("_MONTAGE_ENCODED", na=False)
+            ]
+        else:
+            raise ValueError("No montage path contains the required marker.")
+        
 
         df = df.groupby(['well', 'timepoint'], as_index=False).agg({'alignedmontagemaskpath': 'first'})
 

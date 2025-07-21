@@ -4,7 +4,7 @@ import cv2
 import uuid
 import pandas as pd
 from sql import Database
-
+import numpy as np
 
 def save_mask(mask, image_file, savedir):
     name = os.path.basename(image_file)
@@ -15,6 +15,17 @@ def save_mask(mask, image_file, savedir):
     cv2.imwrite(savepath, mask)
     return savepath
 
+def convert_numpy_types(data):
+    # If it's a list of dicts, convert each one
+    if isinstance(data, list):
+        return [convert_numpy_types(d) for d in data]
+
+    # If it's a single dict
+    elif isinstance(data, dict):
+        return {k: (v.item() if isinstance(v, np.generic) else v) for k, v in data.items()}
+
+    # Otherwise, return as-is
+    return data
 
 def update_celldata_and_intensitycelldata(row, props_df: pd.DataFrame, Db: Database):
     celldata_dcts = []
@@ -55,7 +66,9 @@ def update_celldata_and_intensitycelldata(row, props_df: pd.DataFrame, Db: Datab
         for check_dct in check_celldata_dcts:
             Db.delete_based_on_duplicate_name(tablename='celldata', kwargs=check_dct)
             Db.delete_based_on_duplicate_name(tablename='intensitycelldata', kwargs=check_dct)
+        celldata_dcts = convert_numpy_types(celldata_dcts)
         Db.add_row(tablename='celldata', dct=celldata_dcts)
+        intensitycelldata_dcts = convert_numpy_types(intensitycelldata_dcts)
         Db.add_row(tablename='intensitycelldata', dct=intensitycelldata_dcts)
 
 

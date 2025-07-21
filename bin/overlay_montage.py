@@ -1,4 +1,4 @@
-#!/opt/conda/bin/python
+#!/usr/bin/env python
 """Overlay cell IDs on aligned montage images based on tracked CSV and database experiment info."""
 
 import imageio
@@ -29,8 +29,17 @@ class OverlayBatch:
 
         self.experiment_root = result[0][0].rstrip('/')
         print(f"[INFO] Found experiment root: {self.experiment_root}")
+        
+        aligned_path = os.path.join(self.experiment_root, "AlignedMontages")
+        montaged_path = os.path.join(self.experiment_root, "MontagedImages")
 
-        self.montage_root = os.path.join(self.experiment_root, "AlignedMontages")
+        if os.path.isdir(aligned_path) and os.listdir(aligned_path):
+            self.montage_root = aligned_path
+            self.selected = True
+        else:
+            self.montage_root = montaged_path
+            self.selected = False
+
         self.overlay_root = os.path.join(self.experiment_root, "Overlay_Montages")
 
         self.font = ImageFont.truetype('/usr/share/fonts/dejavu/DejaVuSansMono.ttf', 50)
@@ -61,9 +70,14 @@ class OverlayBatch:
                     continue
 
             for fname in os.listdir(well_path):
-                if "_MONTAGE_ALIGNED.tif" not in fname:
-                    continue
+                
 
+                if self.selected:
+                    if "_MONTAGE_ALIGNED.tif" not in fname:
+                        continue
+                else:
+                    if "_MONTAGE.tif" not in fname:
+                        continue
                 # if self.opt.target_channel not in fname:
                 #     continue  # skip non-target channel images
 

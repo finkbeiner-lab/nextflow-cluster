@@ -1,6 +1,6 @@
-#!/opt/conda/bin/python
+#!/usr/bin/env python
 """Cell segmentation with various methods"""
-import imageio
+import imageio.v2 as imageio
 import argparse
 from sql import Database
 from skimage import (
