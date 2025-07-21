@@ -74,7 +74,7 @@ process REGISTER_EXPERIMENT {
 // }
 
 process SEGMENTATION {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
     val ready
     val exp
@@ -107,7 +107,7 @@ process SEGMENTATION {
 
 
 process SEGMENTATION_MONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 
     tag "$well"
     publishDir "$params.outdir/CellMasksMontage/${well}", mode: 'copy'
@@ -267,7 +267,7 @@ process TRACKING {
 
 process TRACKING_MONTAGE {
     
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 
     input:
     val ready
@@ -422,7 +422,7 @@ process CROP_MASK {
 }
 
 process MONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
     val ready
     val exp
@@ -524,7 +524,7 @@ process ALIGN_TILES_DFT {
 
 
 process ALIGN_MONTAGE_DFT {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     tag "$experiment"
     publishDir "$params.outdir/AlignedMontages", mode: 'copy'
 
@@ -761,7 +761,7 @@ process OVERLAY {
 }
 
 process OVERLAY_MONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     
     input:
     val ready
