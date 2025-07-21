@@ -10,6 +10,7 @@ from sql import Database
 import pandas as pd
 import collections
 import ast  # Safe way to evaluate a string representation of a list
+import pdb
 
 
 logger = logging.getLogger("TrackingDB")
@@ -94,13 +95,14 @@ class MontageDBTracker:
         self.track_type = track_type
         self.max_dist = max_dist
         self.target_channel = target_channel.split(',')
+        
 
 
 
         self.analysisdir = ""
         logger.info(f"Initialized MontageDBTracker for experiment {experiment}")
 
-    def gather_encoded_from_db(self, wells, channel_marker="_MONTAGE_ENCODED"):
+    def gather_encoded_from_db(self, wells, channel_marker="_MONTAGE_ALIGNED_ENCODED"):
         from db_util import Ops
         import argparse
 
@@ -116,21 +118,29 @@ class MontageDBTracker:
         )
         op = Ops(opt_inner)
         tiledata_df = op.get_tiledata_df()
-        
+
+        # No montagemaskpath exists
         if tiledata_df['alignedmontagemaskpath'].str.contains(channel_marker, na=False).any():
             df = tiledata_df[
                 tiledata_df['well'].isin(wells) &
                 tiledata_df['alignedmontagemaskpath'].str.contains(channel_marker, na=False)
             ]
-        elif tiledata_df['montagemaskpath'].str.contains("_MONTAGE_ENCODED", na=False).any():
+            self.selected = True
+            
+
+        elif tiledata_df['alignedmontagemaskpath'].str.contains("_MONTAGE_ENCODED", na=False).any():
+
             df = tiledata_df[
                 tiledata_df['well'].isin(wells) &
-                tiledata_df['montagemaskpath'].str.contains("_MONTAGE_ENCODED", na=False)
+                tiledata_df['alignedmontagemaskpath'].str.contains("_MONTAGE_ENCODED", na=False)
             ]
+
+            self.selected = False
+            
         else:
             raise ValueError("No montage path contains the required marker.")
-        
 
+    
         df = df.groupby(['well', 'timepoint'], as_index=False).agg({'alignedmontagemaskpath': 'first'})
 
         results = {}
@@ -143,7 +153,10 @@ class MontageDBTracker:
 
             time_dict = collections.OrderedDict()
             for _, row in df_w.iterrows():
+                
                 mask_path = row['alignedmontagemaskpath']
+            
+
                 tp_label = os.path.basename(mask_path).split('_')[2]
                 tp = int(tp_label.lstrip('T')) if tp_label.startswith('T') else int(tp_label)
 
@@ -218,9 +231,15 @@ class MontageDBTracker:
                
                 os.makedirs(tracked_folder, exist_ok=True)
 
-                tracked_filename = os.path.basename(mask_path).replace(
-                    '_MONTAGE_ALIGNED_ENCODED.tif', '_TRACKED.tif'
-                )
+                if self.selected:
+                    tracked_filename = os.path.basename(mask_path).replace(
+                        '_MONTAGE_ALIGNED_ENCODED.tif', '_TRACKED.tif'
+                    )
+                else:
+                    tracked_filename = os.path.basename(mask_path).replace(
+                        '_MONTAGE_ENCODED.tif', '_TRACKED.tif'
+                    )
+
                 tracked_path = os.path.join(tracked_folder, tracked_filename)
 
                 # Save the tracked mask
@@ -250,8 +269,12 @@ class MontageDBTracker:
                 
                 for ch in self.target_channel:
                     print("Intensity calcuation ", ch)
-                  
-                    aligned_path = mask_path.replace('/CellMasksMontage/', '/AlignedMontages/')
+
+                    if self.selected:
+                        aligned_path = mask_path.replace('/CellMasksMontage/', '/AlignedMontages/')
+                    else:
+                        aligned_path = mask_path.replace('/CellMasksMontage/', '/MontagedImages/')
+
 
                     # Ensure the correct channel name is in the filename
                     # Extract the filename part
@@ -270,8 +293,12 @@ class MontageDBTracker:
                     # Rebuild the aligned_path with corrected channel
                     aligned_path = os.path.join(dirname, filename)
 
+
                     # Then convert "_MONTAGE_ALIGNED_ENCODED.tif" to "_MONTAGE_ALIGNED.tif"
-                    aligned_path = aligned_path.replace('_MONTAGE_ALIGNED_ENCODED.tif', '_MONTAGE_ALIGNED.tif')
+                    if self.selected:
+                        aligned_path = aligned_path.replace('_MONTAGE_ALIGNED_ENCODED.tif', '_MONTAGE_ALIGNED.tif')
+                    else:
+                        aligned_path = aligned_path.replace('_MONTAGE_ENCODED.tif', '_MONTAGE.tif')
 
                     img_path = os.path.join(aligned_img_dir, aligned_path)
 
@@ -318,3 +345,4 @@ if __name__ == '__main__':
     wells = [w.strip() for w in args.wells.split(',')]
     tracker = MontageDBTracker(args.experiment, args.track_type, args.max_dist, args.target_channel)
     tracker.run(wells)
+
