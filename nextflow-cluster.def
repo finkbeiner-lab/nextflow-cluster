@@ -76,13 +76,17 @@ From: ubuntu:22.04
     
     # Clone the Repo
     git clone https://github.com/finkbeiner-lab/datastudy.git
+    cd datastudy
+    git fetch origin final-vivek-nextflow
+    git checkout final-vivek-nextflow
 
 %runscript
-    
-    echo "Pulling latest code..."
-    cd datastudy/
-    git pull origin main || echo "Git pull failed. Proceeding with existing code."
-    exec "$@"
+    echo "Switching to final-vivek-nextflow and pulling latest..."
+    cd /datastudy || exit 1
+    git fetch origin final-vivek-nextflow
+    git checkout final-vivek-nextflow
+    git pull origin final-vivek-nextflow || echo "Git pull failed. Proceeding with existing code."
+    exec "$@"    
 
 %environment
     export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
