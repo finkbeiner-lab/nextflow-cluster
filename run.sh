@@ -32,7 +32,6 @@ nextflow run pipeline.nf \
   -with-apptainer /gladstone/finkbeiner/steve/work/projects/datastudy/nextflow-cluster.sif \
   -c finkbeiner.config \
   -ansi-log false \
-  -resume false
-
-echo "Job Completed."
+  
+echo "Nextflow pipeline completed"
 

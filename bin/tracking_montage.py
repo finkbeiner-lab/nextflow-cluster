@@ -246,7 +246,7 @@ class MontageDBTracker:
                 cv2.imwrite(tracked_path, tracked_mask)
                 logger.info(f"Saved tracked mask: {tracked_path}")
                 channel_imgs = {}
-                aligned_img_dir = f"/gladstone/finkbeiner/steve/WeiyiLiu/GXYTMP/{self.experiment}/AlignedMontages/{well}"
+                #aligned_img_dir = f"/gladstone/finkbeiner/steve/WeiyiLiu/GXYTMP/{self.experiment}/AlignedMontages/{well}"
 
                 # Target channenl only for calculate the intensities, not tracking
 
@@ -300,7 +300,8 @@ class MontageDBTracker:
                     else:
                         aligned_path = aligned_path.replace('_MONTAGE_ENCODED.tif', '_MONTAGE.tif')
 
-                    img_path = os.path.join(aligned_img_dir, aligned_path)
+                    #img_path = os.path.join(aligned_img_dir, aligned_path)
+                    img_path = aligned_path
 
                     if os.path.exists(img_path):
                         channel_imgs[ch] = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)

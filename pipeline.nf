@@ -537,7 +537,7 @@ if (params.DO_ALIGN_MONTAGE_DFT) {
 
 if (params.DO_STD_WORKFLOW_IXM) {
 
-        log.info "▶ Running DO_STD_WORKFLOW: MONTAGE → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
+        log.info "▶ Running DO_STD_WORKFLOW_IXM: MONTAGE → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
 
         // Step 1: MONTAGE
         montage_ready_ch = Channel.of(true)
