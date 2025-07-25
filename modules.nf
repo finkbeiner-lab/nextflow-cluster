@@ -3,6 +3,8 @@
 params.greeting = 'Hello world!'
 greeting_ch = Channel.of(params.greeting)
 
+
+
 process REGISTER_EXPERIMENT {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 
@@ -101,42 +103,6 @@ process SEGMENTATION {
     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
    ${ use_aligned_tiles ? '--use_aligned_tiles' : '' }
-    """
-}
-
-
-
-process SEGMENTATION_MONTAGE {
-    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-
-    tag "$well"
-    publishDir "$params.outdir/CellMasksMontage/${well}", mode: 'copy'
-
-    input:
-    val ready
-    val exp
-    val morphology_channel
-    val segmentation_method
-    val img_norm_name
-    val lower_area_thresh
-    val upper_area_thresh
-    val sd_scale_factor
-    val chosen_wells
-    val chosen_timepoints
-    val wells_toggle
-    val timepoints_toggle
-    //val use_aligned_tiles
-
-    output: 
-    val true
-
-    script:
-    """
-    segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
-    --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
-    --sd_scale_factor ${sd_scale_factor} \
-    --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}  
     """
 }
 
@@ -265,27 +231,7 @@ process TRACKING {
     """
 }
 
-process TRACKING_MONTAGE {
-    
-    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 
-    input:
-    val ready
-    val exp                  // your experiment name
-    val track_type           // "overlap" or "proximity"
-    val distance_threshold   // integer → --max_dist
-    val chosen_wells         // comma‑sep list → --wells
-    val target_channel 
-    output:
-       // send everything that the Python script prints to STDOUT
-
-    stdout
-
-    script:
-    """
-    tracking_montage.py --experiment  ${exp} --track_type  ${track_type} --max_dist    ${distance_threshold} --wells ${chosen_wells} --target_channel ${target_channel } 
-    """
-}
 
 process INTENSITY {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
@@ -313,34 +259,6 @@ process INTENSITY {
     """
 }
 
-// process CROP {
-//     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-//     memory '2 GB'
-//     cpus 4
-//     input:
-//     val ready
-//     val exp
-//     each target_channel_crop
-//     val morphology_channel
-//     val crop_size
-//     val chosen_wells
-//     val chosen_timepoints
-//     val wells_toggle
-//     val timepoints_toggle
-//     val do_mask_crop  // New parameter to decide mask cropping
-
-//     output:
-//     val true
-
-//     script:
-//     """
-//     crop.py --experiment ${exp} --crop_size ${crop_size} \
-//     --target_channel ${target_channel_crop} \
-//     --chosen_wells ${chosen_wells} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-//     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
-//     ${do_mask_crop ? '--mask_crop' : ''}
-//     """
-// }
 process COPY_MASK_TO_TRACKED {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     
@@ -421,41 +339,6 @@ process CROP_MASK {
     """
 }
 
-process MONTAGE {
-    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    input:
-    val ready
-    val exp
-    val tiletype
-    val montage_pattern
-    val chosen_wells
-    val chosen_timepoints
-    val chosen_channels
-    val wells_toggle
-    val timepoints_toggle
-    val channels_toggle
-    val image_overlap
-
-    output:
-    val true
-
-    script:
-    """
-    echo ">>> MONTAGE  is starting on \$(hostname)"
-    #echo "Current working directory is: \$(pwd)"
-    #echo "Current LD_LIBRARY_PATH before: \$LD_LIBRARY_PATH"
-    #export LD_LIBRARY_PATH=/lib/x86_64-linux-gnu\$LD_LIBRARY_PATH
-    #unset PYTHONPATH
-    #unset PYTHONHOME
-    #unset PYTHONUSERBASE
-
-    #echo "Current LD_LIBRARY_PATH after: \$LD_LIBRARY_PATH"
-    montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
-    --chosen_channels ${chosen_channels} --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle} \
-    --image_overlap ${image_overlap}
-    """
-}
 
 process ALIGNMENT {
      // Force bash shell so `conda activate` works
@@ -632,30 +515,6 @@ process CNN {
     """
 }
 
-// process GETCSVS {
-//     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-//     input:
-//     val ready
-//     val exp
-//     val chosen_wells
-//     val chosen_timepoints
-//     val chosen_channels
-//     val wells_toggle
-//     val timepoints_toggle
-//     val channels_toggle
-
-//     output:
-//     path 'csv_outputs/*'
-
-//     script:
-//     """
-//     mkdir -p csv_outputs
-//     get_csvs.py --experiment ${exp} \
-//         --chosen_wells ${chosen_wells} --wells_toggle ${wells_toggle} \
-//         --chosen_timepoints ${chosen_timepoints} --timepoints_toggle ${timepoints_toggle} \
-//         --chosen_channels ${chosen_channels} --channels_toggle ${channels_toggle} \
-//         --output_dir csv_outputs
-//     """
 //Original
 process GETCSVS {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
@@ -760,29 +619,126 @@ process OVERLAY {
     """
 }
 
-process OVERLAY_MONTAGE {
-    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    
+
+
+
+// *****************
+
+process MONTAGE {
+    // containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    tag "$well"
+
     input:
-    val ready
-    val exp
-    val morphology_channel
-    val chosen_wells
-    val chosen_timepoints
-    val wells_toggle
-    val timepoints_toggle
-    val channels_toggle
-    val shift
-    val contrast
+    tuple val(ready),
+      val(exp),
+      val(tiletype),
+      val(montage_pattern),
+      val(well),
+      val(chosen_timepoints),
+      val(chosen_channels),
+      val(wells_toggle),
+      val(timepoints_toggle),
+      val(channels_toggle),
+      val(image_overlap)
 
 
     output:
-    val true
+    tuple  val(true), val(well)
+
+
+    script:
+    """
+    set -eux
+    montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
+    --chosen_channels ${chosen_channels} --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --image_overlap ${image_overlap}
+    """
+}
+
+process SEGMENTATION_MONTAGE {
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+
+    tag "$well"
+    // publishDir "$params.outdir/CellMasksMontage/${well}", mode: 'copy'
+
+    input:
+    tuple val(ready),
+          val(exp),
+          val(morphology_channel),
+          val(segmentation_method),
+          val(img_norm_name),
+          val(lower_area_thresh),
+          val(upper_area_thresh),
+          val(sd_scale_factor),
+          val(well),                    
+          val(chosen_timepoints),
+          val(wells_toggle),
+          val(timepoints_toggle)
+   
+
+    output: 
+    tuple val(true), val(well) 
+    // tuple val(well), path("*.tif")
+
+    script:
+    """
+    segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
+    --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
+    --sd_scale_factor ${sd_scale_factor} \
+    --chosen_wells ${well} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}  
+    """
+}
+
+process TRACKING_MONTAGE {
+
+    tag "$well"
+    
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+
+    input:
+    tuple val(ready), 
+          val(exp), 
+          val(track_type), 
+          val(distance_threshold), 
+          val(well), 
+          val(target_channel) 
+
+    output:
+    tuple val(true), val(well)
+
+
+    script:
+    """
+    tracking_montage.py --experiment  ${exp} --track_type  ${track_type} --max_dist    ${distance_threshold} --wells ${well} --target_channel ${target_channel } 
+    """
+}
+
+process OVERLAY_MONTAGE {
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    tag "$well"
+
+    input:
+    tuple val ready
+        val exp
+        val morphology_channel
+        val well
+        val chosen_timepoints
+        val wells_toggle
+        val timepoints_toggle
+        val channels_toggle
+        val shift
+        val contrast
+
+
+    output:
+    tuple val(well), val(true)
 
     script:
     """
     overlay_montage.py --experiment ${exp} --target_channel ${morphology_channel} \
-    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
+    --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
     --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast}
     """

@@ -78,12 +78,7 @@ class OverlayBatch:
                 else:
                     if "_MONTAGE.tif" not in fname:
                         continue
-                # if self.opt.target_channel not in fname:
-                #     continue  # skip non-target channel images
-
-                # if not any(ch in fname for ch in self.opt.target_channel):
-                #     continue
-
+                
                 aligned_path = os.path.join(well_path, fname)
                 timepoint = self.extract_timepoint(fname)
 

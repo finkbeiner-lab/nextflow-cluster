@@ -1,4 +1,4 @@
-#!/opt/conda/bin/python
+#!/usr/bin/env python
 """Create folders and initialize parameters based on filenames
 
 Write to

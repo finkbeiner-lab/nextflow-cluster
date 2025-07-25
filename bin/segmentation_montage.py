@@ -275,7 +275,7 @@ if __name__ == '__main__':
                         help="Chose whether to include or exclude specified channels.")
     parser.add_argument("--chosen_wells", "-cw",
                         dest="chosen_wells", default='E4',
-                        help="Specify wells to include or exclude")
+                        help="Specify well to process")
     parser.add_argument("--chosen_timepoints", "-ct",
                         dest="chosen_timepoints", default='all',
                         help="Specify timepoints to include or exclude.")
