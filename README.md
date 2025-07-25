@@ -1,5 +1,12 @@
-# DATASTUDY 
+# NEXTFLOW CLUSTER IMAGE ANALYSIS PIPELINE
 A Nextflow Image Analysis Pipeline for HPC with Slurm and Docker. 
+
+## Authors
+
+- Vivek Gopal Ramaswamy
+- Kaushik Sridhar
+- Monika Ahirwar
+- Josh Lamstein
 
 ## About
 The main nextflow script, pipeline.nf, includes segmentation, tracking, puncta segmentation, survival analysis, and a CNN to analyze image data. 

@@ -14,3 +14,5 @@ core.*
 *.jpeg
 .DS_Store
 *.dot
+*.sif
+*.out
