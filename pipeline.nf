@@ -645,11 +645,6 @@ if (params.DO_STD_WORKFLOW_IXM) {
         : params.target_channel
     target_channel_ch = Channel.value(target_channel_str)
 
-    // trackmont_ready_ch = segmont_result.map { well, seg_mask ->
-    //     tuple(well, params.experiment, params.track_type, params.distance_threshold, seg_mask, target_channel_str)
-    // }
-
- 
 
     combined_trackmont_ch = tracking_ready_ch
     .combine(experiment_ch)
@@ -669,27 +664,47 @@ if (params.DO_STD_WORKFLOW_IXM) {
         return tuple(ready, exp, track_type, dist_thresh, well, target_ch)
     }
 
-    tracking_montage_ch = TRACKING_MONTAGE(combined_trackmont_ch)
+    tracking_montage_result_ch = TRACKING_MONTAGE(combined_trackmont_ch)
+    tracking_montage_result_ch.view { tuple ->
+    def (flag, well) = tuple
+    println "🧪 Emitted from TRACKING: $flag (flag: $well)"
+    }
 
 
-//     // Step 5: OVERLAY_MONTAGE
-//      overlay_ready_ch = trackmont_result.map { well, tracking_out ->
-//         tuple(well, params.experiment, params.morphology, params.tp, params.well_toggle, params.tp_toggle, params.channel_toggle, params.shift, params.contrast, tracking_out)
-//     }
+    // Step 5: OVERLAY_MONTAGE
+    overlay_ready_ch = tracking_montage_result_ch
 
-//     overlay_montage_ch = OVERLAY_MONTAGE(
-//         overlay_ready_ch,
-//         experiment_ch,
-//         morphology_ch,
-//         well_ch,
-//         tp_ch,
-//         well_toggle_ch,
-//         tp_toggle_ch,
-//         channel_toggle_ch,
-//         shift_ch,
-//         contrast_ch
-//     )
-//     overlay_result = OVERLAY_MONTAGE.out
+    combined_overlay_ch = overlay_ready_ch
+    .combine(experiment_ch)
+    .combine(morphology_ch)
+    .combine(tp_ch)
+    .combine(well_toggle_ch)
+    .combine(tp_toggle_ch)
+    .combine(channel_toggle_ch)
+    .combine(shift_ch)
+    .combine(contrast_ch)
+    .map { nestedTuple ->
+        def flat = nestedTuple.flatten()
+        // flat order corresponds to inputs of OVERLAY_MONTAGE process input tuple
+        def flag           = flat[0]
+        def exp            = flat[2]
+        def morphology     = flat[3]
+        def well           = flat[1]
+        def tp             = flat[4]
+        def well_toggle    = flat[5]
+        def tp_toggle      = flat[6]
+        def channel_toggle = flat[7]
+        def shift          = flat[8]
+        def contrast       = flat[9]
+
+        return tuple(flag, exp, morphology, well, tp, well_toggle, tp_toggle, channel_toggle, shift, contrast)
+    }
+
+    overlay_result_ch = OVERLAY_MONTAGE(combined_overlay_ch)
+    overlay_result_ch.view { tuple ->
+    def (flag, well) = tuple
+    println "🧪 Emitted from OVERLAY: $flag (flag: $well)"
+    }
 }
 
 

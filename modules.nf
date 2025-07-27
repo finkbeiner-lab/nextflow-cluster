@@ -6,7 +6,7 @@ greeting_ch = Channel.of(params.greeting)
 
 
 process REGISTER_EXPERIMENT {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    // containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 
     input:
     val input_path
@@ -40,40 +40,6 @@ process REGISTER_EXPERIMENT {
     """
 }
 
-// process REGISTER_EXPERIMENT {
-//     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-//     input:
-//     val ready
-//     val input_path
-//     val output_path
-//     val template_path
-//     val platemap_path
-//     val ixm_hts_file
-//     val robo_file
-//     val illumination_file
-//     val overwrite_experiment
-//     val robo_num
-//     val chosen_wells
-//     val chosen_timepoints
-//     val chosen_channels
-//     val wells_toggle
-//     val timepoints_toggle
-//     val channels_toggle
-
-//     output:
-//     val true
-
-//     script:
-//     """
-//     register_experiment.py --input_path ${input_path} --output_path ${output_path} --template_path ${template_path} \
-//     --platemap_path ${platemap_path} --ixm_hts_file ${ixm_hts_file} --robo_file ${robo_file} --overwrite_experiment ${overwrite_experiment}  \
-//      --robo_num ${robo_num} \
-//      --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
-//      --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle} \
-//      --illumination_file ${illumination_file}
-//     """
-
-// }
 
 process SEGMENTATION {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
@@ -720,16 +686,16 @@ process OVERLAY_MONTAGE {
     tag "$well"
 
     input:
-    tuple val ready
-        val exp
-        val morphology_channel
-        val well
-        val chosen_timepoints
-        val wells_toggle
-        val timepoints_toggle
-        val channels_toggle
-        val shift
-        val contrast
+    tuple val(ready),
+      val(exp),
+      val(morphology_channel),
+      val(well),
+      val(chosen_timepoints),
+      val(wells_toggle),
+      val(timepoints_toggle),
+      val(channels_toggle),
+      val(shift),
+      val(contrast)
 
 
     output:
