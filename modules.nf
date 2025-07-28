@@ -372,45 +372,6 @@ process ALIGN_TILES_DFT {
 }
 
 
-process ALIGN_MONTAGE_DFT {
-    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    tag "$experiment"
-    publishDir "$params.outdir/AlignedMontages", mode: 'copy'
-
-    input:
-    val ready
-    val experiment
-    val morphology_channel
-    val wells
-    val timepoints
-    val channels
-    val wells_toggle
-    val timepoints_toggle
-    val channels_toggle
-    val tile
-    val shift_dict
-
-    output:
-    val true
-
-    script:
-    """
-    align_montage_dft.py \
-      --experiment "$experiment" \
-      --morphology_channel "$morphology_channel" \
-      --chosen_wells "$wells" \
-      --chosen_timepoints "$timepoints" \
-      --chosen_channels "$channels" \
-      --wells_toggle "$wells_toggle" \
-      --timepoints_toggle "$timepoints_toggle" \
-      --channels_toggle "$channels_toggle" \
-      --tile "$tile" \
-      --shift_dict "$shift_dict" 
-    """
-}
-
-
-
 process PLATEMONTAGE {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     input:
@@ -622,6 +583,44 @@ process MONTAGE {
     """
 }
 
+process ALIGN_MONTAGE_DFT {
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    tag "$well"
+    
+
+    input:
+      tuple val(ready), 
+          val(experiment), 
+          val(morphology_channel), 
+          val(well), 
+          val(timepoints), 
+          val(channels), 
+          val(wells_toggle), 
+          val(timepoints_toggle), 
+          val(channels_toggle), 
+          val(tile), 
+          val(shift_dict)
+
+    output:
+    tuple val(true), val(well)
+
+    script:
+    """
+    align_montage_dft.py \
+      --experiment "$experiment" \
+      --morphology_channel "$morphology_channel" \
+      --chosen_wells "$well" \
+      --chosen_timepoints "$timepoints" \
+      --chosen_channels "$channels" \
+      --wells_toggle "$wells_toggle" \
+      --timepoints_toggle "$timepoints_toggle" \
+      --channels_toggle "$channels_toggle" \
+      --tile "$tile" \
+      --shift_dict "$shift_dict" 
+    """
+}
+
+
 process SEGMENTATION_MONTAGE {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 
@@ -645,7 +644,7 @@ process SEGMENTATION_MONTAGE {
 
     output: 
     tuple val(true), val(well) 
-    // tuple val(well), path("*.tif")
+
 
     script:
     """

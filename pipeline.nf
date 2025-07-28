@@ -453,95 +453,195 @@ println "✅ Wells to use: ${wells_to_use}"
 
 
 
-// if (params.DO_STD_WORKFLOW) {
+if (params.DO_STD_WORKFLOW) {
 
-//     log.info "▶ Running DO_STD_WORKFLOW: MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
+    log.info "▶ Running DO_STD_WORKFLOW: MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
 
-//     // Step 1: MONTAGE
-//     montage_ready_ch = Channel.of(true)
-//     montage_ch = MONTAGE(
-//         montage_ready_ch,
-//         experiment_ch,
-//         tiletype_ch,
-//         montage_pattern_ch,
-//         well_ch,
-//         tp_ch,
-//         channel_ch,
-//         well_toggle_ch,
-//         tp_toggle_ch,
-//         channel_toggle_ch,
-//         image_overlap_ch
-//     )
-//     montage_result = MONTAGE.out
+    // Step 1: MONTAGE
+    montage_ready_ch = Channel.of(true)
 
-//     // Step 2: ALIGN_MONTAGE_DFT
-//     align_ready_ch = montage_result.collect()
-//     align_montage_ch = ALIGN_MONTAGE_DFT(
-//         align_ready_ch,
-//         experiment_ch,
-//         morphology_ch,
-//         well_ch,
-//         tp_ch,
-//         channel_ch,
-//         well_toggle_ch,
-//         tp_toggle_ch,
-//         channel_toggle_ch,
-//         tile_ch,
-//         shift_dict_ch
-//     )
-//     align_result = ALIGN_MONTAGE_DFT.out
+    combined_montage_ch = well_ch
+        .combine(montage_ready_ch)
+        .combine(experiment_ch)
+        .combine(tiletype_ch)
+        .combine(montage_pattern_ch)
+        .combine(tp_ch)
+        .combine(channel_ch)
+        .combine(well_toggle_ch)
+        .combine(tp_toggle_ch)
+        .combine(channel_toggle_ch)
+        .combine(image_overlap_ch)
+        .map { nestedTuple ->
+            def flat = nestedTuple.flatten()
+            def ready       = flat[1]
+            def exp         = flat[2]
+            def tiletype    = flat[3]
+            def montage_pat = flat[4]
+            def well        = flat[0]
+            def tp          = flat[5]
+            def ch          = flat[6]
+            def well_toggle = flat[7]
+            def tp_toggle   = flat[8]
+            def ch_toggle   = flat[9]
+            def img_overlap = flat[10]
 
-//     // Step 3: SEGMENTATION_MONTAGE
-//     segmont_ready_ch = align_result.collect()
-//     segmentation_montage_ch = SEGMENTATION_MONTAGE(
-//         segmont_ready_ch,
-//         experiment_ch,
-//         morphology_ch,
-//         seg_ch,
-//         norm_ch,
-//         lower_ch,
-//         upper_ch,
-//         sd_ch,
-//         well_ch,
-//         tp_ch,
-//         well_toggle_ch,
-//         tp_toggle_ch
-//     )
-//     segmont_result = SEGMENTATION_MONTAGE.out
+            return tuple(ready, exp, tiletype, montage_pat, well, tp, ch, well_toggle, tp_toggle, ch_toggle, img_overlap)
+        }
 
-//     // Step 4: TRACKING_MONTAGE
-//     trackmont_ready_ch = segmont_result.collect()
-//     def target_channel_str = params.target_channel instanceof List 
-//         ? params.target_channel.join(',')
-//         : params.target_channel
-//     target_channel_ch = Channel.value(target_channel_str)
+    montage_result_ch = MONTAGE(combined_montage_ch)
 
-//     tracking_montage_ch = TRACKING_MONTAGE(
-//         trackmont_ready_ch,
-//         experiment_ch,
-//         track_type_ch,
-//         distance_threshold_ch,
-//         well_ch,
-//         target_channel_ch
-//     )
-//     trackmont_result = TRACKING_MONTAGE.out
+    montage_result_ch.view { tuple ->
+        def (flag, well) = tuple
+        println "🧪 Emitted from MONTAGE: $flag (flag: $well)"
+    }
 
-//     // Step 5: OVERLAY_MONTAGE
-//     overlay_ready_ch = trackmont_result.collect()
-//     overlay_montage_ch = OVERLAY_MONTAGE(
-//         overlay_ready_ch,
-//         experiment_ch,
-//         morphology_ch,
-//         well_ch,
-//         tp_ch,
-//         well_toggle_ch,
-//         tp_toggle_ch,
-//         channel_toggle_ch,
-//         shift_ch,
-//         contrast_ch
-//     )
-//     overlay_result = OVERLAY_MONTAGE.out
-// }
+
+    // Step 2: ALIGN_MONTAGE_DFT
+    align_ready_ch = montage_result_ch
+
+    combined_align_ch = align_ready_ch
+        .combine(experiment_ch)
+        .combine(morphology_ch)
+        .combine(well_ch)
+        .combine(tp_ch)
+        .combine(channel_ch)
+        .combine(well_toggle_ch)
+        .combine(tp_toggle_ch)
+        .combine(channel_toggle_ch)
+        .combine(tile_ch)
+        .combine(shift_dict_ch)
+        .map { nestedTuple ->
+            def flat = nestedTuple.flatten()
+            def flag        = flat[0]
+            def exp         = flat[1]
+            def morph       = flat[2]
+            def well        = flat[3]
+            def tp          = flat[4]
+            def ch          = flat[5]
+            def well_toggle = flat[6]
+            def tp_toggle   = flat[7]
+            def ch_toggle   = flat[8]
+            def tile        = flat[9]
+            def shift_dict  = flat[10]
+
+            return tuple(flag, exp, morph, well, tp, ch, well_toggle, tp_toggle, ch_toggle, tile, shift_dict)
+        }
+
+    align_result_ch = ALIGN_MONTAGE_DFT(combined_align_ch)
+    align_result_ch.view { tuple ->
+        def (flag, well) = tuple
+        println "🧪 Emitted from ALIGN_MONTAGE_DFT: $flag (flag: $well)"
+    }
+
+
+    // Step 3: SEGMENTATION_MONTAGE
+    segmont_ready_ch = align_result_ch
+
+    combined_segmont_ch = segmont_ready_ch
+        .combine(experiment_ch)
+        .combine(morphology_ch)
+        .combine(seg_ch)
+        .combine(norm_ch)
+        .combine(lower_ch)
+        .combine(upper_ch)
+        .combine(sd_ch)
+        .combine(well_ch)
+        .combine(tp_ch)
+        .combine(well_toggle_ch)
+        .combine(tp_toggle_ch)
+        .map { nestedTuple ->
+            def flat = nestedTuple.flatten()
+            def flag        = flat[0]
+            def exp         = flat[1]
+            def morph       = flat[2]
+            def seg_method  = flat[3]
+            def norm        = flat[4]
+            def lower       = flat[5]
+            def upper       = flat[6]
+            def sd          = flat[7]
+            def well        = flat[8]
+            def tp          = flat[9]
+            def well_toggle = flat[10]
+            def tp_toggle   = flat[11]
+
+            return tuple(flag, exp, morph, seg_method, norm, lower, upper, sd, well, tp, well_toggle, tp_toggle)
+        }
+
+    segmont_result_ch = SEGMENTATION_MONTAGE(combined_segmont_ch)
+    segmont_result_ch.view { tuple ->
+        def (flag, well) = tuple
+        println "🧪 Emitted from SEGMENTATION: $flag (flag: $well)"
+    }
+
+
+    // Step 4: TRACKING_MONTAGE
+    trackmont_ready_ch = segmont_result_ch
+
+    def target_channel_str = params.target_channel instanceof List 
+        ? params.target_channel.join(',')
+        : params.target_channel
+    target_channel_ch = Channel.value(target_channel_str)
+
+    combined_trackmont_ch = trackmont_ready_ch
+        .combine(experiment_ch)
+        .combine(track_type_ch)
+        .combine(distance_threshold_ch)
+        .combine(well_ch)
+        .combine(target_channel_ch)
+        .map { nestedTuple ->
+            def flat = nestedTuple.flatten()
+            def flag        = flat[0]
+            def exp         = flat[1]
+            def track_type  = flat[2]
+            def dist_thresh = flat[3]
+            def well        = flat[4]
+            def target_ch   = flat[5]
+
+            return tuple(flag, exp, track_type, dist_thresh, well, target_ch)
+        }
+
+    trackmont_result_ch = TRACKING_MONTAGE(combined_trackmont_ch)
+    trackmont_result_ch.view { tuple ->
+        def (flag, well) = tuple
+        println "🧪 Emitted from TRACKING: $flag (flag: $well)"
+    }
+
+
+    // Step 5: OVERLAY_MONTAGE
+    overlay_ready_ch = trackmont_result_ch
+
+    combined_overlay_ch = overlay_ready_ch
+        .combine(experiment_ch)
+        .combine(morphology_ch)
+        .combine(well_ch)
+        .combine(tp_ch)
+        .combine(well_toggle_ch)
+        .combine(tp_toggle_ch)
+        .combine(channel_toggle_ch)
+        .combine(shift_ch)
+        .combine(contrast_ch)
+        .map { nestedTuple ->
+            def flat = nestedTuple.flatten()
+            def flag        = flat[0]
+            def exp         = flat[1]
+            def morph       = flat[2]
+            def well        = flat[3]
+            def tp          = flat[4]
+            def well_toggle = flat[5]
+            def tp_toggle   = flat[6]
+            def ch_toggle   = flat[7]
+            def shift       = flat[8]
+            def contrast    = flat[9]
+
+            return tuple(flag, exp, morph, well, tp, well_toggle, tp_toggle, ch_toggle, shift, contrast)
+        }
+
+    overlay_result_ch = OVERLAY_MONTAGE(combined_overlay_ch)
+    overlay_result_ch.view { tuple ->
+        def (flag, well) = tuple
+        println "🧪 Emitted from OVERLAY: $flag (flag: $well)"
+    }
+}
 
 
 if (params.DO_STD_WORKFLOW_IXM) {

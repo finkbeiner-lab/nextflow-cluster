@@ -8,6 +8,7 @@ import uuid
 import pandas as pd
 from string import ascii_uppercase
 import warnings
+from sqlalchemy.pool import NullPool
 
 
 
@@ -54,19 +55,14 @@ class Database:
             print(f"File '{file_path}' does not exist.")
         pw = _df.pw.iloc[0]
         conn_string = f'postgresql://postgres:{pw}@fb-postgres01.gladstone.internal:5432/galaxy'
-        # url_object = URL.create(
-        #     drivername="postgresql",
-        #     username="postgres",
-        #     password=f"{pw}",  # plain (unescaped) text
-        #     host="fb-postgres01.gladstone.internal",
-        #     port='5432',
-        #     database="galaxy"
-        # )
-        self.engine = create_engine(conn_string, future=True, pool_size=10,
-                                      max_overflow=2,
-                                      pool_recycle=300,
-                                      pool_pre_ping=True,
-                                      pool_use_lifo=True)
+        
+        # self.engine = create_engine(conn_string, future=True, pool_size=2,
+        #                               max_overflow=2,
+        #                               pool_recycle=300,
+        #                               pool_pre_ping=True,
+        #                               pool_use_lifo=True)
+
+        self.engine = create_engine(conn_string, poolclass=NullPool)
         self.meta = MetaData()
         self.meta.reflect(bind=self.engine)
 
