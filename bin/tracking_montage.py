@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import sys
 import cv2
 import numpy as np
 import logging
@@ -11,10 +11,15 @@ import pandas as pd
 import collections
 import ast  # Safe way to evaluate a string representation of a list
 import pdb
+import sys
 
 
 logger = logging.getLogger("TrackingDB")
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    stream=sys.stderr,       # Send logs to stderr (captured by SLURM)
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
 
 class Cell:
     """A class that makes cells from contours or masks."""
@@ -305,6 +310,7 @@ class MontageDBTracker:
                     img_path = aligned_path
 
                     if os.path.exists(img_path):
+                        logging.info(f"Channel Images {channel_imgs}")
                         channel_imgs[ch] = cv2.imread(img_path, cv2.IMREAD_UNCHANGED)
                     else:
                         logger.warning(f"[WARN] Missing aligned image for {ch} at: {img_path}")
@@ -317,6 +323,7 @@ class MontageDBTracker:
                     cx, cy, area, intensities = props
 
                     for ch, mean_val in intensities.items():
+                        logging.info(f"Intensity Channel {ch}")
                         row = {
                             'experiment': self.experiment,
                             'ObjectCount': object_count,
@@ -335,13 +342,23 @@ class MontageDBTracker:
                             'timepoint': tp,
                             'area': area
                         }
-                    out_records.append(row)
+                        out_records.append(row)
                 
 
         out_df = pd.DataFrame(out_records)
         outfile = os.path.join(self.analysisdir, f"{self.experiment}_tracked_montage_summary.csv")
-        out_df.to_csv(outfile, index=False)
+
+        # Check if file exists
+        if os.path.exists(outfile):
+            # Append without writing header
+            out_df.to_csv(outfile, mode='a', header=False, index=False)
+        else:
+            # Write with header
+            out_df.to_csv(outfile, mode='w', header=True, index=False)
+
         logger.info(f"Wrote tracked data to {outfile}")
+        # out_df.to_csv(outfile, index=False)
+        # logger.info(f"Wrote tracked data to {outfile}")
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Track montage masks stored in DB")

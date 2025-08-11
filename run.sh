@@ -31,7 +31,7 @@ export PATH=/usr/bin:$PATH
 nextflow run pipeline.nf \
   -with-apptainer /gladstone/finkbeiner/steve/work/projects/datastudy/nextflow-cluster.sif \
   -c finkbeiner.config \
-  -resume false \
+  --process.echo true \
   -ansi-log false \
   
 echo "Nextflow pipeline completed"

@@ -659,6 +659,7 @@ process SEGMENTATION_MONTAGE {
 process TRACKING_MONTAGE {
 
     tag "$well"
+    echo = true
     
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 

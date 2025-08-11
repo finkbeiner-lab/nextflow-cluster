@@ -303,15 +303,15 @@ if (params.DO_TRACKING_MONTAGE) {
     // create a value channel from the string
     target_channel_ch = Channel.value(target_channel_str)
 
+    combined_ch = tracking_montage_ch
+    .combine(experiment_ch)
+    .combine(track_type_ch)
+    .combine(distance_threshold_ch)
+    .combine(well_ch)
+    .combine(target_channel_ch)
+
     // invoke the process; this returns a channel of all stdout lines
-    track_montage_ch = TRACKING_MONTAGE(
-        tracking_montage_ch,
-        experiment_ch,
-        track_type_ch,
-        distance_threshold_ch,
-        well_ch,
-        target_channel_ch
-    )
+    track_montage_ch = TRACKING_MONTAGE(combined_ch)
 
     // print each line your Python script outputs
     track_montage_ch.view { line ->
@@ -407,7 +407,7 @@ if (params.DO_OVERLAY_MONTAGE) {
 // ***************** 2 MAIN COMMONLY USED WORKFLOWS ************************
 
 
-// Read CSV platemap file
+// Read CSV platemap file -TODO Read from DB
 def csv_lines = file(params.platemap_path).readLines()
 println "First line of CSV: ${csv_lines[0]}"
 def header = csv_lines[0].split(',').toList()
