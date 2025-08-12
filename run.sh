@@ -1,14 +1,16 @@
 #!/bin/bash
 
 # Create a directory for Slurm output logs
-mkdir -p /gladstone/finkbeiner/steve/work/projects/datastudy/slurm-logs
+mkdir -p /gladstone/finkbeiner/steve/work/projects/nextflow-cluster/slurm-logs
 
 # Slurm job options
-#SBATCH --job-name=testjob
+#SBATCH --job-name=nextflow-run
 #SBATCH --time=08:00:00
 #SBATCH -N 1
-#SBATCH --output=/gladstone/finkbeiner/steve/work/projects/datastudy/slurm-logs/slurm-%j.out
+#SBATCH --output=/gladstone/finkbeiner/steve/work/projects/nextflow-cluster/slurm-logs/slurm-%j.out
 ##SBATCH --gres=gpu:v100:1
+#SBATCH --distribution=block:block
+
 
 # Disable color output in Nextflow
 export NXF_CLI_COLOR=false
@@ -29,7 +31,7 @@ export PATH=/usr/bin:$PATH
 
 # Run Nextflow inside Apptainer container
 nextflow run pipeline.nf \
-  -with-apptainer /gladstone/finkbeiner/steve/work/projects/datastudy/nextflow-cluster.sif \
+  -with-apptainer /gladstone/finkbeiner/steve/work/projects/nextflow-cluster/nextflow-cluster.sif \
   -c finkbeiner.config \
   --process.echo true \
   -ansi-log false \
