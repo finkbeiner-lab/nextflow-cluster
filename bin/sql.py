@@ -47,8 +47,6 @@ class Database:
         if os.path.exists(file_path):
             try:
                 _df = pd.read_csv(file_path)
-                print("CSV file read successfully:")
-                print(_df.head())  # Print the first few rows of the dataframe
             except Exception as e:
                 print(f"An error occurred while reading the file: {e}")
         else:
@@ -67,7 +65,6 @@ class Database:
         self.meta.reflect(bind=self.engine)
 
         with self.engine.connect() as connection:
-            print('Connected to Database celldata.')
             if not self.engine.dialect.has_table(connection, 'experimentdata'):
                 self.create_experimentdata_table()
             if not self.engine.dialect.has_table(connection, 'welldata'):

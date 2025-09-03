@@ -21,7 +21,7 @@ norm_ch = Channel.of(params.img_norm_name)
 lower_ch = Channel.of(params.lower_area_thresh)
 upper_ch = Channel.of(params.upper_area_thresh)
 sd_ch = Channel.of(params.sd_scale_factor)
-well_ch = Channel.of(params.chosen_wells)
+// well_ch is defined later in the workflow
 tile_ch = Channel.of(params.tile)
 use_aligned_tiles_ch = Channel.of(params.use_aligned_tiles)
 tp_ch = Channel.of(params.chosen_timepoints)
@@ -30,7 +30,6 @@ well_toggle_ch = Channel.of(params.wells_toggle)
 tp_toggle_ch = Channel.of(params.timepoints_toggle)
 channel_toggle_ch = Channel.of(params.channels_toggle)
 image_overlap_ch = Channel.of(params.image_overlap) //austin added "_ch" 5/17
-target_channel_ch = Channel.from(params.target_channel)
 target_channel_crop_ch = Channel.from(params.target_channel_crop)
 puncta_target_channel_ch = Channel.from(params.puncta_target_channel)
 morphology_ch = Channel.of(params.morphology_channel)
@@ -38,6 +37,12 @@ distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
 track_type_ch           = Channel.of(params.track_type)
 crop_size_ch = Channel.of(params.crop_size)
+
+// Define target_channel_ch globally so it's available to all workflows
+def target_channel_str = params.target_channel instanceof List 
+    ? params.target_channel.join(',')
+    : params.target_channel
+target_channel_ch = Channel.value(target_channel_str)
 // Fallback if tiletype is missing from config
 if (!params.tiletype) {
     params.tiletype = 'maskpath'
@@ -87,7 +92,7 @@ optimizer_ch = Channel.of(params.optimizer)
 
 include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;SEGMENTATION_MONTAGE;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY; 
-    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE} from './modules.nf'
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; BUNDLED_WORKFLOW_IXM} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -296,12 +301,7 @@ if (params.DO_TRACKING_MONTAGE) {
     //tracking_montage_flag = seg_result.mix(cellpose_result).collect()
 
     // convert list to comma-separated string if needed
-    def target_channel_str = params.target_channel instanceof List 
-        ? params.target_channel.join(',') 
-        : params.target_channel
-
-    // create a value channel from the string
-    target_channel_ch = Channel.value(target_channel_str)
+        // target_channel_ch is already defined globally
 
     combined_ch = tracking_montage_ch
     .combine(experiment_ch)
@@ -409,14 +409,9 @@ if (params.DO_OVERLAY_MONTAGE) {
 
 // Read CSV platemap file -TODO Read from DB
 def csv_lines = file(params.platemap_path).readLines()
-println "First line of CSV: ${csv_lines[0]}"
 def header = csv_lines[0].split(',').toList()
-println "Header columns (raw): ${header} - type: ${header.getClass()}"
 header = header.collect { it.trim() }
-println "Header columns (trimmed): ${header} - type: ${header.getClass()}"
-
 def well_index = header.indexOf('well')
-println "Index of 'well': ${well_index}"
 
 if (well_index == -1) {
     error "❌ CSV platemap is missing a 'well' column."
@@ -445,12 +440,8 @@ if (params.chosen_wells == 'all') {
 
 
 
-// Create the well channel
+// Create the well channel - use this for all workflows
 well_ch = Channel.from(wells_to_use)
-well_ch.view { "💧 well_ch emits: $it" }
-
-println "✅ Wells to use: ${wells_to_use}"
-
 
 
 if (params.DO_STD_WORKFLOW) {
@@ -499,6 +490,9 @@ if (params.DO_STD_WORKFLOW) {
     // Step 2: ALIGN_MONTAGE_DFT
     align_ready_ch = montage_result_ch
 
+    // Log start time for alignment workflow
+    println "🚀 [${new Date().format("yyyy-MM-dd HH:mm:ss")}] Starting ALIGN_MONTAGE_DFT workflow for all wells: ${wells_to_use.join(', ')}"
+
     combined_align_ch = align_ready_ch
         .combine(experiment_ch)
         .combine(morphology_ch)
@@ -530,7 +524,8 @@ if (params.DO_STD_WORKFLOW) {
     align_result_ch = ALIGN_MONTAGE_DFT(combined_align_ch)
     align_result_ch.view { tuple ->
         def (flag, well) = tuple
-        println "🧪 Emitted from ALIGN_MONTAGE_DFT: $flag (flag: $well)"
+        def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+        println "✅ [${timestamp}] ALIGN_MONTAGE_DFT completed for well: $well (flag: $flag)"
     }
 
 
@@ -577,10 +572,7 @@ if (params.DO_STD_WORKFLOW) {
     // Step 4: TRACKING_MONTAGE
     trackmont_ready_ch = segmont_result_ch
 
-    def target_channel_str = params.target_channel instanceof List 
-        ? params.target_channel.join(',')
-        : params.target_channel
-    target_channel_ch = Channel.value(target_channel_str)
+    // target_channel_ch is already defined globally
 
     combined_trackmont_ch = trackmont_ready_ch
         .combine(experiment_ch)
@@ -646,14 +638,13 @@ if (params.DO_STD_WORKFLOW) {
 
 if (params.DO_STD_WORKFLOW_IXM) {
 
-    log.info "▶ Running DO_STD_WORKFLOW_IXM: MONTAGE → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
-
-    // Step 1: MONTAGE
-    // Combine each well with all singleton params
-    montage_ready_ch = Channel.of(true)
-
-    combined_montage_ch = well_ch
-        .combine(montage_ready_ch)
+    log.info "\n ▶ Running OPTIMIZED DO_STD_WORKFLOW_IXM: BUNDLED_WORKFLOW_IXM (MONTAGE → SEGMENTATION → TRACKING → OVERLAY)"
+   
+    // Log start time for bundled workflow
+    println "🚀 [${new Date().format("yyyy-MM-dd HH:mm:ss")}] Starting BUNDLED_WORKFLOW_IXM for all wells: ${wells_to_use.join(', ')}"
+    println "📋 Workflow steps: MONTAGE → SEGMENTATION → TRACKING → OVERLAY"
+    
+    combined_bundled_ch = well_ch
         .combine(experiment_ch)
         .combine(tiletype_ch)
         .combine(montage_pattern_ch)
@@ -663,147 +654,63 @@ if (params.DO_STD_WORKFLOW_IXM) {
         .combine(tp_toggle_ch)
         .combine(channel_toggle_ch)
         .combine(image_overlap_ch)
+        .combine(morphology_ch)
+        .combine(seg_ch)
+        .combine(norm_ch)
+        .combine(lower_ch)
+        .combine(upper_ch)
+        .combine(sd_ch)
+        .combine(track_type_ch)
+        .combine(distance_threshold_ch)
+        .combine(target_channel_ch)
+        .combine(shift_ch)
+        .combine(contrast_ch)
         .map { nestedTuple ->
             def flat = nestedTuple.flatten()
-            // Reorder flat list to process input order:
-            // Current process input order:
-            // ready, exp, tiletype, montage_pattern, well, chosen_timepoints, chosen_channels, wells_toggle, timepoints_toggle, channels_toggle, image_overlap
             
-            def ready       = flat[1]
-            def exp         = flat[2]
-            def tiletype    = flat[3]
-            def montage_pattern = flat[4]
-            def well        = flat[0]
-            def chosen_timepoints = flat[5]
-            def chosen_channels   = flat[6]
-            def wells_toggle      = flat[7]
-            def timepoints_toggle = flat[8]
-            def channels_toggle   = flat[9]
-            def image_overlap     = flat[10]
+            // Map to the BUNDLED_WORKFLOW_IXM input order:
+            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle, 
+            // timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
+            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
+            // distance_threshold, target_channel, well, shift, contrast
+            
+            def exp               = flat[1]
+            def tiletype          = flat[2]
+            def montage_pattern   = flat[3]
+            def chosen_timepoints = flat[4]
+            def chosen_channels   = flat[5]
+            def wells_toggle      = flat[6]
+            def timepoints_toggle = flat[7]
+            def channels_toggle   = flat[8]
+            def image_overlap     = flat[9]
+            def morphology_channel = flat[10]
+            def segmentation_method = flat[11]
+            def img_norm_name     = flat[12]
+            def lower_area_thresh = flat[13]
+            def upper_area_thresh = flat[14]
+            def sd_scale_factor   = flat[15]
+            def track_type        = flat[16]
+            def distance_threshold = flat[17]
+            def target_channel    = flat[18]
+            def well              = flat[0]
+            def shift             = flat[19]
+            def contrast          = flat[20]
 
-            return tuple(ready, exp, tiletype, montage_pattern, well, chosen_timepoints, chosen_channels, wells_toggle, timepoints_toggle, channels_toggle, image_overlap)
+            return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
+                       timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
+                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
+                       distance_threshold, target_channel, well, shift, contrast)
         }
+    
+  
 
-    montage_result_ch = MONTAGE(combined_montage_ch)
-    montage_result_ch.view { tuple ->
-    def (flag, well) = tuple
-    println "🧪 Emitted from MONTAGE: $flag (flag: $well)"
-    }
- 
-
-    // Step 2: SEGMENTATION_MONTAGE
-    segmont_ready_ch = montage_result_ch
-
-    combined_segmont_ch = segmont_ready_ch
-    .combine(experiment_ch)
-    .combine(morphology_ch)
-    .combine(seg_ch)
-    .combine(norm_ch)
-    .combine(lower_ch)
-    .combine(upper_ch)
-    .combine(sd_ch)
-    .combine(tp_ch)
-    .combine(well_toggle_ch)
-    .combine(tp_toggle_ch)
-    .map { nestedTuple ->
-        def flat = nestedTuple.flatten()
-        // flat should have 12 elements corresponding to the segmentation inputs:
-        // ready, well, exp, morphology_channel, segmentation_method, img_norm_name,
-        // lower_area_thresh, upper_area_thresh, sd_scale_factor, chosen_timepoints,
-        // wells_toggle, timepoints_toggle
-
-        def ready         = flat[0]  // from montage_ch: true
-        def well          = flat[1]  // from montage_ch: D03 or D05
-        def exp           = flat[2]
-        def morphology    = flat[3]
-        def seg_params    = flat[4]
-        def norm          = flat[5]
-        def lower         = flat[6]
-        def upper         = flat[7]
-        def sd            = flat[8]
-        def chosen_tp     = flat[9]
-        def wells_toggle  = flat[10]
-        def tp_toggle     = flat[11]
-
-        return tuple(ready, exp, morphology, seg_params, norm, lower, upper, sd, well, chosen_tp, wells_toggle, tp_toggle)
-    }
-
-    segmentation_montage_result_ch = SEGMENTATION_MONTAGE(combined_segmont_ch)
-
-    segmentation_montage_result_ch.view { tuple ->
-    def (flag, well) = tuple
-    println "🧪 Emitted from SEGMENTATION: $flag (flag: $well)"
-    }
-   
-
-    // Step 4: TRACKING_MONTAGE
-
-    tracking_ready_ch = segmentation_montage_result_ch
-
-    def target_channel_str = params.target_channel instanceof List 
-        ? params.target_channel.join(',')
-        : params.target_channel
-    target_channel_ch = Channel.value(target_channel_str)
-
-
-    combined_trackmont_ch = tracking_ready_ch
-    .combine(experiment_ch)
-    .combine(track_type_ch)
-    .combine(distance_threshold_ch)
-    .combine(target_channel_ch)
-    .map { nestedTuple ->
-        def flat = nestedTuple.flatten()
-        // flat should contain: ready, well, experiment, track_type, distance_threshold, target_channel
-        def ready         = flat[0]
-        def exp           = flat[2]
-        def track_type    = flat[3]
-        def dist_thresh   = flat[4]
-        def well          = flat[1]
-        def target_ch     = flat[5]
-
-        return tuple(ready, exp, track_type, dist_thresh, well, target_ch)
-    }
-
-    tracking_montage_result_ch = TRACKING_MONTAGE(combined_trackmont_ch)
-    tracking_montage_result_ch.view { tuple ->
-    def (flag, well) = tuple
-    println "🧪 Emitted from TRACKING: $flag (flag: $well)"
-    }
-
-
-    // Step 5: OVERLAY_MONTAGE
-    overlay_ready_ch = tracking_montage_result_ch
-
-    combined_overlay_ch = overlay_ready_ch
-    .combine(experiment_ch)
-    .combine(morphology_ch)
-    .combine(tp_ch)
-    .combine(well_toggle_ch)
-    .combine(tp_toggle_ch)
-    .combine(channel_toggle_ch)
-    .combine(shift_ch)
-    .combine(contrast_ch)
-    .map { nestedTuple ->
-        def flat = nestedTuple.flatten()
-        // flat order corresponds to inputs of OVERLAY_MONTAGE process input tuple
-        def flag           = flat[0]
-        def exp            = flat[2]
-        def morphology     = flat[3]
-        def well           = flat[1]
-        def tp             = flat[4]
-        def well_toggle    = flat[5]
-        def tp_toggle      = flat[6]
-        def channel_toggle = flat[7]
-        def shift          = flat[8]
-        def contrast       = flat[9]
-
-        return tuple(flag, exp, morphology, well, tp, well_toggle, tp_toggle, channel_toggle, shift, contrast)
-    }
-
-    overlay_result_ch = OVERLAY_MONTAGE(combined_overlay_ch)
-    overlay_result_ch.view { tuple ->
-    def (flag, well) = tuple
-    println "🧪 Emitted from OVERLAY: $flag (flag: $well)"
+    bundled_result_ch = BUNDLED_WORKFLOW_IXM(combined_bundled_ch)
+    
+    
+    bundled_result_ch.view { tuple ->
+        def (well, flag) = tuple
+        def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+        println "🎉 [${timestamp}] BUNDLED_WORKFLOW_IXM completed for well: $well (MONTAGE → SEGMENTATION → TRACKING → OVERLAY)"
     }
 }
 

@@ -709,3 +709,130 @@ process OVERLAY_MONTAGE {
     --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast}
     """
 }
+
+process BUNDLED_WORKFLOW_IXM {
+    //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    tag "BUNDLED_WORKFLOW_IXM-${exp}_${well}"
+    
+    // Resource requirements for the bundled process
+    // These can be adjusted based on your cluster capacity
+    cpus 4
+    memory 16.GB
+    time '6h'
+    
+    // Process-specific resource hints (for monitoring)
+    // MONTAGE: ~2 CPU, ~8GB RAM
+    // SEGMENTATION: ~4 CPU, ~12GB RAM (most intensive)
+    // TRACKING: ~2 CPU, ~6GB RAM
+    // OVERLAY: ~1 CPU, ~4GB RAM
+
+    input:
+    tuple val(exp),
+          val(tiletype),
+          val(montage_pattern),
+          val(chosen_timepoints),
+          val(chosen_channels),
+          val(wells_toggle),
+          val(timepoints_toggle),
+          val(channels_toggle),
+          val(image_overlap),
+          val(morphology_channel),
+          val(segmentation_method),
+          val(img_norm_name),
+          val(lower_area_thresh),
+          val(upper_area_thresh),
+          val(sd_scale_factor),
+          val(track_type),
+          val(distance_threshold),
+          val(target_channel),
+          val(well),
+          val(shift),
+          val(contrast)
+
+    output:
+    tuple val(well), val(true)
+
+    script:
+    """
+    #!/bin/bash
+    set -e
+    
+    # ============================================================================
+    # BUNDLED WORKFLOW CONFIGURATION
+    # ============================================================================
+    # This process combines 4 lightweight operations into a single job per well
+    # to reduce job launch overhead from 4x to 1x per well.
+    #
+    # RESOURCE ALLOCATION (adjust in Nextflow process definition above):
+    # - CPUs: 4 per well (configurable)
+    # - Memory: 16GB per well (configurable)
+    # - Time: 6 hours per well (configurable)
+    #
+    # PROCESS BREAKDOWN:
+    # 1. MONTAGE: ~2 CPU, ~8GB RAM
+    # 2. SEGMENTATION: ~4 CPU, ~12GB RAM (most intensive)
+    # 3. TRACKING: ~2 CPU, ~6GB RAM  
+    # 4. OVERLAY: ~1 CPU, ~4GB RAM
+    # ============================================================================
+    
+    echo "🚀 Starting bundled workflow for well ${well}"
+    echo "📊 Processing: MONTAGE → SEGMENTATION → TRACKING → OVERLAY"
+    echo "💻 Resources: 4 CPUs, 16GB RAM, 6h time limit"
+    
+    # Step 1: MONTAGE
+    echo "🔧 Step 1/4: Creating montage for well ${well}"
+    montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
+    --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} --chosen_channels ${chosen_channels} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --channels_toggle ${channels_toggle} \
+    --image_overlap ${image_overlap}
+    
+    if [ \$? -eq 0 ]; then
+        echo "✅ Montage completed successfully for well ${well}"
+    else
+        echo "❌ Montage failed for well ${well}"
+        exit 1
+    fi
+    
+    # Step 2: SEGMENTATION
+    echo "🔬 Step 2/4: Running segmentation for well ${well}"
+    segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
+    --img_norm_name ${img_norm_name} --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
+    --sd_scale_factor ${sd_scale_factor} --chosen_wells ${well} --chosen_channels ${morphology_channel} \
+    --chosen_timepoints ${chosen_timepoints} --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    
+    if [ \$? -eq 0 ]; then
+        echo "✅ Segmentation completed successfully for well ${well}"
+    else
+        echo "❌ Segmentation failed for well ${well}"
+        exit 1
+    fi
+    
+    # Step 3: TRACKING
+    echo "🎯 Step 3/4: Running tracking for well ${well}"
+    tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \
+    --wells ${well} --target_channel ${target_channel}
+    
+    if [ \$? -eq 0 ]; then
+        echo "✅ Tracking completed successfully for well ${well}"
+    else
+        echo "❌ Tracking failed for well ${well}"
+        exit 1
+    fi
+    
+    # Step 4: OVERLAY
+    echo "🎨 Step 4/4: Creating overlay for well ${well}"
+    overlay_montage.py --experiment ${exp} --target_channel ${morphology_channel} \
+    --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast}
+    
+    if [ \$? -eq 0 ]; then
+        echo "✅ Overlay completed successfully for well ${well}"
+    else
+        echo "❌ Overlay failed for well ${well}"
+        exit 1
+    fi
+    
+    echo "🎉 Bundled workflow completed successfully for well ${well}!"
+    """
+}

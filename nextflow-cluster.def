@@ -60,6 +60,7 @@ From: ubuntu:22.04
                 cellpose \
                 pyomo \
                 numpy \
+                tifffile \
                 imreg_dft
 
     # Install Java 17

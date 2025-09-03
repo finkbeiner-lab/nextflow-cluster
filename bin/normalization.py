@@ -84,8 +84,6 @@ class Normalize(Ops):
 
     def subtract_bg(self, img, well, timepoint):
         im = img - self.backgrounds[well][timepoint]
-        print('background range', np.min(self.backgrounds[well][timepoint]), np.max(self.backgrounds[well][timepoint]))
-        print('im', np.min(im), np.max(im))
         im[im < 0] = 0
         return im
 
@@ -128,7 +126,7 @@ class Normalize(Ops):
             filenames = df.loc[df.tile == i, 'filename'].tolist()
             random.seed(121)
             if len(filenames):
-                print('ONLY ONE FILE: TOO FEW FOR BACKGROUND SUBTRACTION/DIVISION')
+                pass  # Skip verbose message
             filenames = random.sample(filenames, min(20, len(filenames)))
             for f in filenames:
                 img = imageio.imread(f)
@@ -155,7 +153,6 @@ class Normalize(Ops):
 
     def collect_images(self, df, well, timepoint):
         strt = time()
-        print('Collecting images for background subtraction')
         img_lst = []
         filenames = df.filename.tolist()
         for f in filenames:
@@ -166,7 +163,6 @@ class Normalize(Ops):
         if well not in self.backgrounds:
             self.backgrounds[well] = {}
         self.backgrounds[well][timepoint] = bg
-        print(f'Calculated background image for {well} at T{timepoint} in {time() - strt}')
 
     def collect_images_by_timepoint(self, df):
         tiles = sorted(list(df.tile.unique()))
@@ -238,6 +234,5 @@ if __name__ == '__main__':
                         help="Specify channels to include or exclude.")
     parser.add_argument('--tile', default=0, type=int, help="Select single tile to segment. Default is to segment all tiles.")
     args = parser.parse_args()
-    print(args)
     Norm = Normalize(args)
     Norm.test()
