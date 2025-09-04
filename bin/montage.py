@@ -52,8 +52,6 @@ class Montage:
 
     def run(self, savebool=True):
         self.start_time = time()
-        print(f"🚀 MONTAGE STARTED")
-        
         tiledata_df = self.Norm.get_df_for_training(['channeldata'])
         # tiledata_df = self.Norm.get_flatfields()
         tiledata_df = tiledata_df.sort_values(by=['timepoint', 'well', 'tile',])
