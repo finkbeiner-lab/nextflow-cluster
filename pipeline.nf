@@ -640,10 +640,13 @@ if (params.DO_STD_WORKFLOW_IXM) {
 
     log.info "\n ▶ Running OPTIMIZED DO_STD_WORKFLOW_IXM: BUNDLED_WORKFLOW_IXM (MONTAGE → SEGMENTATION → TRACKING → OVERLAY)"
    
-    // Log start time for bundled workflow
-    println "🚀 [${new Date().format("yyyy-MM-dd HH:mm:ss")}] Starting BUNDLED_WORKFLOW_IXM for all wells: ${wells_to_use.join(', ')}"
-    println "📋 Workflow steps: MONTAGE → SEGMENTATION → TRACKING → OVERLAY"
+    // Record start time for bundled workflow
+    def bundle_start_time = System.currentTimeMillis()
+    def bundle_start_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
     
+    // Log start time for bundled workflow
+    println "🚀 [${bundle_start_timestamp}] STARTING... BUNDLED_WORKFLOW_IXM for all wells: ${wells_to_use.join(', ')}"
+  
     combined_bundled_ch = well_ch
         .combine(experiment_ch)
         .combine(tiletype_ch)
@@ -709,8 +712,14 @@ if (params.DO_STD_WORKFLOW_IXM) {
     
     bundled_result_ch.view { tuple ->
         def (well, flag) = tuple
-        def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-        println "🎉 [${timestamp}] BUNDLED_WORKFLOW_IXM completed for well: $well (MONTAGE → SEGMENTATION → TRACKING → OVERLAY)"
+        def bundle_end_time = System.currentTimeMillis()
+        def bundle_end_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+        def total_time_ms = bundle_end_time - bundle_start_time
+        def total_time_seconds = total_time_ms / 1000.0
+        def total_time_minutes = total_time_seconds / 60.0
+        
+        println "🎉 [${bundle_end_timestamp}] COMPLETED... BUNDLED_WORKFLOW_IXM for well: $well (MONTAGE → SEGMENTATION → TRACKING → OVERLAY)"
+        println "⏱️  Total time: ${total_time_seconds.round(1)}s (${total_time_minutes.round(2)} min)"
     }
 }
 

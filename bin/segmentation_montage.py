@@ -26,8 +26,9 @@ import gc
 logger = logging.getLogger("Segmentation")
 # logger.propagate = False
 now = datetime.datetime.now()
-
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
+print(f'🚀 Starting segmentation processing at {now.strftime("%Y-%m-%d %H:%M:%S")}')
+
 fink_log_dir = './finkbeiner_logs'
 if not os.path.exists(fink_log_dir):
     os.makedirs(fink_log_dir)

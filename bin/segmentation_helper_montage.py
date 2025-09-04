@@ -10,19 +10,21 @@ import gc
 
 
 def save_mask(mask, image_file, savedir):
-    """Save mask with optimized I/O using tifffile"""
+    """Save mask with optimized I/O using tifffile - OpenCV compatible format"""
     name = os.path.basename(image_file)
     name = name.split('.t')[0]  # split by tiff suffix
     if not os.path.exists(savedir):
         os.makedirs(savedir)
     savepath = os.path.join(savedir, name + '_ENCODED.tif')
     
-    # Use tifffile for faster TIFF I/O with optimized compression
-    tifffile.imwrite(savepath, mask, compression='lzw')
+    # Use tifffile with OpenCV-compatible format
+    # Ensure the mask is uint16 and use no compression for maximum compatibility
+    mask_uint16 = mask.astype(np.uint16)
+    tifffile.imwrite(savepath, mask_uint16, compression=None)
     return savepath
 
 def save_masks_batch(masks_data, savedir):
-    """Batch save multiple masks for better I/O performance using tifffile"""
+    """Batch save multiple masks for better I/O performance using tifffile - OpenCV compatible"""
     if not os.path.exists(savedir):
         os.makedirs(savedir)
     
@@ -31,8 +33,9 @@ def save_masks_batch(masks_data, savedir):
         name = os.path.basename(image_file)
         name = name.split('.t')[0]
         savepath = os.path.join(savedir, name + '_ENCODED.tif')
-        # Use tifffile for faster TIFF I/O
-        tifffile.imwrite(savepath, mask, compression='lzw')
+        # Use tifffile with OpenCV-compatible format
+        mask_uint16 = mask.astype(np.uint16)
+        tifffile.imwrite(savepath, mask_uint16, compression=None)
         saved_paths.append(savepath)
     
     return saved_paths
