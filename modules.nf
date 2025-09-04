@@ -717,8 +717,8 @@ process BUNDLED_WORKFLOW_IXM {
     
     // Resource requirements for the bundled process
     // These can be adjusted based on your cluster capacity
-    cpus 4
-    memory 16.GB
+    cpus 20
+    memory 64.GB
     time '6h'
     
     // Process-specific resource hints (for monitoring)
@@ -726,6 +726,7 @@ process BUNDLED_WORKFLOW_IXM {
     // SEGMENTATION: ~4 CPU, ~12GB RAM (most intensive)
     // TRACKING: ~2 CPU, ~6GB RAM
     // OVERLAY: ~1 CPU, ~4GB RAM
+    // TOTAL: ~20 CPU, ~64GB RAM (with headroom for parallel processing)
 
     input:
     tuple val(exp),
@@ -782,48 +783,48 @@ process BUNDLED_WORKFLOW_IXM {
     
     echo "🚀 Starting bundled workflow for well ${well}"
     echo "📊 Processing: MONTAGE → SEGMENTATION → TRACKING → OVERLAY"
-    echo "💻 Resources: 4 CPUs, 16GB RAM, 6h time limit"
+    echo "💻 Resources: 20 CPUs, 64GB RAM, 6h time limit"
     echo "⏰ Started at: \${START_TIMESTAMP}"
     
-    # Step 1: MONTAGE - COMMENTED OUT FOR TESTING
-    # echo "🔧 Step 1/4: Creating montage for well ${well}"
-    # montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
-    # --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} --chosen_channels ${chosen_channels} \
-    # --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --channels_toggle ${channels_toggle} \
-    # --image_overlap ${image_overlap}
-    # 
-    # if [ \$? -eq 0 ]; then
-    #     echo "✅ Montage completed successfully for well ${well}"
-    # else
-    #     echo "❌ Montage failed for well ${well}"
-    #     exit 1
-    # fi
+    # Step 1: MONTAGE
+    echo "🔧 Step 1/4: Creating montage for well ${well}"
+    montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \
+    --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} --chosen_channels ${chosen_channels} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --channels_toggle ${channels_toggle} \
+    --image_overlap ${image_overlap}
     
-    # Step 2: SEGMENTATION - COMMENTED OUT FOR TESTING
-    # echo "🔬 Step 2/4: Running segmentation for well ${well}"
-    # segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
-    # --img_norm_name ${img_norm_name} --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
-    # --sd_scale_factor ${sd_scale_factor} --chosen_wells ${well} --chosen_channels ${morphology_channel} \
-    # --chosen_timepoints ${chosen_timepoints} --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
-    # 
-    # if [ \$? -eq 0 ]; then
-    #     echo "✅ Segmentation completed successfully for well ${well}"
-    # else
-    #     echo "❌ Segmentation failed for well ${well}"
-    #     exit 1
-    # fi
+    if [ \$? -eq 0 ]; then
+        echo "✅ Montage completed successfully for well ${well}"
+    else
+        echo "❌ Montage failed for well ${well}"
+        exit 1
+    fi
     
-    # Step 3: TRACKING - COMMENTED OUT FOR TESTING
-    # echo "🎯 Step 3/4: Running tracking for well ${well}"
-    # tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \
-    # --wells ${well} --target_channel ${target_channel}
-    # 
-    # if [ \$? -eq 0 ]; then
-    #     echo "✅ Tracking completed successfully for well ${well}"
-    # else
-    #     echo "❌ Tracking failed for well ${well}"
-    #     exit 1
-    # fi
+    # Step 2: SEGMENTATION
+    echo "🔬 Step 2/4: Running segmentation for well ${well}"
+    segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
+    --img_norm_name ${img_norm_name} --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
+    --sd_scale_factor ${sd_scale_factor} --chosen_wells ${well} --chosen_channels ${morphology_channel} \
+    --chosen_timepoints ${chosen_timepoints} --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    
+    if [ \$? -eq 0 ]; then
+        echo "✅ Segmentation completed successfully for well ${well}"
+    else
+        echo "❌ Segmentation failed for well ${well}"
+        exit 1
+    fi
+    
+    # Step 3: TRACKING
+    echo "🎯 Step 3/4: Running tracking for well ${well}"
+    tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \
+    --wells ${well} --target_channel ${target_channel}
+    
+    if [ \$? -eq 0 ]; then
+        echo "✅ Tracking completed successfully for well ${well}"
+    else
+        echo "❌ Tracking failed for well ${well}"
+        exit 1
+    fi
     
     # Step 4: OVERLAY (Parallel Processing)
     echo "🎨 Step 4/4: Creating overlay for well ${well} (parallel processing)"
