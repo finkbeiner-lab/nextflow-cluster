@@ -717,8 +717,8 @@ process BUNDLED_WORKFLOW_IXM {
     
     // Resource requirements for the bundled process
     // These can be adjusted based on your cluster capacity
-    cpus 20
-    memory 64.GB
+    cpus 4
+    memory 16.GB
     time '6h'
     
     // Process-specific resource hints (for monitoring)
