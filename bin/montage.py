@@ -335,7 +335,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--outfile',
         help='Text status',
-        default=f'/gladstone/finkbeiner/linsley/GXYTMP/Nextflow-tmp/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
+        default=f'/gladstone/finkbeiner/linsley/GXYTMPS/Nextflow-tmp/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
     
     parser.add_argument('--experiment', default='JAK-COR7508012023-GEDI', type=str)

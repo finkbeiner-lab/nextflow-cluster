@@ -392,12 +392,12 @@ if __name__ == '__main__':
     parser.add_argument(
         '--input_dict',
         help='path to pickle',
-        default=f'/gladstone/finkbeiner/linsley/GXYTMP/Nextflow-tmp/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
+        default=f'/gladstone/finkbeiner/linsley/GXYTMPS/Nextflow-tmp/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
     parser.add_argument(
         '--outfile',
         help='Tiff image of last tile',
-        default=f'/gladstone/finkbeiner/linsley/GXYTMP/Nextflow-tmp/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
+        default=f'/gladstone/finkbeiner/linsley/GXYTMPS/Nextflow-tmp/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.tif'
     )
 
     parser.add_argument('--experiment',default='0907-FB-1-JL-gedi-test', type=str)
