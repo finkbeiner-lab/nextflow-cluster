@@ -92,7 +92,7 @@ optimizer_ch = Channel.of(params.optimizer)
 
 include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;SEGMENTATION_MONTAGE;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY; 
-    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; BUNDLED_WORKFLOW_IXM} from './modules.nf'
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -126,6 +126,7 @@ log.info """\
     Overlay Montage: ${params.DO_OVERLAY_MONTAGE}
     Standard Workflow: ${params.DO_STD_WORKFLOW}
     Standard IXM Workflow: ${params.DO_STD_WORKFLOW_IXM}
+    Bundled Standard Workflow: ${params.DO_BUNDLED_STD_WORKFLOW}
     """
     .stripIndent()
 
@@ -719,6 +720,97 @@ if (params.DO_STD_WORKFLOW_IXM) {
         def total_time_minutes = total_time_seconds / 60.0
         
         println "🎉 [${bundle_end_timestamp}] COMPLETED... BUNDLED_WORKFLOW_IXM for well: $well (MONTAGE → SEGMENTATION → TRACKING → OVERLAY)"
+        println "⏱️  Total time: ${total_time_seconds.round(1)}s (${total_time_minutes.round(2)} min)"
+    }
+}
+
+if (params.DO_BUNDLED_STD_WORKFLOW) {
+
+    log.info "\n ▶ Running OPTIMIZED DO_BUNDLED_STD_WORKFLOW: BUNDLED_STD_WORKFLOW (MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION → TRACKING → OVERLAY)"
+   
+    // Record start time for bundled workflow
+    def bundle_start_time = System.currentTimeMillis()
+    def bundle_start_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+    
+    // Log start time for bundled workflow
+    println "🚀 [${bundle_start_timestamp}] STARTING... BUNDLED_STD_WORKFLOW for all wells: ${wells_to_use.join(', ')}"
+  
+    combined_bundled_std_ch = well_ch
+        .combine(experiment_ch)
+        .combine(tiletype_ch)
+        .combine(montage_pattern_ch)
+        .combine(tp_ch)
+        .combine(channel_ch)
+        .combine(well_toggle_ch)
+        .combine(tp_toggle_ch)
+        .combine(channel_toggle_ch)
+        .combine(image_overlap_ch)
+        .combine(morphology_ch)
+        .combine(seg_ch)
+        .combine(norm_ch)
+        .combine(lower_ch)
+        .combine(upper_ch)
+        .combine(sd_ch)
+        .combine(track_type_ch)
+        .combine(distance_threshold_ch)
+        .combine(target_channel_ch)
+        .combine(shift_ch)
+        .combine(contrast_ch)
+        .combine(tile_ch)
+        .combine(shift_dict_ch)
+        .map { nestedTuple ->
+            def flat = nestedTuple.flatten()
+            
+            // Map to the BUNDLED_STD_WORKFLOW input order:
+            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle, 
+            // timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
+            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
+            // distance_threshold, target_channel, well, shift, contrast, tile, shift_dict
+            
+            def exp               = flat[1]
+            def tiletype          = flat[2]
+            def montage_pattern   = flat[3]
+            def chosen_timepoints = flat[4]
+            def chosen_channels   = flat[5]
+            def wells_toggle      = flat[6]
+            def timepoints_toggle = flat[7]
+            def channels_toggle   = flat[8]
+            def image_overlap     = flat[9]
+            def morphology_channel = flat[10]
+            def segmentation_method = flat[11]
+            def img_norm_name     = flat[12]
+            def lower_area_thresh = flat[13]
+            def upper_area_thresh = flat[14]
+            def sd_scale_factor   = flat[15]
+            def track_type        = flat[16]
+            def distance_threshold = flat[17]
+            def target_channel    = flat[18]
+            def well              = flat[0]
+            def shift             = flat[19]
+            def contrast          = flat[20]
+            def tile              = flat[21]
+            def shift_dict        = flat[22]
+
+            return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
+                       timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
+                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
+                       distance_threshold, target_channel, well, shift, contrast, tile, shift_dict)
+        }
+    
+  
+
+    bundled_std_result_ch = BUNDLED_STD_WORKFLOW(combined_bundled_std_ch)
+    
+    
+    bundled_std_result_ch.view { tuple ->
+        def (well, flag) = tuple
+        def bundle_end_time = System.currentTimeMillis()
+        def bundle_end_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+        def total_time_ms = bundle_end_time - bundle_start_time
+        def total_time_seconds = total_time_ms / 1000.0
+        def total_time_minutes = total_time_seconds / 60.0
+        
+        println "🎉 [${bundle_end_timestamp}] COMPLETED... BUNDLED_STD_WORKFLOW for well: $well (MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION → TRACKING → OVERLAY)"
         println "⏱️  Total time: ${total_time_seconds.round(1)}s (${total_time_minutes.round(2)} min)"
     }
 }
