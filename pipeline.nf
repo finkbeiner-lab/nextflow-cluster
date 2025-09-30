@@ -449,13 +449,16 @@ well_ch = Channel.from(wells_to_use)
 
 if (params.DO_STD_WORKFLOW) {
 
-    log.info "▶ Running DO_STD_WORKFLOW: MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION_MONTAGE → TRACKING_MONTAGE → OVERLAY_MONTAGE"
-
-    // Step 1: MONTAGE
-    montage_ready_ch = Channel.of(true)
-
-    combined_montage_ch = well_ch
-        .combine(montage_ready_ch)
+    log.info "\n ▶ Running OPTIMIZED DO_STD_WORKFLOW: BUNDLED_STD_WORKFLOW (MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION → TRACKING → OVERLAY)"
+   
+    // Record start time for bundled workflow
+    def bundle_start_time = System.currentTimeMillis()
+    def bundle_start_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+    
+    // Log start time for bundled workflow
+    println "🚀 [${bundle_start_timestamp}] STARTING... BUNDLED_STD_WORKFLOW for all wells: ${wells_to_use.join(', ')}"
+  
+    combined_bundled_std_ch = well_ch
         .combine(experiment_ch)
         .combine(tiletype_ch)
         .combine(montage_pattern_ch)
@@ -465,178 +468,75 @@ if (params.DO_STD_WORKFLOW) {
         .combine(tp_toggle_ch)
         .combine(channel_toggle_ch)
         .combine(image_overlap_ch)
-        .map { nestedTuple ->
-            def flat = nestedTuple.flatten()
-            def ready       = flat[1]
-            def exp         = flat[2]
-            def tiletype    = flat[3]
-            def montage_pat = flat[4]
-            def well        = flat[0]
-            def tp          = flat[5]
-            def ch          = flat[6]
-            def well_toggle = flat[7]
-            def tp_toggle   = flat[8]
-            def ch_toggle   = flat[9]
-            def img_overlap = flat[10]
-
-            return tuple(ready, exp, tiletype, montage_pat, well, tp, ch, well_toggle, tp_toggle, ch_toggle, img_overlap)
-        }
-
-    montage_result_ch = MONTAGE(combined_montage_ch)
-
-    montage_result_ch.view { tuple ->
-        def (flag, well) = tuple
-        println "🧪 Emitted from MONTAGE: $flag (flag: $well)"
-    }
-
-
-    // Step 2: ALIGN_MONTAGE_DFT
-    align_ready_ch = montage_result_ch
-
-    // Log start time for alignment workflow
-    println "🚀 [${new Date().format("yyyy-MM-dd HH:mm:ss")}] Starting ALIGN_MONTAGE_DFT workflow for all wells: ${wells_to_use.join(', ')}"
-
-    combined_align_ch = align_ready_ch
-        .combine(experiment_ch)
-        .combine(morphology_ch)
-        .combine(well_ch)
-        .combine(tp_ch)
-        .combine(channel_ch)
-        .combine(well_toggle_ch)
-        .combine(tp_toggle_ch)
-        .combine(channel_toggle_ch)
-        .combine(tile_ch)
-        .combine(shift_dict_ch)
-        .map { nestedTuple ->
-            def flat = nestedTuple.flatten()
-            def flag        = flat[0]
-            def exp         = flat[1]
-            def morph       = flat[2]
-            def well        = flat[3]
-            def tp          = flat[4]
-            def ch          = flat[5]
-            def well_toggle = flat[6]
-            def tp_toggle   = flat[7]
-            def ch_toggle   = flat[8]
-            def tile        = flat[9]
-            def shift_dict  = flat[10]
-
-            return tuple(flag, exp, morph, well, tp, ch, well_toggle, tp_toggle, ch_toggle, tile, shift_dict)
-        }
-
-    align_result_ch = ALIGN_MONTAGE_DFT(combined_align_ch)
-    align_result_ch.view { tuple ->
-        def (flag, well) = tuple
-        def timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
-        println "✅ [${timestamp}] ALIGN_MONTAGE_DFT completed for well: $well (flag: $flag)"
-    }
-
-
-    // Step 3: SEGMENTATION_MONTAGE
-    segmont_ready_ch = align_result_ch
-
-    combined_segmont_ch = segmont_ready_ch
-        .combine(experiment_ch)
         .combine(morphology_ch)
         .combine(seg_ch)
         .combine(norm_ch)
         .combine(lower_ch)
         .combine(upper_ch)
         .combine(sd_ch)
-        .combine(well_ch)
-        .combine(tp_ch)
-        .combine(well_toggle_ch)
-        .combine(tp_toggle_ch)
-        .map { nestedTuple ->
-            def flat = nestedTuple.flatten()
-            def flag        = flat[0]
-            def exp         = flat[1]
-            def morph       = flat[2]
-            def seg_method  = flat[3]
-            def norm        = flat[4]
-            def lower       = flat[5]
-            def upper       = flat[6]
-            def sd          = flat[7]
-            def well        = flat[8]
-            def tp          = flat[9]
-            def well_toggle = flat[10]
-            def tp_toggle   = flat[11]
-
-            return tuple(flag, exp, morph, seg_method, norm, lower, upper, sd, well, tp, well_toggle, tp_toggle)
-        }
-
-    segmont_result_ch = SEGMENTATION_MONTAGE(combined_segmont_ch)
-    segmont_result_ch.view { tuple ->
-        def (flag, well) = tuple
-        println "🧪 Emitted from SEGMENTATION: $flag (flag: $well)"
-    }
-
-
-    // Step 4: TRACKING_MONTAGE
-    trackmont_ready_ch = segmont_result_ch
-
-    // target_channel_ch is already defined globally
-
-    combined_trackmont_ch = trackmont_ready_ch
-        .combine(experiment_ch)
         .combine(track_type_ch)
         .combine(distance_threshold_ch)
-        .combine(well_ch)
         .combine(target_channel_ch)
+        .combine(shift_ch)
+        .combine(contrast_ch)
+        .combine(tile_ch)
+        .combine(shift_dict_ch)
         .combine(motion_ch)
         .map { nestedTuple ->
             def flat = nestedTuple.flatten()
-            def flag        = flat[0]
-            def exp         = flat[1]
-            def track_type  = flat[2]
-            def dist_thresh = flat[3]
-            def well        = flat[4]
-            def target_ch   = flat[5]
-            def motion      = flat[6]
+            
+            // Map to the BUNDLED_STD_WORKFLOW input order:
+            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle, 
+            // timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
+            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
+            // distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion
+            
+            def exp               = flat[1]
+            def tiletype          = flat[2]
+            def montage_pattern   = flat[3]
+            def chosen_timepoints = flat[4]
+            def chosen_channels   = flat[5]
+            def wells_toggle      = flat[6]
+            def timepoints_toggle = flat[7]
+            def channels_toggle   = flat[8]
+            def image_overlap     = flat[9]
+            def morphology_channel = flat[10]
+            def segmentation_method = flat[11]
+            def img_norm_name     = flat[12]
+            def lower_area_thresh = flat[13]
+            def upper_area_thresh = flat[14]
+            def sd_scale_factor   = flat[15]
+            def track_type        = flat[16]
+            def distance_threshold = flat[17]
+            def target_channel    = flat[18]
+            def well              = flat[0]
+            def shift             = flat[19]
+            def contrast          = flat[20]
+            def tile              = flat[21]
+            def shift_dict        = flat[22]
+            def motion            = flat[23]
 
-            return tuple(flag, exp, track_type, dist_thresh, well, target_ch, motion)
+            return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
+                       timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
+                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
+                       distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion)
         }
+    
+  
 
-    trackmont_result_ch = TRACKING_MONTAGE(combined_trackmont_ch)
-    trackmont_result_ch.view { tuple ->
-        def (flag, well) = tuple
-        println "🧪 Emitted from TRACKING: $flag (flag: $well)"
-    }
-
-
-    // Step 5: OVERLAY_MONTAGE
-    overlay_ready_ch = trackmont_result_ch
-
-    combined_overlay_ch = overlay_ready_ch
-        .combine(experiment_ch)
-        .combine(morphology_ch)
-        .combine(well_ch)
-        .combine(tp_ch)
-        .combine(well_toggle_ch)
-        .combine(tp_toggle_ch)
-        .combine(channel_toggle_ch)
-        .combine(shift_ch)
-        .combine(contrast_ch)
-        .map { nestedTuple ->
-            def flat = nestedTuple.flatten()
-            def flag        = flat[0]
-            def exp         = flat[1]
-            def morph       = flat[2]
-            def well        = flat[3]
-            def tp          = flat[4]
-            def well_toggle = flat[5]
-            def tp_toggle   = flat[6]
-            def ch_toggle   = flat[7]
-            def shift       = flat[8]
-            def contrast    = flat[9]
-
-            return tuple(flag, exp, morph, well, tp, well_toggle, tp_toggle, ch_toggle, shift, contrast)
-        }
-
-    overlay_result_ch = OVERLAY_MONTAGE(combined_overlay_ch)
-    overlay_result_ch.view { tuple ->
-        def (flag, well) = tuple
-        println "🧪 Emitted from OVERLAY: $flag (flag: $well)"
+    bundled_std_result_ch = BUNDLED_STD_WORKFLOW(combined_bundled_std_ch)
+    
+    
+    bundled_std_result_ch.view { tuple ->
+        def (well, flag) = tuple
+        def bundle_end_time = System.currentTimeMillis()
+        def bundle_end_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+        def total_time_ms = bundle_end_time - bundle_start_time
+        def total_time_seconds = total_time_ms / 1000.0
+        def total_time_minutes = total_time_seconds / 60.0
+        
+        println "🎉 [${bundle_end_timestamp}] COMPLETED... BUNDLED_STD_WORKFLOW for well: $well (MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION → TRACKING → OVERLAY)"
+        println "⏱️  Total time: ${total_time_seconds.round(1)}s (${total_time_minutes.round(2)} min)"
     }
 }
 
