@@ -15,6 +15,7 @@ import datetime
 from time import time
 from multiprocessing import Pool, cpu_count
 from functools import partial
+from scipy.optimize import linear_sum_assignment  # For Hungarian algorithm
 
 
 logger = logging.getLogger("TrackingDB")
@@ -90,17 +91,73 @@ def process_contours_parallel(mask, labels, num_processes=None):
     # Filter out None results
     return [cell for cell in results if cell is not None]
 
+class MotionTracker:
+    """Simple motion tracker using linear prediction without OpenCV dependencies"""
+    def __init__(self, initial_pos):
+        self.position = np.array(initial_pos, dtype=np.float32)
+        self.velocity = np.array([0.0, 0.0], dtype=np.float32)
+        self.positions_history = [np.array(initial_pos, dtype=np.float32)]
+        self.velocities_history = []
+        
+        self.age = 0
+        self.hits = 0
+        self.hit_streak = 0
+        self.time_since_update = 0
+        
+    def predict(self):
+        """Predict next position using linear motion model"""
+        # Simple linear prediction: new_pos = current_pos + velocity
+        predicted_pos = self.position + self.velocity
+        self.age += 1
+        if self.time_since_update > 0:
+            self.hit_streak = 0
+        self.time_since_update += 1
+        return predicted_pos
+    
+    def update(self, measurement):
+        """Update with new measurement and calculate velocity"""
+        if len(self.positions_history) > 0:
+            # Calculate velocity from position change
+            new_pos = np.array(measurement, dtype=np.float32)
+            old_pos = self.positions_history[-1]
+            velocity = new_pos - old_pos
+            
+            # Smooth velocity using exponential moving average
+            alpha = 0.3  # Smoothing factor
+            self.velocity = alpha * velocity + (1 - alpha) * self.velocity
+            self.velocities_history.append(self.velocity.copy())
+        
+        # Update position and history
+        self.position = np.array(measurement, dtype=np.float32)
+        self.positions_history.append(self.position.copy())
+        
+        # Keep only recent history (last 5 positions)
+        if len(self.positions_history) > 5:
+            self.positions_history = self.positions_history[-5:]
+        if len(self.velocities_history) > 5:
+            self.velocities_history = self.velocities_history[-5:]
+        
+        self.hits += 1
+        self.hit_streak += 1
+        self.time_since_update = 0
+
 class Cell:
     """A class that makes cells from contours or masks."""
     def __init__(self, cnt, randomcellid_montage=None):
         self.cnt = cnt
         self.randomcellid_montage = randomcellid_montage
         self._circle_cache = None
+        self._center_cache = None
 
     def get_circle(self):
         if self._circle_cache is None:
             self._circle_cache = cv2.minEnclosingCircle(self.cnt)
         return self._circle_cache
+
+    def get_center(self):
+        if self._center_cache is None:
+            self._center_cache = cv2.minEnclosingCircle(self.cnt)[0]
+        return self._center_cache
 
     def evaluate_overlap(self, circle2):
         c2, r2 = circle2
@@ -173,13 +230,117 @@ def populate_cell_ind_closest(time_dict, time_list, max_dist=100):
 
     return time_dict
 
+def populate_cell_ind_motion(time_dict, time_list, max_dist=100):
+    """Track cells using motion prediction and Hungarian algorithm"""
+    first = time_list[0]
+    
+    # Initialize trackers for first timepoint
+    trackers = {}
+    for i, rec in enumerate(time_dict[first], 1):
+        rec[0] = i
+        center = rec[1].get_center()
+        trackers[i] = MotionTracker(center)
+    
+    counter = len(time_dict[first]) + 1
+
+    for i in range(1, len(time_list)):
+        curr, prev = time_list[i], time_list[i - 1]
+        
+        # Predict positions for all existing trackers
+        predicted_positions = {}
+        for tracker_id, tracker in trackers.items():
+            predicted_pos = tracker.predict()
+            predicted_positions[tracker_id] = predicted_pos
+        
+        # Get current detections
+        current_detections = []
+        for rec in time_dict[curr]:
+            center = rec[1].get_center()
+            current_detections.append(center)
+        
+        if not current_detections:
+            # No detections in current frame, continue with predictions
+            continue
+            
+        # Create cost matrix for Hungarian algorithm
+        num_trackers = len(trackers)
+        num_detections = len(current_detections)
+        
+        if num_trackers == 0:
+            # No existing trackers, assign new IDs to all detections
+            for j, rec in enumerate(time_dict[curr]):
+                rec[0] = counter
+                center = rec[1].get_center()
+                trackers[counter] = MotionTracker(center)
+                counter += 1
+            continue
+        
+        # Create cost matrix (distance between predicted and actual positions)
+        cost_matrix = np.full((num_trackers, num_detections), max_dist * 2, dtype=np.float32)
+        
+        tracker_ids = list(trackers.keys())
+        for t_idx, tracker_id in enumerate(tracker_ids):
+            predicted_pos = predicted_positions[tracker_id]
+            for d_idx, detection_pos in enumerate(current_detections):
+                distance = np.hypot(predicted_pos[0] - detection_pos[0], 
+                                  predicted_pos[1] - detection_pos[1])
+                if distance <= max_dist:
+                    cost_matrix[t_idx, d_idx] = distance
+        
+        # Use Hungarian algorithm to find optimal assignments
+        if num_trackers <= num_detections:
+            # Standard assignment problem
+            tracker_indices, detection_indices = linear_sum_assignment(cost_matrix)
+        else:
+            # More trackers than detections - need to handle differently
+            # Transpose the problem: assign detections to trackers
+            detection_indices, tracker_indices = linear_sum_assignment(cost_matrix.T)
+        
+        # Process assignments
+        assigned_detections = set()
+        assigned_trackers = set()
+        
+        for t_idx, d_idx in zip(tracker_indices, detection_indices):
+            if cost_matrix[t_idx, d_idx] < max_dist:
+                tracker_id = tracker_ids[t_idx]
+                detection_pos = current_detections[d_idx]
+                
+                # Update tracker with new measurement
+                trackers[tracker_id].update(detection_pos)
+                
+                # Assign ID to detection
+                time_dict[curr][d_idx][0] = tracker_id
+                
+                assigned_detections.add(d_idx)
+                assigned_trackers.add(tracker_id)
+        
+        # Handle unassigned detections (new cells)
+        for d_idx, rec in enumerate(time_dict[curr]):
+            if d_idx not in assigned_detections:
+                rec[0] = counter
+                center = rec[1].get_center()
+                trackers[counter] = MotionTracker(center)
+                counter += 1
+        
+        # Remove trackers that haven't been updated for too long
+        trackers_to_remove = []
+        for tracker_id, tracker in trackers.items():
+            if tracker.time_since_update > 3:  # Remove after 3 frames without update
+                trackers_to_remove.append(tracker_id)
+        
+        for tracker_id in trackers_to_remove:
+            del trackers[tracker_id]
+
+    return time_dict
+
 class MontageDBTracker:
-    def __init__(self, experiment, track_type, max_dist, target_channel):
+    def __init__(self, experiment, track_type, max_dist, target_channel, motion=False):
         self.Db = Database()
         self.experiment = experiment
         self.track_type = track_type
         self.max_dist = max_dist
         self.target_channel = target_channel.split(',')
+        self.motion = motion
         self.analysisdir = ""
         # Cache for path transformations
         self._path_cache = {}
@@ -189,12 +350,26 @@ class MontageDBTracker:
         self.processed_wells = 0
         self.total_wells = 0
         
+        # Tracking statistics
+        self.tracking_stats = {
+            'well_stats': {},
+            'overall_stats': {
+                'total_cells_tracked': 0,
+                'total_timepoints': 0,
+                'total_wells': 0,
+                'motion_enabled': motion,
+                'tracking_method': track_type
+            }
+        }
+        
         # Dynamic core allocation for parallel processing
         available_cores = cpu_count()
         self.max_cores = max(1, int(available_cores * 0.75))  # Use 75% of available cores
         
         logger.info(f"Initialized MontageDBTracker for experiment {experiment}")
         logger.info(f"Using {self.max_cores} cores out of {available_cores} available (75%)")
+        if self.motion:
+            logger.info("Motion tracking with linear prediction and Hungarian algorithm enabled")
     
     def _get_channel_path(self, mask_path, channel):
         """Optimized path transformation with caching."""
@@ -359,6 +534,266 @@ class MontageDBTracker:
 
         return cx, cy, area, intensities
 
+    def calculate_tracking_statistics(self, well, time_dict, tracked_dict):
+        """Calculate comprehensive tracking statistics for a well"""
+        tps = sorted(time_dict.keys())
+        
+        well_stats = {
+            'well': well,
+            'total_timepoints': len(tps),
+            'timepoint_stats': [],
+            'motion_stats': [],
+            'id_switching_stats': [],
+            'overall_well_stats': {}
+        }
+        
+        # Calculate per-timepoint statistics
+        for i, tp in enumerate(tps):
+            tp_stats = {
+                'timepoint': tp,
+                'cell_count': len(tracked_dict[tp]),
+                'unique_ids': len(set([rec[0] for rec in tracked_dict[tp]]))
+            }
+            well_stats['timepoint_stats'].append(tp_stats)
+        
+        # Calculate motion statistics between consecutive timepoints
+        if len(tps) > 1:
+            for i in range(1, len(tps)):
+                curr_tp, prev_tp = tps[i], tps[i-1]
+                motion_stats = self._calculate_motion_between_timepoints(
+                    tracked_dict[prev_tp], tracked_dict[curr_tp], prev_tp, curr_tp
+                )
+                well_stats['motion_stats'].append(motion_stats)
+        
+        # Calculate ID switching statistics
+        id_switching_stats = self._calculate_id_switching(tracked_dict, tps)
+        well_stats['id_switching_stats'] = id_switching_stats
+        
+        # Calculate overall well statistics
+        total_cells = sum(len(tracked_dict[tp]) for tp in tps)
+        all_ids = set()
+        for tp in tps:
+            all_ids.update([rec[0] for rec in tracked_dict[tp]])
+        
+        well_stats['overall_well_stats'] = {
+            'total_cells_tracked': total_cells,
+            'unique_track_ids': len(all_ids),
+            'avg_cells_per_timepoint': total_cells / len(tps) if tps else 0,
+            'max_cells_in_timepoint': max(len(tracked_dict[tp]) for tp in tps) if tps else 0,
+            'min_cells_in_timepoint': min(len(tracked_dict[tp]) for tp in tps) if tps else 0
+        }
+        
+        return well_stats
+    
+    def _calculate_motion_between_timepoints(self, prev_recs, curr_recs, prev_tp, curr_tp):
+        """Calculate motion statistics between two consecutive timepoints"""
+        # Create mapping of IDs to positions
+        prev_positions = {rec[0]: rec[1].get_center() for rec in prev_recs}
+        curr_positions = {rec[0]: rec[1].get_center() for rec in curr_recs}
+        
+        # Find common IDs
+        common_ids = set(prev_positions.keys()) & set(curr_positions.keys())
+        
+        if not common_ids:
+            return {
+                'from_timepoint': prev_tp,
+                'to_timepoint': curr_tp,
+                'cells_with_motion': 0,
+                'mean_motion_distance': 0.0,
+                'std_motion_distance': 0.0,
+                'max_motion_distance': 0.0,
+                'min_motion_distance': 0.0
+            }
+        
+        # Calculate motion distances
+        motion_distances = []
+        for cell_id in common_ids:
+            prev_pos = prev_positions[cell_id]
+            curr_pos = curr_positions[cell_id]
+            distance = np.hypot(curr_pos[0] - prev_pos[0], curr_pos[1] - prev_pos[1])
+            motion_distances.append(distance)
+        
+        motion_distances = np.array(motion_distances)
+        
+        return {
+            'from_timepoint': prev_tp,
+            'to_timepoint': curr_tp,
+            'cells_with_motion': len(common_ids),
+            'mean_motion_distance': float(np.mean(motion_distances)),
+            'std_motion_distance': float(np.std(motion_distances)),
+            'max_motion_distance': float(np.max(motion_distances)),
+            'min_motion_distance': float(np.min(motion_distances))
+        }
+    
+    def _calculate_id_switching(self, tracked_dict, tps):
+        """Calculate ID switching statistics"""
+        if len(tps) < 2:
+            return []
+        
+        switching_stats = []
+        
+        for i in range(1, len(tps)):
+            prev_tp, curr_tp = tps[i-1], tps[i]
+            
+            # Get IDs from both timepoints
+            prev_ids = set([rec[0] for rec in tracked_dict[prev_tp]])
+            curr_ids = set([rec[0] for rec in tracked_dict[curr_tp]])
+            
+            # Calculate switching metrics
+            common_ids = prev_ids & curr_ids
+            new_ids = curr_ids - prev_ids
+            lost_ids = prev_ids - curr_ids
+            
+            switching_stats.append({
+                'from_timepoint': prev_tp,
+                'to_timepoint': curr_tp,
+                'prev_timepoint_ids': len(prev_ids),
+                'curr_timepoint_ids': len(curr_ids),
+                'common_ids': len(common_ids),
+                'new_ids': len(new_ids),
+                'lost_ids': len(lost_ids),
+                'id_retention_rate': len(common_ids) / len(prev_ids) if prev_ids else 0,
+                'id_growth_rate': len(new_ids) / len(prev_ids) if prev_ids else 0
+            })
+        
+        return switching_stats
+    
+    def save_tracking_statistics(self):
+        """Save all tracking statistics to a single CSV file"""
+        if not self.tracking_stats['well_stats']:
+            logger.warning("No tracking statistics to save")
+            return
+        
+        # Combine all statistics into a single comprehensive dataset
+        all_data = []
+        
+        for well, well_stats in self.tracking_stats['well_stats'].items():
+            # Add overall well statistics
+            overall_row = {
+                'experiment': self.experiment,
+                'well': well,
+                'tracking_method': self.tracking_stats['overall_stats']['tracking_method'],
+                'motion_enabled': self.tracking_stats['overall_stats']['motion_enabled'],
+                'statistic_type': 'overall',
+                'timepoint': None,
+                'from_timepoint': None,
+                'to_timepoint': None,
+                **well_stats['overall_well_stats']
+            }
+            all_data.append(overall_row)
+            
+            # Add timepoint statistics
+            for tp_stat in well_stats['timepoint_stats']:
+                timepoint_row = {
+                    'experiment': self.experiment,
+                    'well': well,
+                    'tracking_method': self.tracking_stats['overall_stats']['tracking_method'],
+                    'motion_enabled': self.tracking_stats['overall_stats']['motion_enabled'],
+                    'statistic_type': 'timepoint',
+                    'timepoint': tp_stat['timepoint'],
+                    'from_timepoint': None,
+                    'to_timepoint': None,
+                    'cell_count': tp_stat['cell_count'],
+                    'unique_ids': tp_stat['unique_ids'],
+                    # Add empty fields for other statistic types
+                    'total_cells_tracked': None,
+                    'unique_track_ids': None,
+                    'avg_cells_per_timepoint': None,
+                    'max_cells_in_timepoint': None,
+                    'min_cells_in_timepoint': None,
+                    'cells_with_motion': None,
+                    'mean_motion_distance': None,
+                    'std_motion_distance': None,
+                    'max_motion_distance': None,
+                    'min_motion_distance': None,
+                    'prev_timepoint_ids': None,
+                    'curr_timepoint_ids': None,
+                    'common_ids': None,
+                    'new_ids': None,
+                    'lost_ids': None,
+                    'id_retention_rate': None,
+                    'id_growth_rate': None
+                }
+                all_data.append(timepoint_row)
+            
+            # Add motion statistics
+            for motion_stat in well_stats['motion_stats']:
+                motion_row = {
+                    'experiment': self.experiment,
+                    'well': well,
+                    'tracking_method': self.tracking_stats['overall_stats']['tracking_method'],
+                    'motion_enabled': self.tracking_stats['overall_stats']['motion_enabled'],
+                    'statistic_type': 'motion',
+                    'timepoint': None,
+                    'from_timepoint': motion_stat['from_timepoint'],
+                    'to_timepoint': motion_stat['to_timepoint'],
+                    'cells_with_motion': motion_stat['cells_with_motion'],
+                    'mean_motion_distance': motion_stat['mean_motion_distance'],
+                    'std_motion_distance': motion_stat['std_motion_distance'],
+                    'max_motion_distance': motion_stat['max_motion_distance'],
+                    'min_motion_distance': motion_stat['min_motion_distance'],
+                    # Add empty fields for other statistic types
+                    'cell_count': None,
+                    'unique_ids': None,
+                    'total_cells_tracked': None,
+                    'unique_track_ids': None,
+                    'avg_cells_per_timepoint': None,
+                    'max_cells_in_timepoint': None,
+                    'min_cells_in_timepoint': None,
+                    'prev_timepoint_ids': None,
+                    'curr_timepoint_ids': None,
+                    'common_ids': None,
+                    'new_ids': None,
+                    'lost_ids': None,
+                    'id_retention_rate': None,
+                    'id_growth_rate': None
+                }
+                all_data.append(motion_row)
+            
+            # Add ID switching statistics
+            for switching_stat in well_stats['id_switching_stats']:
+                switching_row = {
+                    'experiment': self.experiment,
+                    'well': well,
+                    'tracking_method': self.tracking_stats['overall_stats']['tracking_method'],
+                    'motion_enabled': self.tracking_stats['overall_stats']['motion_enabled'],
+                    'statistic_type': 'id_switching',
+                    'timepoint': None,
+                    'from_timepoint': switching_stat['from_timepoint'],
+                    'to_timepoint': switching_stat['to_timepoint'],
+                    'prev_timepoint_ids': switching_stat['prev_timepoint_ids'],
+                    'curr_timepoint_ids': switching_stat['curr_timepoint_ids'],
+                    'common_ids': switching_stat['common_ids'],
+                    'new_ids': switching_stat['new_ids'],
+                    'lost_ids': switching_stat['lost_ids'],
+                    'id_retention_rate': switching_stat['id_retention_rate'],
+                    'id_growth_rate': switching_stat['id_growth_rate'],
+                    # Add empty fields for other statistic types
+                    'cell_count': None,
+                    'unique_ids': None,
+                    'total_cells_tracked': None,
+                    'unique_track_ids': None,
+                    'avg_cells_per_timepoint': None,
+                    'max_cells_in_timepoint': None,
+                    'min_cells_in_timepoint': None,
+                    'cells_with_motion': None,
+                    'mean_motion_distance': None,
+                    'std_motion_distance': None,
+                    'max_motion_distance': None,
+                    'min_motion_distance': None
+                }
+                all_data.append(switching_row)
+        
+        # Save all data to a single CSV file
+        if all_data:
+            combined_file = os.path.join(self.analysisdir, f"{self.experiment}_tracking-info.csv")
+            combined_df = pd.DataFrame(all_data)
+            combined_df.to_csv(combined_file, index=False)
+            logger.info(f"Saved all tracking statistics to {combined_file}")
+            print(f"📊 Saved comprehensive tracking statistics to: {combined_file}")
+        else:
+            logger.warning("No tracking statistics data to save")
+
     def run(self, wells):
         self.start_time = time()
         self.total_wells = len(wells)
@@ -374,12 +809,32 @@ class MontageDBTracker:
             welldata_id = self.Db.get_table_uuid('welldata', {'experimentdata_id': exp_id, 'well': well})
             tps = sorted(time_dict.keys())
             
-            tracked = (
-                populate_cell_ind_overlap(time_dict, tps)
-                if self.track_type == 'overlap'
-                else populate_cell_ind_closest(time_dict, tps, max_dist=self.max_dist)
-            )
+            if self.motion:
+                tracked = populate_cell_ind_motion(time_dict, tps, max_dist=self.max_dist)
+            else:
+                tracked = (
+                    populate_cell_ind_overlap(time_dict, tps)
+                    if self.track_type == 'overlap'
+                    else populate_cell_ind_closest(time_dict, tps, max_dist=self.max_dist)
+                )
             sorted_td = sort_cell_info_by_index(tracked, tps)
+            
+            # Calculate tracking statistics for this well
+            well_stats = self.calculate_tracking_statistics(well, time_dict, sorted_td)
+            self.tracking_stats['well_stats'][well] = well_stats
+            
+            # Print summary statistics
+            print(f'\n📊 Tracking Statistics for Well {well}:')
+            print(f'   Total timepoints: {well_stats["total_timepoints"]}')
+            print(f'   Total cells tracked: {well_stats["overall_well_stats"]["total_cells_tracked"]}')
+            print(f'   Unique track IDs: {well_stats["overall_well_stats"]["unique_track_ids"]}')
+            print(f'   Average cells per timepoint: {well_stats["overall_well_stats"]["avg_cells_per_timepoint"]:.1f}')
+            if well_stats['motion_stats']:
+                avg_motion = np.mean([stat['mean_motion_distance'] for stat in well_stats['motion_stats']])
+                print(f'   Average motion distance: {avg_motion:.2f} pixels')
+            if well_stats['id_switching_stats']:
+                avg_retention = np.mean([stat['id_retention_rate'] for stat in well_stats['id_switching_stats']])
+                print(f'   Average ID retention rate: {avg_retention:.2%}')
 
             for tp, recs in sorted_td.items():
                 tp_start_time = time()
@@ -485,6 +940,25 @@ class MontageDBTracker:
         else:
             logger.warning("No tracking records generated")
         
+        # Save tracking statistics
+        if self.tracking_stats['well_stats']:
+            print(f'\n📈 Saving tracking statistics...')
+            self.save_tracking_statistics()
+            
+            # Print overall summary
+            total_wells = len(self.tracking_stats['well_stats'])
+            total_cells = sum(well_stats['overall_well_stats']['total_cells_tracked'] 
+                            for well_stats in self.tracking_stats['well_stats'].values())
+            total_timepoints = sum(well_stats['total_timepoints'] 
+                                 for well_stats in self.tracking_stats['well_stats'].values())
+            
+            print(f'\n🎯 OVERALL TRACKING SUMMARY:')
+            print(f'   Total wells processed: {total_wells}')
+            print(f'   Total cells tracked: {total_cells}')
+            print(f'   Total timepoints: {total_timepoints}')
+            print(f'   Tracking method: {self.tracking_stats["overall_stats"]["tracking_method"]}')
+            print(f'   Motion tracking enabled: {self.tracking_stats["overall_stats"]["motion_enabled"]}')
+        
         # Final completion logging
         total_time = time() - self.start_time
         logger.warning(f'TRACKING COMPLETED in {total_time:.2f}s ({total_time/60:.2f} min)')
@@ -499,9 +973,11 @@ if __name__ == '__main__':
     parser.add_argument("--target_channel",  type=str, default='Cy5',
                         dest="target_channel",
                         help="Get intensity of this channel.")
+    parser.add_argument('--motion', action='store_true', 
+                        help='Enable motion tracking with linear prediction and Hungarian algorithm')
     args = parser.parse_args()
 
     wells = [w.strip() for w in args.wells.split(',')]
-    tracker = MontageDBTracker(args.experiment, args.track_type, args.max_dist, args.target_channel)
+    tracker = MontageDBTracker(args.experiment, args.track_type, args.max_dist, args.target_channel, args.motion)
     tracker.run(wells)
 

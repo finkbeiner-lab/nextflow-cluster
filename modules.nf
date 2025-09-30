@@ -669,7 +669,8 @@ process TRACKING_MONTAGE {
           val(track_type), 
           val(distance_threshold), 
           val(well), 
-          val(target_channel) 
+          val(target_channel),
+          val(motion)
 
     output:
     tuple val(true), val(well)
@@ -677,7 +678,7 @@ process TRACKING_MONTAGE {
 
     script:
     """
-    tracking_montage.py --experiment  ${exp} --track_type  ${track_type} --max_dist    ${distance_threshold} --wells ${well} --target_channel ${target_channel } 
+    tracking_montage.py --experiment  ${exp} --track_type  ${track_type} --max_dist    ${distance_threshold} --wells ${well} --target_channel ${target_channel} ${motion ? '--motion' : ''}
     """
 }
 
@@ -749,7 +750,8 @@ process BUNDLED_WORKFLOW_IXM {
           val(target_channel),
           val(well),
           val(shift),
-          val(contrast)
+          val(contrast),
+          val(motion)
 
     output:
     tuple val(well), val(true)
@@ -817,7 +819,7 @@ process BUNDLED_WORKFLOW_IXM {
     # Step 3: TRACKING
     echo "🎯 Step 3/4: Running tracking for well ${well}"
     tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \
-    --wells ${well} --target_channel ${target_channel}
+    --wells ${well} --target_channel ${target_channel} ${motion ? '--motion' : ''}
     
     if [ \$? -eq 0 ]; then
         echo "✅ Tracking completed successfully for well ${well}"
@@ -894,7 +896,8 @@ process BUNDLED_STD_WORKFLOW {
           val(shift),
           val(contrast),
           val(tile),
-          val(shift_dict)
+          val(shift_dict),
+          val(motion)
 
     output:
     tuple val(well), val(true)
@@ -984,7 +987,7 @@ process BUNDLED_STD_WORKFLOW {
     # Step 4: TRACKING
     echo "🎯 Step 4/5: Running tracking for well ${well}"
     tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \
-    --wells ${well} --target_channel ${target_channel}
+    --wells ${well} --target_channel ${target_channel} ${motion ? '--motion' : ''}
     
     if [ \$? -eq 0 ]; then
         echo "✅ Tracking completed successfully for well ${well}"

@@ -36,6 +36,7 @@ morphology_ch = Channel.of(params.morphology_channel)
 distance_threshold_ch = Channel.of(params.distance_threshold)
 voronoi_bool_ch = Channel.of(params.voronoi_bool)
 track_type_ch           = Channel.of(params.track_type)
+motion_ch               = Channel.of(params.motion)
 crop_size_ch = Channel.of(params.crop_size)
 
 // Define target_channel_ch globally so it's available to all workflows
@@ -310,6 +311,7 @@ if (params.DO_TRACKING_MONTAGE) {
     .combine(distance_threshold_ch)
     .combine(well_ch)
     .combine(target_channel_ch)
+    .combine(motion_ch)
 
     // invoke the process; this returns a channel of all stdout lines
     track_montage_ch = TRACKING_MONTAGE(combined_ch)
@@ -581,6 +583,7 @@ if (params.DO_STD_WORKFLOW) {
         .combine(distance_threshold_ch)
         .combine(well_ch)
         .combine(target_channel_ch)
+        .combine(motion_ch)
         .map { nestedTuple ->
             def flat = nestedTuple.flatten()
             def flag        = flat[0]
@@ -589,8 +592,9 @@ if (params.DO_STD_WORKFLOW) {
             def dist_thresh = flat[3]
             def well        = flat[4]
             def target_ch   = flat[5]
+            def motion      = flat[6]
 
-            return tuple(flag, exp, track_type, dist_thresh, well, target_ch)
+            return tuple(flag, exp, track_type, dist_thresh, well, target_ch, motion)
         }
 
     trackmont_result_ch = TRACKING_MONTAGE(combined_trackmont_ch)
@@ -669,6 +673,7 @@ if (params.DO_STD_WORKFLOW_IXM) {
         .combine(target_channel_ch)
         .combine(shift_ch)
         .combine(contrast_ch)
+        .combine(motion_ch)
         .map { nestedTuple ->
             def flat = nestedTuple.flatten()
             
@@ -676,7 +681,7 @@ if (params.DO_STD_WORKFLOW_IXM) {
             // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle, 
             // timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
             // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-            // distance_threshold, target_channel, well, shift, contrast
+            // distance_threshold, target_channel, well, shift, contrast, motion
             
             def exp               = flat[1]
             def tiletype          = flat[2]
@@ -699,11 +704,12 @@ if (params.DO_STD_WORKFLOW_IXM) {
             def well              = flat[0]
             def shift             = flat[19]
             def contrast          = flat[20]
+            def motion            = flat[21]
 
             return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
                        timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
                        img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-                       distance_threshold, target_channel, well, shift, contrast)
+                       distance_threshold, target_channel, well, shift, contrast, motion)
         }
     
   
@@ -758,6 +764,7 @@ if (params.DO_BUNDLED_STD_WORKFLOW) {
         .combine(contrast_ch)
         .combine(tile_ch)
         .combine(shift_dict_ch)
+        .combine(motion_ch)
         .map { nestedTuple ->
             def flat = nestedTuple.flatten()
             
@@ -765,7 +772,7 @@ if (params.DO_BUNDLED_STD_WORKFLOW) {
             // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle, 
             // timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
             // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-            // distance_threshold, target_channel, well, shift, contrast, tile, shift_dict
+            // distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion
             
             def exp               = flat[1]
             def tiletype          = flat[2]
@@ -790,11 +797,12 @@ if (params.DO_BUNDLED_STD_WORKFLOW) {
             def contrast          = flat[20]
             def tile              = flat[21]
             def shift_dict        = flat[22]
+            def motion            = flat[23]
 
             return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
                        timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
                        img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-                       distance_threshold, target_channel, well, shift, contrast, tile, shift_dict)
+                       distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion)
         }
     
   
