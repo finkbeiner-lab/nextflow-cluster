@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e  # Exit immediately if a command exits with a non-zero status
 
-# Clone the repository
-git clone https://github.com/finkbeiner-lab/nextflow-cluster.git
 
 # Create and enter Nextflow directory
 mkdir -p ~/nextflow
