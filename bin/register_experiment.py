@@ -148,7 +148,7 @@ class Intro:
         parser.add_argument(
             '--outfile',
             help='path to save pickle file',
-            default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
+            default=f'/gladstone/finkbeiner/kaye/UnaChan/tmp_output.txt'
         )
         args = parser.parse_args()
         print('\n\n\n ================================args', args)
@@ -449,23 +449,35 @@ class Intro:
                 print('Well for platemap', well)
                 ident = uuid.uuid4()
 
-                df = mapdf[mapdf.well == well]
-                celltype = df['celltype'].iloc[0] if not pd.isna(df['celltype'].iloc[0]) else None
-                condition = df['condition'].iloc[0] if not pd.isna(df['condition'].iloc[0]) else None
+                df = mapdf[mapdf['well'] == well] if 'well' in mapdf.columns else pd.DataFrame()
+                if df.empty:
+                    logger.warning(f'Platemap missing metadata for well {well}; defaulting to null values.')
+                    well_dcts.append(dict(id=ident,
+                                          experimentdata_id=exp_uuid,
+                                          well=well,
+                                          celltype=None,
+                                          condition=None))
+                    continue
+
+                # Safely extract expected columns from the platemap row
+                first_row = df.iloc[0]
+                celltype = first_row['celltype'] if 'celltype' in df.columns and not pd.isna(first_row['celltype']) else None
+                condition = first_row['condition'] if 'condition' in df.columns and not pd.isna(first_row['condition']) else None
                 print('condition', condition)
-                well_dcts.append(dict(id = ident, 
+                well_dcts.append(dict(id=ident,
                                       experimentdata_id=exp_uuid,
                                       well=well,
                                       celltype=celltype,
                                       condition=condition
                                       ))
-                for i, row in df.iterrows():
-                    print('row', row)
-                    dosage_dcts.append(dict(experimentdata_id=exp_uuid,
-                                            welldata_id=ident,
-                                            name =row['name'],
-                                            dosage=row.dosage,
-                                            kind = row.kind))
+                # Optional dosage metadata if available
+                for _, row in df.iterrows():
+                    if all(col in df.columns for col in ['name', 'dosage', 'kind']):
+                        dosage_dcts.append(dict(experimentdata_id=exp_uuid,
+                                                welldata_id=ident,
+                                                name=row['name'],
+                                                dosage=row['dosage'],
+                                                kind=row['kind']))
         else:
             for well in wells:
                 well_dcts.append(dict(experimentdata_id=exp_uuid,

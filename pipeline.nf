@@ -51,8 +51,11 @@ if (params.chosen_wells == 'all') {
     }
 }
 
-// Create the well channel - use this for all workflows
+// Create per-well channel for downstream workflows
 well_ch = Channel.from(wells_to_use)
+// Register experiment needs the complete well set in a single invocation
+def register_wells_arg = (params.chosen_wells == 'all') ? 'all' : wells_to_use.join(',')
+register_wells_ch = Channel.value(register_wells_arg)
 tile_ch = Channel.of(params.tile)
 use_aligned_tiles_ch = Channel.of(params.use_aligned_tiles)
 tp_ch = Channel.of(params.chosen_timepoints)
@@ -193,7 +196,7 @@ workflow {
     if (params.DO_REGISTER_EXPERIMENT) {
         REGISTER_EXPERIMENT(input_path_ch, output_path_ch, template_path_ch, platemap_path_ch, ixm_hts_file_ch, robo_file_ch, 
         overwrite_experiment_ch, robo_num_ch, illumination_file_ch,
-        well_ch, tp_ch, chosen_channels_for_register_exp_ch, well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
+        register_wells_ch, tp_ch, chosen_channels_for_register_exp_ch, well_toggle_ch, tp_toggle_ch, channel_toggle_ch)
         register_result = REGISTER_EXPERIMENT.out
     }
     else {
