@@ -1,5 +1,3 @@
-#!/opt/conda/bin/python
-
 """Update path on database after moving from TM
 """
 from sql import Database
@@ -15,13 +13,13 @@ class UpdatePath:
         self.Db = Database()
         self.robofolder = dict(TM='ThinkingMicroscope', ROBO4='Robo4Images',ROBO3='Robo3Images')
         # self.origfolder = dict(TM=['D:/Images', 'X:'], ROBO4=['E:/Images'],ROBO3=['C:/Test']) #Original
-        self.origfolder = dict(TM=['D:/Images', 'Z:/ThinkingMicroscope',], ROBO4=['E:/Images'],ROBO3=['C:/Test'])
+        self.origfolder = dict(TM=['D:/Images', 'Z:/ThinkingMicroscope',], ROBO4=['E:/Images'],ROBO3=['D:/Images'])
         # self.targetfolder = {'D:/Images':'/gladstone/finkbeiner/robodata',
         #                      'X:':'/gladstone/finkbeiner/robodata',
         #                      'E:/Images':'/gladstone/finkbeiner/robodata','C:/Test':'/gladstone/finkbeiner/robodata'} #Original
         self.targetfolder = {'D:/Images':'/gladstone/finkbeiner/robodata',
                              'Z:/ThinkingMicroscope':'/gladstone/finkbeiner/robodata',
-                             'E:/Images':'/gladstone/finkbeiner/robodata','C:/Test':'/gladstone/finkbeiner/robodata'}
+                             'E:/Images':'/gladstone/finkbeiner/robodata','D:/Images':'/gladstone/finkbeiner/robodata'}
 
     def build_target_folder(self, src_folder, microscope):
         prefix = self.targetfolder[src_folder]
@@ -82,10 +80,17 @@ if __name__ == '__main__':
         default=f'/gladstone/finkbeiner/linsley/josh/GALAXY/YD-Transdiff-XDP-Survival1-102822/GXYTMP/tmp_output.txt'
     )
     parser.add_argument(
-        '--experiment', default='0907-FB-1-JL-gedi-test', type=str)
+        '--experiment', default='SW-20251110-PRKNval-GEDI4-robo3', type=str)
     parser.add_argument(
         '--analysisdir', default='gladstone/finkbeiner/linsley/GXYTMPS/Kaushik', help='Analysis directory path')
     args = parser.parse_args()
     print(args)
     Up = UpdatePath(args)
     Up.run()
+
+
+
+
+
+
+

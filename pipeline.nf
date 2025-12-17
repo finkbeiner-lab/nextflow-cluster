@@ -21,7 +21,38 @@ norm_ch = Channel.of(params.img_norm_name)
 lower_ch = Channel.of(params.lower_area_thresh)
 upper_ch = Channel.of(params.upper_area_thresh)
 sd_ch = Channel.of(params.sd_scale_factor)
-// well_ch is defined later in the workflow
+// Read CSV platemap file -TODO Read from DB
+def csv_lines = file(params.platemap_path).readLines()
+def header = csv_lines[0].split(',').toList().collect { it.trim() }
+def well_index = header.indexOf('well')
+
+if (well_index == -1) {
+    error "❌ CSV platemap is missing a 'well' column."
+}
+
+// Extract all well names from the CSV (skip header)
+def all_wells = csv_lines[1..-1].collect { line ->
+    def cols = line.split(',')
+    cols[well_index].trim()
+}
+
+// Choose wells based on params.chosen_wells
+def wells_to_use = []
+if (params.chosen_wells == 'all') {
+    wells_to_use = all_wells
+} else {
+    wells_to_use = params.chosen_wells.split(',').collect { it.trim() }
+
+    // Optional: Validate chosen wells
+    wells_to_use.each { well ->
+        if (!(well in all_wells)) {
+            error "❌ Specified well '${well}' not found in plate map!"
+        }
+    }
+}
+
+// Create the well channel - use this for all workflows
+well_ch = Channel.from(wells_to_use)
 tile_ch = Channel.of(params.tile)
 use_aligned_tiles_ch = Channel.of(params.use_aligned_tiles)
 tp_ch = Channel.of(params.chosen_timepoints)
@@ -408,43 +439,6 @@ if (params.DO_OVERLAY_MONTAGE) {
 }
 
 // ***************** 2 MAIN COMMONLY USED WORKFLOWS ************************
-
-
-// Read CSV platemap file -TODO Read from DB
-def csv_lines = file(params.platemap_path).readLines()
-def header = csv_lines[0].split(',').toList()
-header = header.collect { it.trim() }
-def well_index = header.indexOf('well')
-
-if (well_index == -1) {
-    error "❌ CSV platemap is missing a 'well' column."
-}
-
-// Extract all well names from the CSV (skip header)
-def all_wells = csv_lines[1..-1].collect { line ->
-    def cols = line.split(',')
-    cols[well_index].trim()
-}
-
-// Choose wells based on params.chosen_wells
-def wells_to_use = []
-if (params.chosen_wells == 'all') {
-    wells_to_use = all_wells
-} else {
-    wells_to_use = params.chosen_wells.split(',').collect { it.trim() }
-
-    // Optional: Validate chosen wells
-    wells_to_use.each { well ->
-        if (!(well in all_wells)) {
-            error "❌ Specified well '${well}' not found in plate map!"
-        }
-    }
-}
-
-
-
-// Create the well channel - use this for all workflows
-well_ch = Channel.from(wells_to_use)
 
 
 if (params.DO_STD_WORKFLOW) {
