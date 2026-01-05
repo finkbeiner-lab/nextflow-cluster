@@ -210,11 +210,52 @@ class Intro:
         assert '/gladstone/finkbeiner/' in output_path, 'Output folder must be in the new server'
 
 
-        filepaths = glob(os.path.join(input_path, '*[0-9]', '*.tif'))
+        # Try multiple glob patterns to find all .tif files
+        # Pattern 1: Files in subdirectories ending with digit (original pattern)
+        filepaths1 = glob(os.path.join(input_path, '*[0-9]', '*.tif'))
+        # Pattern 2: Files directly in input_path
+        filepaths2 = glob(os.path.join(input_path, '*.tif'))
+        # Pattern 3: Files in any subdirectory
+        filepaths3 = glob(os.path.join(input_path, '*', '*.tif'))
+        # Combine and deduplicate
+        filepaths = list(set(filepaths1 + filepaths2 + filepaths3))
+        
+        print(f'📊 Found {len(filepaths)} total .tif files')
+        print(f'   - In subdirs ending with digit: {len(filepaths1)}')
+        print(f'   - Directly in input_path: {len(filepaths2)}')
+        print(f'   - In any subdirectory: {len(filepaths3)}')
+        logger.warning(f'Found {len(filepaths)} total .tif files')
+        
+        if len(filepaths) == 0:
+            raise Exception(f'No .tif files found in {input_path}')
+        
         # TODO: obviously like to avoid relying on filename strings to get experiment info, but in case there's no template or platemap...
         logger.warning(f'first filepath: {filepaths[0]}')
         files_df = self.parse_tokens_to_df(filepaths, robo_num)
         print('files df', files_df.iloc[0])
+        
+        # Debug: Check what channels are in files_df immediately after parsing
+        if 'channel' in files_df.columns:
+            channels_after_parsing = files_df['channel'].unique()
+            print(f'📊 Channels found in filenames (after parsing, before any filtering): {sorted(channels_after_parsing)}')
+            logger.warning(f'Channels found in filenames (after parsing): {sorted(channels_after_parsing)}')
+            
+            # Show sample filenames for each channel to debug parsing
+            for ch in ['FITC', 'DAPI', 'RFP', 'Cy5']:
+                ch_files = files_df[files_df['channel'] == ch]
+                if len(ch_files) > 0:
+                    print(f'   {ch}: {len(ch_files)} files found. Sample: {os.path.basename(ch_files.iloc[0]["filename"])}')
+                else:
+                    print(f'   {ch}: 0 files found')
+                    # Try to find files that might have FITC/DAPI in the name but weren't parsed correctly
+                    potential_files = [f for f in filepaths if ch in os.path.basename(f)]
+                    if len(potential_files) > 0:
+                        print(f'      ⚠️  Found {len(potential_files)} files with "{ch}" in filename but not parsed correctly!')
+                        print(f'      Sample filename: {os.path.basename(potential_files[0])}')
+        else:
+            print('⚠️  No "channel" column found in files_df after parsing!')
+            logger.warning('No "channel" column found in files_df after parsing!')
+        
         # Set up dictionary parameters
         utils.create_dir(output_path)
         self.make_results_folders(input_path, output_path)
@@ -231,8 +272,32 @@ class Intro:
         user_chosen_timepoints = args.chosen_timepoints.strip()
         files_df = self.filter_df_by_col(args.timepoints_toggle, files_df, 'timepoint', user_chosen_timepoints)
 
+        # Debug: Check what channels are in files_df before channel filtering
+        channels_before_channel_filter = files_df['channel'].unique() if 'channel' in files_df.columns else []
+        print(f'\n{"="*80}')
+        print(f'📊 Channels in files_df (before channel filtering): {sorted(channels_before_channel_filter)}')
+        print(f'📊 Total files before channel filtering: {len(files_df)}')
+        logger.warning(f'Channels in files_df (before channel filtering): {sorted(channels_before_channel_filter)}')
+        
         user_chosen_channels = args.chosen_channels.strip()
+        print(f'🔍 Filtering channels with: chosen_channels="{user_chosen_channels}", toggle="{args.channels_toggle}"')
+        logger.warning(f'Filtering channels: chosen_channels="{user_chosen_channels}", toggle="{args.channels_toggle}"')
+        
         files_df = self.filter_df_by_col(args.channels_toggle, files_df, 'channel', user_chosen_channels)
+        
+        # Debug: Check what channels remain after filtering
+        channels_after_filter = files_df['channel'].unique() if 'channel' in files_df.columns else []
+        print(f'📊 Channels in files_df (after filtering): {sorted(channels_after_filter)}')
+        print(f'📊 Total files after filtering: {len(files_df)}')
+        print(f'{"="*80}\n')
+        logger.warning(f'Channels in files_df (after filtering): {sorted(channels_after_filter)}')
+        
+        # Show breakdown by channel
+        if 'channel' in files_df.columns:
+            for ch in sorted(channels_after_filter):
+                count = len(files_df[files_df['channel'] == ch])
+                print(f'   {ch}: {count} files')
+        
         current_experiment = files_df.experiment.iloc[0]
         # Dataframe filtered by user. Now add to database.
         Db = Database()
@@ -245,6 +310,15 @@ class Intro:
         logger.warning(f'Experiment uuid: {exp_uuid}')
 
         wells = pd.unique(files_df.well).tolist()
+        
+        # Filter wells based on platemap if provided
+        if mapdf is not None and 'well' in mapdf.columns:
+            platemap_wells = mapdf['well'].unique().tolist()
+            wells = [w for w in wells if w in platemap_wells]
+            files_df = files_df[files_df.well.isin(wells)]
+            logger.warning(f'Filtered wells to platemap: {wells}')
+            print(f'Filtered wells to platemap: {wells}')
+        
         if File is not None:
             File.plate = File.plate[File.plate.Well.isin(wells)]
             files_df = files_df[files_df.well.isin(File.plate.Well.tolist())]
@@ -257,6 +331,20 @@ class Intro:
         self.write_to_welldata(mapdf, Db, exp_uuid, wells)
 
         self.write_to_channeldata(File, Db, exp_uuid, wells)
+
+        # Final check before writing tiledata
+        print(f'\n{"="*80}')
+        print(f'🔍 FINAL CHECK: About to write tiledata')
+        if 'channel' in files_df.columns:
+            final_channels = files_df['channel'].unique()
+            print(f'📊 Channels in files_df: {sorted(final_channels)}')
+            print(f'📊 Total files in files_df: {len(files_df)}')
+            for ch in sorted(final_channels):
+                count = len(files_df[files_df['channel'] == ch])
+                print(f'   {ch}: {count} files')
+        else:
+            print('⚠️  No "channel" column in files_df!')
+        print(f'{"="*80}\n')
 
         self.write_to_tiledata_from_files(files_df, overlap, Db, exp_uuid, wells)
 
@@ -310,6 +398,12 @@ class Intro:
         check_tile_dcts = []
         exp = files_df.experiment.iloc[0]
         print('exp_uuid', exp_uuid)
+        
+        # Debug: Check what channels are in files_df
+        channels_in_files_df = files_df['channel'].unique() if 'channel' in files_df.columns else []
+        print(f'📊 Channels in files_df for tiledata: {sorted(channels_in_files_df)}')
+        logger.warning(f'Channels in files_df for tiledata: {sorted(channels_in_files_df)}')
+        
         channel_uuid_dict ={}
 
         for well in wells:
@@ -325,6 +419,10 @@ class Intro:
                     channel_uuid = channel_uuid_dict[(well_uuid, row.channel)]
                 else:
                     channel_uuid = Db.get_table_uuid('channeldata', dict(welldata_id=well_uuid, channel=row.channel))
+                    if channel_uuid is None:
+                        logger.warning(f'⚠️  Channel "{row.channel}" not found in channeldata for well {well}. Skipping tiledata entry.')
+                        print(f'⚠️  Channel "{row.channel}" not found in channeldata for well {well}. Skipping tiledata entry.')
+                        continue
                     channel_uuid_dict[(well_uuid, row.channel)] = channel_uuid
                 # print('channel', row.channel)
                 # print(f'Channel uuid for tiledata {channel_uuid}')
@@ -374,9 +472,12 @@ class Intro:
             well_uuid = Db.get_table_uuid('welldata', dict(experimentdata_id=exp_uuid, well=row.Well))
             print('row ord', row['Ordering'])
             logger.warning(f'row ord {row.Ordering}')
-            ordering = list(set(row['Ordering'].split(';') if not pd.isna(row['Ordering']) else []))  # taking a set in case there are duplicates
-
-            channels = row['Channel'].split(';')  if not pd.isna(row['Channel']) else []
+            # Split and strip whitespace to ensure proper matching
+            ordering = [ch.strip() for ch in (row['Ordering'].split(';') if not pd.isna(row['Ordering']) else [])]
+            ordering = list(set(ordering))  # taking a set in case there are duplicates
+            print(f'ordering after strip: {ordering}')
+       
+            channels = [ch.strip() for ch in (row['Channel'].split(';') if not pd.isna(row['Channel']) else [])]
             intensities = row['ExcitationIntensity'].split(':') if not pd.isna(row['ExcitationIntensity']) else []
             exposures = row['Exposure'].split(';') if not pd.isna(row['Exposure']) else []
             logger.warning(f'channels {channels}')
@@ -384,7 +485,7 @@ class Intro:
             logger.warning(f'epi exposures {exposures}')
             print(f'epi exposures {exposures}')
 
-            dmd_channels = row['DMD_Channel'].split(';') if not pd.isna(row['DMD_Channel']) else []
+            dmd_channels = [ch.strip() for ch in (row['DMD_Channel'].split(';') if not pd.isna(row['DMD_Channel']) else [])]
             dmd_intensities = row['DMD_ExcitationIntensity'].split(':') if not pd.isna(row['DMD_ExcitationIntensity']) else []
             dmd_exposures = row['DMD_Exposure'].split(';') if not pd.isna(row['DMD_Exposure']) else []
             logger.warning(f'dmd channels {dmd_channels}')
@@ -392,7 +493,7 @@ class Intro:
             logger.warning(f'dmd exposures {dmd_exposures}')
             print(f'dmd exposures {dmd_exposures}')
 
-            confocal_channels = row['Confocal_Channel'].split(';') if not pd.isna(row['Confocal_Channel']) else []
+            confocal_channels = [ch.strip() for ch in (row['Confocal_Channel'].split(';') if not pd.isna(row['Confocal_Channel']) else [])]
             confocal_intensities = row['Confocal_ExcitationIntensity'].split(':') if not pd.isna(row['Confocal_ExcitationIntensity']) else []
             confocal_exposures = row['Confocal_Exposure'].split(';') if not pd.isna(row['Confocal_Exposure']) else []
             logger.warning(f'confocal channels {confocal_channels}')
@@ -400,7 +501,7 @@ class Intro:
             logger.warning(f'confocal exposures {confocal_exposures}')
             print(f'confocal exposures {confocal_exposures}')
 
-            cobolt_channels = row['Cobolt_Channel'] if not pd.isna(row['Cobolt_Channel']) else '' # single wavelength
+            cobolt_channels = row['Cobolt_Channel'].strip() if not pd.isna(row['Cobolt_Channel']) else '' # single wavelength
             cobolt_intensities = row['Cobolt_ExcitationIntensity'] if not pd.isna(row['Cobolt_ExcitationIntensity']) else 0
             cobolt_exposures = row['Cobolt_Exposure'] if not pd.isna(row['Cobolt_Exposure']) else 0
             logger.warning(f'cobolt channels {cobolt_channels}')
@@ -417,18 +518,24 @@ class Intro:
             intensities_dct['welldata_id'] = well_uuid
             intensities_dct['experimentdata_id'] = exp_uuid
             for ord in ordering:
+                ord = ord.strip()  # Ensure no whitespace
                 intensities_dct['channel'] = ord
                 intensities_dct['objective'] = row['Objective']
+                print(f'Checking channel: "{ord}" in channels: {channels}')
                 if ord in channels:
                     intensities_dct['exposure'] = exposures[channels.index(ord)]
                 elif ord in dmd_channels:
                     intensities_dct['exposure'] = dmd_exposures[dmd_channels.index(ord)]
                 elif ord in confocal_channels:
                     intensities_dct['exposure'] = confocal_exposures[confocal_channels.index(ord)]
-                elif ord in cobolt_channels:
+                elif ord == cobolt_channels:  # cobolt_channels is a string, not a list
                     intensities_dct['exposure'] = cobolt_exposures
                 else:
-                    raise Exception(f'Channel not in ordering: {ord}, {ordering}')
+                    # Channel in Ordering but not found in any channel list - use default exposure
+                    default_exposure = exposures[0] if len(exposures) > 0 else '0'
+                    logger.warning(f'Channel "{ord}" in Ordering but not found in Channel/DMD_Channel/Confocal_Channel/Cobolt_Channel. Using default exposure: {default_exposure}')
+                    print(f'⚠️  Channel "{ord}" not found in channel lists. Using default exposure: {default_exposure}')
+                    intensities_dct['exposure'] = default_exposure
                 channel_dcts.append(intensities_dct.copy())
 
             del intensities_dct

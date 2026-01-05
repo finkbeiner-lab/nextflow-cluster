@@ -208,10 +208,14 @@ class Montage:
             
             if self.opt.img_norm_name != 'identity' and self.opt.tiletype=='filename':
                 bg_start_time = time()
-                self.Norm.get_background_image(df, well, timepoint)#kaushik edit
-                bg_time = time() - bg_start_time
-                # Add back the background calculation message with timing
-                print(f'Calculated background image for {well} at T{timepoint} in {bg_time}')
+                # Check if using per-tile background mode
+                if hasattr(self.opt, 'bg_mode') and self.opt.bg_mode == 'per_tile':
+                    # Backgrounds will be calculated per tile as we process them
+                    pass
+                else:
+                    # Per-well background mode (original behavior)
+                    self.Norm.get_background_image(df, well, timepoint)
+                    print(f'Well {well}, T{timepoint}')
             
             
             
@@ -228,14 +232,36 @@ class Montage:
                     savepath = os.path.join(welldir, name)
                 img = imageio.v3.imread(f)
                 
-                cleaned_im = self.Norm.image_bg_correction[self.opt.img_norm_name](img, row.well, row.timepoint)
+                # Use per-tile background if enabled
+                if hasattr(self.opt, 'bg_mode') and self.opt.bg_mode == 'per_tile' and self.opt.img_norm_name != 'identity' and self.opt.tiletype=='filename':
+                    # Calculate background for this specific tile if not already done
+                    tile = int(row.tile)
+                    self.Norm.get_background_image_per_tile(df, row.well, timepoint, tile)
+                    cleaned_im = self.Norm.image_bg_correction[self.opt.img_norm_name](img, row.well, row.timepoint, tile)
+                else:
+                    # Per-well background mode (original behavior)
+                    cleaned_im = self.Norm.image_bg_correction[self.opt.img_norm_name](img, row.well, row.timepoint)
                 images.append(cleaned_im)
             
             img_time = time() - img_start_time
             self.img_time += img_time
             
-            if well in self.Norm.backgrounds and timepoint in self.Norm.backgrounds[well]:
-                del self.Norm.backgrounds[well][timepoint]
+            # Clean up backgrounds based on mode
+            if hasattr(self.opt, 'bg_mode') and self.opt.bg_mode == 'per_tile':
+                # Per-tile mode: clean up all tile backgrounds for this well/timepoint
+                if well in self.Norm.backgrounds:
+                    if isinstance(self.Norm.backgrounds[well], dict):
+                        # Check if it's the per-tile structure (nested dict)
+                        for tile_key in list(self.Norm.backgrounds[well].keys()):
+                            if isinstance(self.Norm.backgrounds[well][tile_key], dict) and timepoint in self.Norm.backgrounds[well][tile_key]:
+                                del self.Norm.backgrounds[well][tile_key][timepoint]
+                                # Clean up empty tile dicts
+                                if len(self.Norm.backgrounds[well][tile_key]) == 0:
+                                    del self.Norm.backgrounds[well][tile_key]
+            else:
+                # Per-well mode: clean up the per-well background
+                if well in self.Norm.backgrounds and timepoint in self.Norm.backgrounds[well]:
+                    del self.Norm.backgrounds[well][timepoint]
         num_tiles = len(images)
        
         logger.warning(f'Num tiles: {num_tiles}')
@@ -343,6 +369,8 @@ if __name__ == '__main__':
                         help='Montage image, binary mask, or tracked mask.')
     parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
+    parser.add_argument('--bg_mode', default='per_well', choices=['per_well', 'per_tile'], type=str,
+                        help='Background correction mode: "per_well" uses one background for all tiles in a well/timepoint (default), "per_tile" calculates background for each tile position separately.')
     parser.add_argument('--montage_pattern',default='standard', choices=['standard', 'legacy'], help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
