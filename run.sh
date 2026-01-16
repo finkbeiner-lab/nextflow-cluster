@@ -29,6 +29,44 @@ echo "================================="
 # Add /usr/bin to PATH for Singularity/Apptainer
 export PATH=/usr/bin:$PATH
 
+# Get the directory where this script is located
+# This works whether the script is run directly or via sbatch
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_FILE="${SCRIPT_DIR}/finkbeiner.config"
+VALIDATE_SCRIPT="${SCRIPT_DIR}/bin/validate_config.py"
+
+# Validate config file before running Nextflow
+echo "================================="
+echo "Validating config file: ${CONFIG_FILE}"
+echo "================================="
+
+# Check if config file exists
+if [ ! -f "${CONFIG_FILE}" ]; then
+    echo "ERROR: Config file not found: ${CONFIG_FILE}"
+    exit 1
+fi
+
+# Check if validation script exists
+if [ ! -f "${VALIDATE_SCRIPT}" ]; then
+    echo "WARNING: Validation script not found: ${VALIDATE_SCRIPT}"
+    echo "Skipping validation and proceeding with Nextflow run..."
+    echo "================================="
+else
+    # Run validation script
+    if python3 "${VALIDATE_SCRIPT}" "${CONFIG_FILE}"; then
+        echo "✓ Config validation passed"
+        echo "================================="
+    else
+        echo ""
+        echo "ERROR: Config validation failed!"
+        echo "Please fix the issues in ${CONFIG_FILE} before running the pipeline."
+        echo "You can run the validation manually with:"
+        echo "  python3 ${VALIDATE_SCRIPT} ${CONFIG_FILE}"
+        echo "================================="
+        exit 1
+    fi
+fi
+
 # Run Nextflow inside Apptainer container
 nextflow run pipeline.nf \
   -with-apptainer /gladstone/finkbeiner/steve/work/projects/nextflow-cluster/nextflow-cluster.sif \
