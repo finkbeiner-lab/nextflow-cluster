@@ -22,7 +22,19 @@ lower_ch = Channel.of(params.lower_area_thresh)
 upper_ch = Channel.of(params.upper_area_thresh)
 sd_ch = Channel.of(params.sd_scale_factor)
 // Read CSV platemap file -TODO Read from DB
-def csv_lines = file(params.platemap_path).readLines()
+def csv_lines
+try {
+    csv_lines = file(params.platemap_path).readLines()
+} catch (Exception e) {
+    def cause = e
+    while (cause != null) {
+        if (cause.getClass().getName().contains('MalformedInputException') || cause.getMessage()?.contains('Input length')) {
+            error "❌ Platemap file contains non-UTF-8 bytes: ${params.platemap_path}\n   Save the file as UTF-8 (e.g. 'CSV UTF-8' in Excel) or convert the file encoding."
+        }
+        cause = cause.getCause()
+    }
+    throw e
+}
 def header = csv_lines[0].split(',').toList().collect { it.trim() }
 def well_index = header.indexOf('well')
 

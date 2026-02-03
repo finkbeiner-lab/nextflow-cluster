@@ -6,7 +6,7 @@ mkdir -p /gladstone/finkbeiner/steve/work/projects/nextflow-cluster/slurm-logs
 # Slurm job options
 #SBATCH --job-name=nextflow-run
 #SBATCH --time=08:00:00
-#SBATCH -N 1
+#SBATCH -N 2
 #SBATCH --output=/gladstone/finkbeiner/steve/work/projects/nextflow-cluster/slurm-logs/slurm-%j.out
 ##SBATCH --gres=gpu:v100:1
 #SBATCH --distribution=block:block
@@ -29,11 +29,15 @@ echo "================================="
 # Add /usr/bin to PATH for Singularity/Apptainer
 export PATH=/usr/bin:$PATH
 
-# Get the directory where this script is located
-# This works whether the script is run directly or via sbatch
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_FILE="${SCRIPT_DIR}/finkbeiner.config"
-VALIDATE_SCRIPT="${SCRIPT_DIR}/bin/validate_config.py"
+# Use submit directory when running under Slurm (sbatch copies script to spool dir);
+# otherwise use the directory where this script lives
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    WORK_DIR="${SLURM_SUBMIT_DIR}"
+else
+    WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+CONFIG_FILE="${WORK_DIR}/finkbeiner.config"
+VALIDATE_SCRIPT="${WORK_DIR}/bin/validate_config.py"
 
 # Validate config file before running Nextflow
 echo "================================="
@@ -72,7 +76,21 @@ nextflow run pipeline.nf \
   -with-apptainer /gladstone/finkbeiner/steve/work/projects/nextflow-cluster/nextflow-cluster.sif \
   -c finkbeiner.config \
   --process.echo true \
-  -ansi-log false \
-  
+  -ansi-log false
+
+NF_EXIT=$?
+if [ $NF_EXIT -ne 0 ]; then
+    echo ""
+    echo "================================="
+    echo "Nextflow failed (exit $NF_EXIT). Last 100 lines of .nextflow.log:"
+    echo "================================="
+    if [ -f "${WORK_DIR}/.nextflow.log" ]; then
+        tail -100 "${WORK_DIR}/.nextflow.log"
+    else
+        echo "(No .nextflow.log found at ${WORK_DIR}/.nextflow.log)"
+    fi
+    echo "================================="
+    exit $NF_EXIT
+fi
 echo "Nextflow pipeline completed"
 
