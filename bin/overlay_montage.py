@@ -46,7 +46,12 @@ class OverlayBatch:
             self.selected = False
             print(f"[INFO] Using MontagedImages directory: {montaged_path}")
 
-        self.overlay_root = os.path.join(self.experiment_root, "Overlay_Montages")
+        # When filtering by cell IDs, write to Overlay_Montages_selected_ids so we don't overwrite the full overlay
+        if getattr(self.opt, 'cell_ids', None):
+            self.overlay_root = os.path.join(self.experiment_root, "Overlay_Montages_Selected_Ids")
+            print(f"[INFO] Selected cell IDs provided → output: {self.overlay_root}")
+        else:
+            self.overlay_root = os.path.join(self.experiment_root, "Overlay_Montages")
 
         self.font = ImageFont.truetype('/usr/share/fonts/dejavu/DejaVuSansMono.ttf', 50)
 
@@ -250,7 +255,12 @@ if __name__ == '__main__':
 
     # Parse cell_ids into a set of ints for filtering (None = show all)
     if args.cell_ids and args.cell_ids.strip().lower() != 'all':
-        args.cell_ids = set(int(x.strip()) for x in args.cell_ids.split(',') if x.strip())
+        ids = set()
+        for x in args.cell_ids.split(','):
+            s = x.strip().strip("'\"")
+            if s:
+                ids.add(int(s))
+        args.cell_ids = ids
     else:
         args.cell_ids = None
 

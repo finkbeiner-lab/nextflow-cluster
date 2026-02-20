@@ -696,18 +696,20 @@ process OVERLAY_MONTAGE {
       val(timepoints_toggle),
       val(channels_toggle),
       val(shift),
-      val(contrast)
-
+      val(contrast),
+      val(cell_ids)
 
     output:
     tuple val(well), val(true)
 
     script:
     """
-    overlay_montage.py --experiment ${exp} --target_channel ${morphology_channel} \
+    CELL_IDS_OPT=""
+    [ -n "${cell_ids}" ] && CELL_IDS_OPT="--cell_ids ${cell_ids}"
+    overlay_montage.py --experiment_name ${exp} --target_channel ${morphology_channel} \
     --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
-    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast}
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \$CELL_IDS_OPT
     """
 }
 
@@ -745,7 +747,8 @@ process BUNDLED_WORKFLOW_IXM {
           val(well),
           val(shift),
           val(contrast),
-          val(motion)
+          val(motion),
+          val(cell_ids)
 
     output:
     tuple val(well), val(true)
@@ -824,11 +827,13 @@ process BUNDLED_WORKFLOW_IXM {
     
     # Step 4: OVERLAY (Parallel Processing)
     echo "🎨 Step 4/4: Creating overlay for well ${well} (parallel processing)"
-    overlay_montage.py --experiment ${exp} --target_channel ${morphology_channel} \
+    CELL_IDS_OPT=""
+    [ -n "${cell_ids}" ] && CELL_IDS_OPT="--cell_ids ${cell_ids}"
+    overlay_montage.py --experiment_name ${exp} --target_channel ${morphology_channel} \
     --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
-    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast}
-    
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \$CELL_IDS_OPT
+
     if [ \$? -eq 0 ]; then
         echo "✅ Overlay completed successfully for well ${well}"
     else
@@ -891,7 +896,8 @@ process BUNDLED_STD_WORKFLOW {
           val(contrast),
           val(tile),
           val(shift_dict),
-          val(motion)
+          val(motion),
+          val(cell_ids)
 
     output:
     tuple val(well), val(true)
@@ -992,11 +998,13 @@ process BUNDLED_STD_WORKFLOW {
     
     # Step 5: OVERLAY
     echo "🎨 Step 5/5: Creating overlay for well ${well}"
-    overlay_montage.py --experiment ${exp} --target_channel ${morphology_channel} \
+    CELL_IDS_OPT=""
+    [ -n "${cell_ids}" ] && CELL_IDS_OPT="--cell_ids ${cell_ids}"
+    overlay_montage.py --experiment_name ${exp} --target_channel ${morphology_channel} \
     --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
-    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast}
-    
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \$CELL_IDS_OPT
+
     if [ \$? -eq 0 ]; then
         echo "✅ Overlay completed successfully for well ${well}"
     else
