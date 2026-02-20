@@ -1,16 +1,21 @@
 #!/bin/bash
 
-# Create a directory for Slurm output logs
-mkdir -p /gladstone/finkbeiner/steve/work/projects/nextflow-cluster/slurm-logs
-
-# Slurm job options
+# Slurm job options (output path is relative so logs go under the directory where sbatch is run)
 #SBATCH --job-name=nextflow-run
 #SBATCH --time=08:00:00
 #SBATCH -N 2
-#SBATCH --output=/gladstone/finkbeiner/steve/work/projects/nextflow-cluster/slurm-logs/slurm-%j.out
+#SBATCH --output=slurm-%j.out
 ##SBATCH --gres=gpu:v100:1
 #SBATCH --distribution=block:block
 
+# Directory where sbatch was run (or where this script lives if run directly)
+# This lets different users run from their own path, e.g. .../vgramas/nextflow-cluster or .../user/nextflow-cluster
+if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
+    WORK_DIR="${SLURM_SUBMIT_DIR}"
+else
+    WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+fi
+cd "${WORK_DIR}" || exit 1
 
 # Disable color output in Nextflow
 export NXF_CLI_COLOR=false
@@ -18,6 +23,7 @@ export NXF_CLI_COLOR=false
 # Log environment info
 echo "================================="
 echo "Starting job on node: $(hostname)"
+echo "Working directory: ${WORK_DIR}"
 
 if command -v nvidia-smi &> /dev/null; then
     nvidia-smi
@@ -29,13 +35,6 @@ echo "================================="
 # Add /usr/bin to PATH for Singularity/Apptainer
 export PATH=/usr/bin:$PATH
 
-# Use submit directory when running under Slurm (sbatch copies script to spool dir);
-# otherwise use the directory where this script lives
-if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
-    WORK_DIR="${SLURM_SUBMIT_DIR}"
-else
-    WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-fi
 CONFIG_FILE="${WORK_DIR}/finkbeiner.config"
 VALIDATE_SCRIPT="${WORK_DIR}/bin/validate_config.py"
 
@@ -71,9 +70,16 @@ else
     fi
 fi
 
+# Apptainer image: use one in WORK_DIR if present, else fallback to shared path
+if [ -f "${WORK_DIR}/nextflow-cluster.sif" ]; then
+    CONTAINER="${WORK_DIR}/nextflow-cluster.sif"
+else
+    CONTAINER="/gladstone/finkbeiner/steve/work/projects/nextflow-cluster/nextflow-cluster.sif"
+fi
+
 # Run Nextflow inside Apptainer container
 nextflow run pipeline.nf \
-  -with-apptainer /gladstone/finkbeiner/steve/work/projects/nextflow-cluster/nextflow-cluster.sif \
+  -with-apptainer "${CONTAINER}" \
   -c finkbeiner.config \
   --process.echo true \
   -ansi-log false

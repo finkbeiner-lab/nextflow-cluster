@@ -222,14 +222,12 @@ def validate_config_file(config_path):
 
 def main():
     """Main entry point."""
-    # Default to finkbeiner.config in the parent directory
-    script_dir = Path(__file__).parent
-    default_config = script_dir.parent / 'finkbeiner.config'
-    
+    # Config path: use argument if given; otherwise use current working directory
+    # so it works when run from the directory where sbatch was run (or any project copy)
     if len(sys.argv) > 1:
         config_path = sys.argv[1]
     else:
-        config_path = str(default_config)
+        config_path = str(Path.cwd() / 'finkbeiner.config')
     
     exit_code = validate_config_file(config_path)
     sys.exit(exit_code)

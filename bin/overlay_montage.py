@@ -127,7 +127,8 @@ class OverlayBatch:
         df_data = self.df.to_dict('records')  # Convert DataFrame to list of dicts
         opt_params = {
             'contrast': self.opt.contrast,
-            'shift': self.opt.shift
+            'shift': self.opt.shift,
+            'cell_ids': getattr(self.opt, 'cell_ids', None)
         }
         
         # Prepare tasks with serializable data
@@ -182,6 +183,11 @@ def overlay_single_timepoint(args):
             (df['timepoint'] == timepoint)
         ]
 
+        # Optionally restrict overlay to specific cell IDs
+        cell_ids = opt_params.get('cell_ids')
+        if cell_ids is not None:
+            df_filtered = df_filtered[df_filtered['tracked_id'].isin(cell_ids)]
+
         if df_filtered.empty:
             return f"{well} timepoint {timepoint} - no cells found"
 
@@ -235,7 +241,18 @@ if __name__ == '__main__':
     parser.add_argument('--channels_toggle', default="include", choices=["include", "exclude"])
     parser.add_argument('--shift', default=20, type=int, help="Pixel shift for label placement")
     parser.add_argument('--contrast', default=1.3, type=float, help="Adjust contrast")
+    parser.add_argument(
+        '--cell_ids',
+        default=None,
+        help="Comma-separated cell IDs to show in overlay (e.g. 5,12,23). Omit or use 'all' to show all cells."
+    )
     args = parser.parse_args()
+
+    # Parse cell_ids into a set of ints for filtering (None = show all)
+    if args.cell_ids and args.cell_ids.strip().lower() != 'all':
+        args.cell_ids = set(int(x.strip()) for x in args.cell_ids.split(',') if x.strip())
+    else:
+        args.cell_ids = None
 
     Ovr = OverlayBatch(args)
     Ovr.run()

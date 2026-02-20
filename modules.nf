@@ -31,11 +31,11 @@ process REGISTER_EXPERIMENT {
 
     script:
     """
-    register_experiment.py --input_path ${input_path} --output_path ${output_path} --template_path ${template_path} \
-    --platemap_path ${platemap_path} --ixm_hts_file ${ixm_hts_file} --robo_file ${robo_file} --overwrite_experiment ${overwrite_experiment} \
-    --robo_num ${robo_num} \
-    --illumination_file ${illumination_file} \
-    --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \
+    register_experiment.py --input_path "${input_path}" --output_path "${output_path}" --template_path "${template_path}" \\
+    --platemap_path "${platemap_path}" --ixm_hts_file "${ixm_hts_file}" --robo_file "${robo_file}" --overwrite_experiment ${overwrite_experiment} \\
+    --robo_num ${robo_num} \\
+    --illumination_file "${illumination_file}" \\
+    --chosen_wells ${chosen_wells} --chosen_channels ${chosen_channels} --chosen_timepoints ${chosen_timepoints} \\
     --wells_toggle ${wells_toggle} --channels_toggle ${channels_toggle} --timepoints_toggle ${timepoints_toggle}
     """
 }
@@ -716,18 +716,12 @@ process BUNDLED_WORKFLOW_IXM {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     tag "BUNDLED_WORKFLOW_IXM-${exp}_${well}"
     
-    // Resource requirements for the bundled process
-    // These can be adjusted based on your cluster capacity
-    cpus 17
+    // Galaxy CPU nodes: 28 cores, ~377 GB RAM (fb-docker-compute*, fb-galaxy-cpu*)
+    // Per well: 4 cpus → 7 wells/node (28 cpus); with QOSMaxNodePerUserLimit=2 → 14 wells concurrent
+    // MONTAGE ~2 CPU, SEGMENTATION ~4 CPU, TRACKING ~2 CPU, OVERLAY ~1 CPU → 4 cpus
+    cpus 4
     memory 20.GB
     time '8h'
-    
-    // Process-specific resource hints (for monitoring)
-    // MONTAGE: ~2 CPU, ~8GB RAM
-    // SEGMENTATION: ~4 CPU, ~12GB RAM (most intensive)
-    // TRACKING: ~2 CPU, ~6GB RAM
-    // OVERLAY: ~1 CPU, ~4GB RAM
-    // TOTAL: ~20 CPU, ~64GB RAM (with headroom for parallel processing)
 
     input:
     tuple val(exp),
@@ -785,7 +779,7 @@ process BUNDLED_WORKFLOW_IXM {
     
     echo "🚀 Starting bundled workflow for well ${well}"
     echo "📊 Processing: MONTAGE → SEGMENTATION → TRACKING → OVERLAY"
-    echo "💻 Resources: 20 CPUs, 64GB RAM, 6h time limit"
+    echo "💻 Resources: 4 CPUs, 20GB RAM, 8h time limit"
     echo "⏰ Started at: \${START_TIMESTAMP}"
     
     # Step 1: MONTAGE

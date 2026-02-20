@@ -600,10 +600,15 @@ class Intro:
         user_chosen_lst = []
         if user_chosen_str != '' and user_chosen_str != 'all':
             user_chosen_lst = utils.get_iter_from_user(user_chosen_str, column_name)
+            # timepoint column is int (1, 2, 3...) but get_iter_from_user returns strings ('T1', 'T2'...)
+            if column_name == 'timepoint' and len(df) > 0 and pd.api.types.is_numeric_dtype(df[column_name]):
+                filter_vals = [int(str(t).lstrip('T')) for t in user_chosen_lst]
+            else:
+                filter_vals = user_chosen_lst
             if toggle == 'exclude':
-                df = df[~df[column_name].isin(user_chosen_lst)]
+                df = df[~df[column_name].isin(filter_vals)]
             elif toggle == 'include':
-                df = df[df[column_name].isin(user_chosen_lst)]
+                df = df[df[column_name].isin(filter_vals)]
         uni = pd.unique(df[column_name])
         if not len(df):
             logger.warning(f'Empty df by doing {toggle} for {column_name}s {user_chosen_lst} on dataframe with {uni}')
