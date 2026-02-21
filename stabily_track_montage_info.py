@@ -63,4 +63,9 @@ if __name__ == "__main__":
     output_csv = "/gladstone/finkbeiner/kaye/KanchanSarda/GXYTMP/Nextflow/GXYTMP-ALS-Set55/ALS-Set55-04172025TDP43EOS-JAK_tracked_stable.csv"
     threshold = 100  # pixels
 
+    if not os.path.isfile(input_csv):
+        raise FileNotFoundError(f"Tracking summary not found: {input_csv}")
+
+    mark_stable_cells(input_csv, output_csv, threshold=args.threshold)
+
     mark_stable_cells(input_csv, output_csv, threshold)
