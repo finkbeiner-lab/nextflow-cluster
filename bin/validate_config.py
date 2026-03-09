@@ -8,10 +8,20 @@ import sys
 import re
 import os
 from pathlib import Path
+from typing import List
 
 
-def check_trailing_whitespace(lines, filename):
-    """Check for trailing whitespace on lines (spaces/tabs before newline)."""
+def check_trailing_whitespace(lines: List[str], filename: str) -> List[dict]:
+    """Check for trailing whitespace on lines (spaces/tabs before newline).
+
+    Args:
+        lines: Raw lines read from the config file (including newlines).
+        filename: Path to the config file (for reporting context).
+
+    Returns:
+        List of issue dicts with keys ``line``, ``type``, ``message``,
+        ``content``.
+    """
     issues = []
     for line_num, line in enumerate(lines, 1):
         # Check for trailing spaces or tabs (not just the newline character)
@@ -28,8 +38,16 @@ def check_trailing_whitespace(lines, filename):
     return issues
 
 
-def check_unexpected_backslashes(lines, filename):
-    """Check for unexpected backslashes that might cause issues."""
+def check_unexpected_backslashes(lines: List[str], filename: str) -> List[dict]:
+    """Check for unexpected backslashes that might cause issues.
+
+    Args:
+        lines: Raw lines read from the config file.
+        filename: Path to the config file (for reporting context).
+
+    Returns:
+        List of issue dicts describing each problematic backslash.
+    """
     issues = []
     for line_num, line in enumerate(lines, 1):
         # Skip comment-only lines
@@ -86,8 +104,16 @@ def check_unexpected_backslashes(lines, filename):
     return issues
 
 
-def check_whitespace_in_values(lines, filename):
-    """Check for problematic whitespace in parameter values."""
+def check_whitespace_in_values(lines: List[str], filename: str) -> List[dict]:
+    """Check for problematic whitespace in parameter values.
+
+    Args:
+        lines: Raw lines read from the config file.
+        filename: Path to the config file (for reporting context).
+
+    Returns:
+        List of issue dicts for whitespace-in-value problems.
+    """
     issues = []
     for line_num, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -126,8 +152,16 @@ def check_whitespace_in_values(lines, filename):
     return issues
 
 
-def check_malformed_assignments(lines, filename):
-    """Check for malformed parameter assignments."""
+def check_malformed_assignments(lines: List[str], filename: str) -> List[dict]:
+    """Check for malformed parameter assignments.
+
+    Args:
+        lines: Raw lines read from the config file.
+        filename: Path to the config file (for reporting context).
+
+    Returns:
+        List of issue dicts for lines with multiple ``=`` signs.
+    """
     issues = []
     for line_num, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -154,8 +188,16 @@ def check_malformed_assignments(lines, filename):
     return issues
 
 
-def check_empty_lines_with_whitespace(lines, filename):
-    """Check for lines that appear empty but contain whitespace."""
+def check_empty_lines_with_whitespace(lines: List[str], filename: str) -> List[dict]:
+    """Check for lines that appear empty but contain whitespace.
+
+    Args:
+        lines: Raw lines read from the config file.
+        filename: Path to the config file (for reporting context).
+
+    Returns:
+        List of issue dicts for blank lines containing hidden whitespace.
+    """
     issues = []
     for line_num, line in enumerate(lines, 1):
         if line.strip() == '' and line != '\n' and line != '':
@@ -168,8 +210,16 @@ def check_empty_lines_with_whitespace(lines, filename):
     return issues
 
 
-def validate_config_file(config_path):
-    """Main validation function."""
+def validate_config_file(config_path: str) -> int:
+    """Run all validation checks on a Nextflow config file.
+
+    Args:
+        config_path: Path to the config file to validate.
+
+    Returns:
+        Exit code: 0 if no issues found, 1 if issues detected or file
+        not found.
+    """
     if not os.path.exists(config_path):
         print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
         return 1
@@ -220,8 +270,8 @@ def validate_config_file(config_path):
         return 0
 
 
-def main():
-    """Main entry point."""
+def main() -> None:
+    """Main entry point.  Reads config path from argv or defaults to cwd."""
     # Config path: use argument if given; otherwise use current working directory
     # so it works when run from the directory where sbatch was run (or any project copy)
     if len(sys.argv) > 1:

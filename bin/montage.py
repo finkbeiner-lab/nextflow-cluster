@@ -1,15 +1,26 @@
 #!/usr/bin/env python
 
-"""Montage images or masks - WITH ENHANCED TIMING"""
+"""Tile stitching module for assembling individual microscope tiles into
+whole-well montage images.
+
+Reads tile images (raw, mask, or tracked-mask) from the database, arranges
+them in a grid according to the configured montage pattern (standard
+left-to-right or legacy snake), and writes the assembled montage back as a
+single TIFF.  Supports optional per-well or per-tile background correction
+via the normalization module.  Database records are updated in batches for
+performance.
+"""
+
 import argparse
 from normalization import Normalize
 import datetime
 import logging
+from typing import Optional
+
 import numpy as np
 import os
 import imageio
 from sql import Database
-import pdb
 from time import time
 
 logger = logging.getLogger("Montage")
@@ -28,9 +39,21 @@ logger.warning('Running MONTAGE WITH ENHANCED TIMING from Database.')
 
 
 class Montage:
-    def __init__(self, opt):
+    """Assembles individual microscope tiles into whole-well montage images.
+
+    Tiles are read from paths stored in the database, optionally background-
+    corrected, arranged into a square grid, and saved as 16-bit TIFFs.  The
+    resulting montage path is written back to the ``tiledata`` table.
+
+    Args:
+        opt: Namespace with experiment parameters (experiment name,
+            tiletype, img_norm_name, montage_pattern, well/timepoint/channel
+            selection, outfile path, etc.).
+    """
+
+    def __init__(self, opt: argparse.Namespace) -> None:
         self.opt = opt
-        self.Db = Database()  # 🔹 Initialize database connection
+        self.Db = Database()
         logger.warning('Montage class initialized.')
         self.Norm = Normalize(self.opt)
         _, self.analysisdir = self.Norm.get_raw_and_analysis_dir()
@@ -50,7 +73,16 @@ class Montage:
         self.batch_updates = []
         self.batch_size = 20  # Process updates in batches of 20 for better progress visibility
 
-    def run(self, savebool=True):
+    def run(self, savebool: bool = True) -> None:
+        """Execute montage assembly for every well/timepoint/channel group.
+
+        Queries the database for tile metadata, groups tiles by
+        (timepoint, well, channel), assembles each group into a montage,
+        and writes a completion marker file when finished.
+
+        Args:
+            savebool: If True, write montage images to disk.
+        """
         self.start_time = time()
         tiledata_df = self.Norm.get_df_for_training(['channeldata'])
         # tiledata_df = self.Norm.get_flatfields()
@@ -93,8 +125,13 @@ class Montage:
         
         print('✅ Done.')
 
-    def process_batch_updates(self):
-        """Process database updates in batches for better performance"""
+    def process_batch_updates(self) -> None:
+        """Flush queued database updates, using batch operations when available.
+
+        Updates are grouped by field name (e.g. ``newimagemontage``) and
+        sent to the database as a single batch call if the ``Database``
+        object supports it; otherwise they fall back to individual updates.
+        """
         if not self.batch_updates:
             return
             
@@ -185,15 +222,26 @@ class Montage:
         # Clear the processed batch
         self.batch_updates = []
 
-    def single_montage(self, df, savebool=True):
-        """
-                # Get Robo0/3/4 montage order indexes relative to
-        # regular left to right and top to bottom order.
-        # like
-        # 3 2 1                 1 2 3
-        # 4 5 6     relative to 4 5 6
-        # 9 8 7                 7 8 9
-        # But here we start from 0
+    def single_montage(self, df: "pd.DataFrame", savebool: bool = True) -> Optional[np.ndarray]:
+        """Assemble one montage from a group of tiles sharing the same
+        well, timepoint, and channel.
+
+        Tiles are arranged in a square grid.  In ``'legacy'`` montage
+        pattern mode, odd rows are reversed to recreate the Robo0/3/4
+        snake-scan order::
+
+            3 2 1        1 2 3
+            4 5 6   vs   4 5 6   (standard)
+            9 8 7        7 8 9
+
+        Args:
+            df: DataFrame slice containing rows for a single
+                (timepoint, well, channel) group from ``tiledata``.
+            savebool: If True, write the montage TIFF to disk.
+
+        Returns:
+            The assembled montage as a uint16 numpy array, or None if
+            tile data was incomplete.
         """
         montage_start_time = time()
         images = []

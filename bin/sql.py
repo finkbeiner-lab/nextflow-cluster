@@ -1,49 +1,49 @@
-"""Database handler"""
+"""Low-level PostgreSQL interface for the Galaxy imaging database.
+
+Provides the ``Database`` class which wraps SQLAlchemy to create, query,
+and update tables used by the Finkbeiner Lab image-analysis pipeline.
+All tables use UUID primary keys and follow a hierarchy rooted at
+``experimentdata``.
+"""
+
 import os
-from sqlalchemy import create_engine, and_, MetaData, ForeignKey, Table, Column, Integer, String, Float, select, update, func, delete, UniqueConstraint
-from sqlalchemy.orm import Session
-from sqlalchemy.sql import functions
-from sqlalchemy.dialects.postgresql import UUID
 import uuid
-import pandas as pd
-from string import ascii_uppercase
 import warnings
+from typing import Any, Dict, List, Optional, Union
+
+import pandas as pd
+from sqlalchemy import (
+    Column, Float, Integer, MetaData, String, Table, UniqueConstraint,
+    ForeignKey, and_, create_engine, delete, func, select, update,
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Session
 from sqlalchemy.pool import NullPool
 
 
-
 class Database:
-    def __init__(self):
-        """
-        Table Hierarchy:
-            experimentdata - describes experiment
-            welldata - describes wells
-            channeldata - describes excitation and exposure per channel
-            tiledata - describes tiles
-            celldata - describes cells
-            punctadata - describes puncta within cells
-            organelledata - describes organelles within cells
+    """Low-level interface to the Galaxy PostgreSQL database.
 
+    On instantiation, connects to the database, reflects existing schema,
+    and creates any missing tables.  Uses ``NullPool`` so each connection
+    is opened and closed on demand (safe for multi-process / Slurm usage).
 
-            experimentdata <->  welldata  <-> channeldata
-                                    | 
-                                    |  
-                                tiledata
-                                    |
-                                    |
-                                celldata
-                                /       \
-                               /         \                                                                     eccentricity, perimeter, extent, solidity
+    Table hierarchy::
 
-                        punctadata    organelledata
+        experimentdata <-> welldata <-> channeldata
+                               |
+                           tiledata
+                               |
+                           celldata
+                          /        \\
+                    punctadata   organelledata
+    """
 
-        """
-        # _df = pd.read_csv('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')
+    CREDENTIALS_PATH: str = '/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv'
 
-        # Path to the CSV file
-        file_path = '/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv'
-
-        # Check if the file exists
+    def __init__(self) -> None:
+        """Initialise the database connection and ensure all tables exist."""
+        file_path = self.CREDENTIALS_PATH
         if os.path.exists(file_path):
             try:
                 _df = pd.read_csv(file_path)
@@ -53,12 +53,6 @@ class Database:
             print(f"File '{file_path}' does not exist.")
         pw = _df.pw.iloc[0]
         conn_string = f'postgresql://postgres:{pw}@fb-postgres01.gladstone.internal:5432/galaxy'
-        
-        # self.engine = create_engine(conn_string, future=True, pool_size=2,
-        #                               max_overflow=2,
-        #                               pool_recycle=300,
-        #                               pool_pre_ping=True,
-        #                               pool_use_lifo=True)
 
         self.engine = create_engine(conn_string, poolclass=NullPool)
         self.meta = MetaData()
@@ -91,11 +85,10 @@ class Database:
                 self.create_modeldata_table()
             if not self.engine.dialect.has_table(connection, 'modelcropdata'):
                 self.create_modelcropdata_table()
-            self.meta.reflect(bind=self.engine, resolve_fks = True)
-    def create_experimentdata_table(self):
-        # TODO: default uuid4 isn't working through sqlalchemy so I added the default with SQL
-        # ALTER TABLE experimentdata
-        # ALTER id SET DEFAULT uuid_generate_v4();
+            self.meta.reflect(bind=self.engine, resolve_fks=True)
+
+    def create_experimentdata_table(self) -> None:
+        """Create the top-level experiment metadata table."""
         experimentdata = Table(
             'experimentdata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -111,7 +104,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_welldata_table(self):
+    def create_welldata_table(self) -> None:
+        """Create the well-level metadata table (FK to experimentdata)."""
         welldata = Table(
             'welldata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -123,7 +117,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_channeldata_table(self):
+    def create_channeldata_table(self) -> None:
+        """Create the channel metadata table (excitation wavelengths, exposure)."""
         channeldata = Table(
             'channeldata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -152,7 +147,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_tiledata_table(self):
+    def create_tiledata_table(self) -> None:
+        """Create the tile-level image data table (filenames, masks, timepoints)."""
         tiledata = Table(
             'tiledata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -173,12 +169,12 @@ class Database:
             Column('time_imaged', String),
             Column('maskpath', String),
             Column('trackedmaskpath', String),
-            Column('newtrackedmontage', String),  # <- your missing column
-
+            Column('newtrackedmontage', String),
         )
         self.meta.create_all(self.engine)
 
-    def create_celldata_table(self):
+    def create_celldata_table(self) -> None:
+        """Create the cell-level morphology data table."""
         celldata = Table(
             'celldata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -202,7 +198,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_cropdata_table(self):
+    def create_cropdata_table(self) -> None:
+        """Create the crop data table (cell image crops per channel)."""
         cropdata = Table(
             'cropdata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -218,7 +215,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_modeldata_table(self):
+    def create_modeldata_table(self) -> None:
+        """Create the ML model metadata table."""
         modeldata = Table(
             'modeldata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -235,9 +233,12 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_modelcropdata_table(self):
-        """Model crop data could include multiple crops. Expect just one celldata id though. 
-        Model for puncta will need a new table"""
+    def create_modelcropdata_table(self) -> None:
+        """Create the model crop data table.
+
+        May include multiple crops but expects one celldata_id per row.
+        A separate table would be needed for puncta-level model data.
+        """
         modelcropdata = Table(
             'modelcropdata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -259,7 +260,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_intensitycelldata_table(self):
+    def create_intensitycelldata_table(self) -> None:
+        """Create the per-cell intensity statistics table."""
         intensitycelldata = Table(
             'intensitycelldata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -280,7 +282,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_intensitypunctadata_table(self):
+    def create_intensitypunctadata_table(self) -> None:
+        """Create the per-puncta intensity statistics table."""
         intensitypunctadata = Table(
             'intensitypunctadata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -303,7 +306,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
     
-    def create_dosagedata_table(self):
+    def create_dosagedata_table(self) -> None:
+        """Create the dosage/treatment data table."""
         dosagedata = Table(
             'dosagedata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -317,7 +321,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_punctadata_table(self):
+    def create_punctadata_table(self) -> None:
+        """Create the puncta-level morphology data table."""
         punctadata = Table(
             'punctadata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -343,7 +348,8 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def create_organelledata_table(self):
+    def create_organelledata_table(self) -> None:
+        """Create the organelle-level morphology data table."""
         organelledata = Table(
             'organelledata', self.meta,
             Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
@@ -362,27 +368,42 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def add_row(self, tablename: str, dct: [dict,list]):
+    def add_row(self, tablename: str, dct: Union[Dict[str, Any], List[Dict[str, Any]]]) -> None:
+        """Insert one or more rows into a table.
+
+        Args:
+            tablename: Name of the target table.
+            dct: A single dict (one row) or list of dicts (bulk insert).
+        """
         with self.engine.connect() as connection:
             ins = self.meta.tables[tablename].insert().values(dct)
-            db = connection.execute(ins)
+            connection.execute(ins)
             connection.commit()
-    # def update(self, tablename: str, update_dct: dict, kwargs):
-    #     with self.engine.connect() as connection:
-    #         stmt = update(self.meta.tables[tablename]).filter_by(**kwargs).values(**update_dct)
-    #         result = connection.execute(stmt)
-    #         connection.commit()
-    #         return result.rowcount
 
-    # #Original
-    def update(self, tablename: str, update_dct: dict, kwargs):
+    def update(self, tablename: str, update_dct: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
+        """Update rows matching ``kwargs`` with the values in ``update_dct``.
+
+        Args:
+            tablename: Name of the target table.
+            update_dct: Column-value pairs to set.
+            kwargs: Filter criteria passed to ``filter_by``.
+        """
         with self.engine.connect() as connection:
-            ins = update(self.meta.tables[tablename]).filter_by(**kwargs).values(update_dct)
-            db = connection.execute(ins)
+            stmt = update(self.meta.tables[tablename]).filter_by(**kwargs).values(update_dct)
+            connection.execute(stmt)
             connection.commit()
             
-    def update_prefix_path(self, tablename:str,exp_uuid, old_string:str, new_string:str):
+    def update_prefix_path(self, tablename: str, exp_uuid: Any, old_string: str, new_string: str) -> None:
+        """Replace a path prefix in filename, maskpath, and trackedmaskpath columns.
+
+        Args:
+            tablename: Table to update (typically 'tiledata').
+            exp_uuid: UUID of the experiment to scope the update.
+            old_string: Substring to find in path columns.
+            new_string: Replacement substring.
+        """
         with self.engine.connect() as connection:
+            # Update filename column
             update_stmt1 = (
                 update(self.meta.tables[tablename]).
                 where(and_(
@@ -390,8 +411,8 @@ class Database:
                     self.meta.tables[tablename].c.filename.contains(old_string))).
                 values(filename=func.replace(self.meta.tables[tablename].c.filename, old_string, new_string))
             )
-            print('stmt1', update_stmt1)
             connection.execute(update_stmt1)
+            # Update maskpath column
             update_stmt2 = (
                 update(self.meta.tables[tablename]).
                 where(and_(
@@ -400,6 +421,7 @@ class Database:
                 values(maskpath=func.replace(self.meta.tables[tablename].c.maskpath, old_string, new_string))
             )
             connection.execute(update_stmt2)
+            # Update trackedmaskpath column
             update_stmt3 = (
                 update(self.meta.tables[tablename]).
                 where(and_(
@@ -409,10 +431,18 @@ class Database:
             )
             connection.execute(update_stmt3)
             connection.commit()
-        
-            
-    def update_slashes(self, tablename: str, exp_uuid):
-        """Assumes tiledata, won't work for experimentdata due to primary key name"""
+
+    def update_slashes(self, tablename: str, exp_uuid: Any) -> None:
+        """Replace backslashes with forward slashes in all path columns.
+
+        Operates on filename, maskpath, and trackedmaskpath for a given
+        experiment.  Assumes the table has an ``experimentdata_id`` column
+        (will not work on ``experimentdata`` itself).
+
+        Args:
+            tablename: Table to update (typically 'tiledata').
+            exp_uuid: UUID of the experiment to scope the update.
+        """
         with self.engine.connect() as connection:
             update_stmt = (
                 update(self.meta.tables[tablename]).
@@ -421,10 +451,19 @@ class Database:
                        maskpath=func.replace(self.meta.tables[tablename].c.maskpath, '\\', '/'),
                        trackedmaskpath=func.replace(self.meta.tables[tablename].c.trackedmaskpath, '\\', '/'))
         )
-            db = connection.execute(update_stmt)
+            connection.execute(update_stmt)
             connection.commit()
 
-    def get_table_uuid(self, tablename: str, kwargs):
+    def get_table_uuid(self, tablename: str, kwargs: Dict[str, Any]) -> Optional[Any]:
+        """Return the UUID (``id`` column) of the first matching row.
+
+        Args:
+            tablename: Table to query.
+            kwargs: Filter criteria passed to ``filter_by``.
+
+        Returns:
+            The UUID value, or ``None`` if no row matches.
+        """
         with self.engine.connect() as connection:
             stmt = select(self.meta.tables[tablename].c['id']). \
                 filter_by(**kwargs)
@@ -432,9 +471,17 @@ class Database:
         if len(result) == 0:
             return None
         return result[0][0]
-    
-    
-    def get_table_analysisdir(self, tablename: str, kwargs):
+
+    def get_table_analysisdir(self, tablename: str, kwargs: Dict[str, Any]) -> Optional[str]:
+        """Return the ``analysisdir`` value for the first matching row.
+
+        Args:
+            tablename: Table to query (typically 'experimentdata').
+            kwargs: Filter criteria passed to ``filter_by``.
+
+        Returns:
+            The analysis directory path, or ``None`` if no row matches.
+        """
         with self.engine.connect() as connection:
             stmt = select(self.meta.tables[tablename].c['analysisdir']). \
                 filter_by(**kwargs)
@@ -442,8 +489,18 @@ class Database:
         if len(result) == 0:
             return None
         return result[0][0]
-    
-    def get_table_value(self, tablename: str, column: str, kwargs):
+
+    def get_table_value(self, tablename: str, column: str, kwargs: Dict[str, Any]) -> Optional[List[Any]]:
+        """Return all values of a single column for matching rows.
+
+        Args:
+            tablename: Table to query.
+            column: Column name to select.
+            kwargs: Filter criteria passed to ``filter_by``.
+
+        Returns:
+            List of result tuples, or ``None`` if no rows match.
+        """
         with self.engine.connect() as connection:
             stmt = select(self.meta.tables[tablename].c[column]). \
                 filter_by(**kwargs)
@@ -452,7 +509,17 @@ class Database:
             return None
         return result
 
-    def get_table_cols(self, tablename: str, columns: list, kwargs):
+    def get_table_cols(self, tablename: str, columns: List[str], kwargs: Dict[str, Any]) -> Optional[List[Any]]:
+        """Return values of two columns for matching rows.
+
+        Args:
+            tablename: Table to query.
+            columns: List of exactly two column names to select.
+            kwargs: Filter criteria passed to ``filter_by``.
+
+        Returns:
+            List of result tuples, or ``None`` if no rows match.
+        """
         with self.engine.connect() as connection:
             stmt = select(self.meta.tables[tablename].c[columns[0], columns[1]]). \
                 filter_by(**kwargs)
@@ -461,9 +528,15 @@ class Database:
             return None
         return result
 
-    def delete_based_on_duplicate_name(self, tablename: str, kwargs):
-        # select the the max value in time imaged
+    def delete_based_on_duplicate_name(self, tablename: str, kwargs: Dict[str, Any]) -> None:
+        """Delete all rows matching ``kwargs`` if at least one exists.
 
+        Used to remove duplicate entries before re-inserting updated data.
+
+        Args:
+            tablename: Table to delete from.
+            kwargs: Filter criteria identifying the duplicate rows.
+        """
         with Session(self.engine) as session:
             qry = session.query(self.meta.tables[tablename]). \
                 filter_by(**kwargs).first()
@@ -476,14 +549,31 @@ class Database:
                 res = connection.execute(stmt)
                 connection.commit()
 
-    def get_df_from_query(self, tablename, kwargs):
+    def get_df_from_query(self, tablename: str, kwargs: Dict[str, Any]) -> pd.DataFrame:
+        """Return a DataFrame of all rows matching the filter criteria.
+
+        Args:
+            tablename: Table to query.
+            kwargs: Filter criteria passed to ``filter_by``.
+
+        Returns:
+            DataFrame with one row per matching database row.
+        """
         statement = select(self.meta.tables[tablename]).filter_by(**kwargs)
         with self.engine.connect() as connection:
             df = pd.read_sql(statement, connection)
         return df
-    
-    def join_table(self, table1, table2):
+
+    def join_table(self, table1: str, table2: str) -> List[Any]:
+        """Perform a natural join between two tables and return all rows.
+
+        Args:
+            table1: Name of the primary table.
+            table2: Name of the table to join.
+
+        Returns:
+            List of joined row objects.
+        """
         with Session(self.engine) as session:
-            qry = session.query(self.meta.tables[table1]). \
-                join(table2).all()
+            qry = session.query(self.meta.tables[table1]).join(table2).all()
         return qry

@@ -1,34 +1,40 @@
 #!/usr/bin/env python
+"""Cell tracking on montaged microscopy images via minimum-cost flow optimization.
+
+Reads encoded segmentation masks from the database, matches cell identities
+across timepoints using overlap, proximity, or motion-prediction strategies
+(the last leveraging the Hungarian algorithm), and writes tracked masks plus
+a summary CSV with per-cell intensity measurements.
+"""
+
 import sys
 import cv2
 import numpy as np
 import logging
 import argparse
 import os
+from typing import Any, Dict, List, Optional, Tuple
+
 from db_util import Ops
 from sql import Database
 import pandas as pd
 import collections
-import ast  # Safe way to evaluate a string representation of a list
-import tifffile  # For reading TIFF files saved by segmentation script
+import tifffile
 import datetime
 from time import time
 from multiprocessing import Pool, cpu_count
-from functools import partial
-from scipy.optimize import linear_sum_assignment  # For Hungarian algorithm
-
+from scipy.optimize import linear_sum_assignment
 
 logger = logging.getLogger("TrackingDB")
 logging.basicConfig(
-    stream=sys.stderr,       # Send logs to stderr (captured by SLURM)
+    stream=sys.stderr,
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
-# Add file logging similar to segmentation script
 now = datetime.datetime.now()
 TIMESTAMP = '%d%02d%02d%02d%02d' % (now.year, now.month, now.day, now.hour, now.minute)
-print(f'🚀 Starting tracking processing at {now.strftime("%Y-%m-%d %H:%M:%S")}')
+print(f'Starting tracking processing at {now.strftime("%Y-%m-%d %H:%M:%S")}')
 
 fink_log_dir = './finkbeiner_logs'
 if not os.path.exists(fink_log_dir):
@@ -38,22 +44,36 @@ fh = logging.FileHandler(logname)
 logger.addHandler(fh)
 logger.warning('Running OPTIMIZED Tracking from Database.')
 
-def read_tiff_safe(file_path):
-    """Optimized TIFF reading with caching and fast fallback"""
+def read_tiff_safe(file_path: str) -> Optional[np.ndarray]:
+    """Read a TIFF image with a fast primary reader and OpenCV fallback.
+
+    Args:
+        file_path: Absolute path to the TIFF file.
+
+    Returns:
+        The image as a NumPy array, or ``None`` if both readers fail.
+    """
     try:
-        # Try tifffile first (faster for segmentation-generated files)
         img = tifffile.imread(file_path)
         return img
     except Exception:
         try:
-            # Fallback to OpenCV
             img = cv2.imread(file_path, cv2.IMREAD_UNCHANGED)
             return img if img is not None else None
         except Exception:
             return None
 
-def process_label_contour(args):
-    """Process a single label to find its contour - for parallel processing"""
+def process_label_contour(args: Tuple[np.ndarray, int]) -> Optional["Cell"]:
+    """Extract the largest external contour for a single label in a mask.
+
+    Designed to be called via ``multiprocessing.Pool.map``.
+
+    Args:
+        args: A tuple of (mask_array, label_value).
+
+    Returns:
+        A ``Cell`` wrapping the contour, or ``None`` if no contour is found.
+    """
     mask, label = args
     try:
         bin_mask = (mask == label).astype(np.uint8) * 255
@@ -65,8 +85,25 @@ def process_label_contour(args):
     except Exception:
         return None
 
-def process_contours_parallel(mask, labels, num_processes=None):
-    """Process contours in parallel for better performance"""
+def process_contours_parallel(
+    mask: np.ndarray,
+    labels: np.ndarray,
+    num_processes: Optional[int] = None,
+) -> List["Cell"]:
+    """Find cell contours for all labels, optionally in parallel.
+
+    For small label counts (< 50) processing is sequential to avoid the
+    overhead of spawning worker processes.
+
+    Args:
+        mask: Label image where each pixel value is a cell label.
+        labels: Array of unique label values to process (excluding 0).
+        num_processes: Number of worker processes.  Defaults to 75 % of
+            available CPU cores.
+
+    Returns:
+        List of ``Cell`` objects with valid contours.
+    """
     if num_processes is None:
         # Use 75% of available cores, similar to segmentation script approach
         available_cores = cpu_count()
@@ -92,85 +129,152 @@ def process_contours_parallel(mask, labels, num_processes=None):
     return [cell for cell in results if cell is not None]
 
 class MotionTracker:
-    """Simple motion tracker using linear prediction without OpenCV dependencies"""
-    def __init__(self, initial_pos):
-        self.position = np.array(initial_pos, dtype=np.float32)
-        self.velocity = np.array([0.0, 0.0], dtype=np.float32)
-        self.positions_history = [np.array(initial_pos, dtype=np.float32)]
-        self.velocities_history = []
-        
-        self.age = 0
-        self.hits = 0
-        self.hit_streak = 0
-        self.time_since_update = 0
-        
-    def predict(self):
-        """Predict next position using linear motion model"""
-        # Simple linear prediction: new_pos = current_pos + velocity
+    """Linear motion tracker that predicts cell positions across frames.
+
+    Maintains a rolling history of positions and velocities (last 5 frames)
+    and uses an exponential moving average to smooth velocity estimates.
+
+    Attributes:
+        position: Current estimated position (x, y).
+        velocity: Current estimated velocity vector.
+        age: Total number of ``predict`` calls.
+        hits: Total number of ``update`` calls.
+        hit_streak: Consecutive frames with a successful update.
+        time_since_update: Frames since the last ``update``.
+    """
+
+    def __init__(self, initial_pos: Tuple[float, float]) -> None:
+        self.position: np.ndarray = np.array(initial_pos, dtype=np.float32)
+        self.velocity: np.ndarray = np.array([0.0, 0.0], dtype=np.float32)
+        self.positions_history: List[np.ndarray] = [np.array(initial_pos, dtype=np.float32)]
+        self.velocities_history: List[np.ndarray] = []
+
+        self.age: int = 0
+        self.hits: int = 0
+        self.hit_streak: int = 0
+        self.time_since_update: int = 0
+
+    def predict(self) -> np.ndarray:
+        """Predict the next position using a constant-velocity model.
+
+        Returns:
+            Predicted (x, y) position as a float32 array.
+        """
         predicted_pos = self.position + self.velocity
         self.age += 1
         if self.time_since_update > 0:
             self.hit_streak = 0
         self.time_since_update += 1
         return predicted_pos
-    
-    def update(self, measurement):
-        """Update with new measurement and calculate velocity"""
+
+    def update(self, measurement: Tuple[float, float]) -> None:
+        """Incorporate a new observed position and refine the velocity estimate.
+
+        Velocity is smoothed with an exponential moving average (alpha = 0.3).
+        Only the most recent 5 positions and velocities are retained.
+
+        Args:
+            measurement: Observed (x, y) centroid of the cell.
+        """
         if len(self.positions_history) > 0:
-            # Calculate velocity from position change
             new_pos = np.array(measurement, dtype=np.float32)
             old_pos = self.positions_history[-1]
             velocity = new_pos - old_pos
-            
-            # Smooth velocity using exponential moving average
-            alpha = 0.3  # Smoothing factor
+
+            # Exponential moving average for velocity smoothing
+            alpha = 0.3
             self.velocity = alpha * velocity + (1 - alpha) * self.velocity
             self.velocities_history.append(self.velocity.copy())
-        
-        # Update position and history
+
         self.position = np.array(measurement, dtype=np.float32)
         self.positions_history.append(self.position.copy())
-        
-        # Keep only recent history (last 5 positions)
+
+        # Retain only the most recent history window
         if len(self.positions_history) > 5:
             self.positions_history = self.positions_history[-5:]
         if len(self.velocities_history) > 5:
             self.velocities_history = self.velocities_history[-5:]
-        
+
         self.hits += 1
         self.hit_streak += 1
         self.time_since_update = 0
 
 class Cell:
-    """A class that makes cells from contours or masks."""
-    def __init__(self, cnt, randomcellid_montage=None):
+    """Lightweight wrapper around an OpenCV contour for a single segmented cell.
+
+    Caches the minimum enclosing circle to avoid repeated computation
+    during overlap and distance evaluations.
+
+    Attributes:
+        cnt: OpenCV contour array.
+        randomcellid_montage: Label value from the encoded segmentation mask.
+    """
+
+    def __init__(
+        self,
+        cnt: np.ndarray,
+        randomcellid_montage: Optional[int] = None,
+    ) -> None:
         self.cnt = cnt
         self.randomcellid_montage = randomcellid_montage
-        self._circle_cache = None
-        self._center_cache = None
+        self._circle_cache: Optional[Tuple[Tuple[float, float], float]] = None
+        self._center_cache: Optional[Tuple[float, float]] = None
 
-    def get_circle(self):
+    def get_circle(self) -> Tuple[Tuple[float, float], float]:
+        """Return the minimum enclosing circle ``((cx, cy), radius)``."""
         if self._circle_cache is None:
             self._circle_cache = cv2.minEnclosingCircle(self.cnt)
         return self._circle_cache
 
-    def get_center(self):
+    def get_center(self) -> Tuple[float, float]:
+        """Return the center ``(cx, cy)`` of the minimum enclosing circle."""
         if self._center_cache is None:
             self._center_cache = cv2.minEnclosingCircle(self.cnt)[0]
         return self._center_cache
 
-    def evaluate_overlap(self, circle2):
+    def evaluate_overlap(self, circle2: Tuple[Tuple[float, float], float]) -> bool:
+        """Check whether this cell overlaps with another enclosing circle.
+
+        Two cells are considered overlapping when the distance between
+        their centres is less than 80 % of the sum of their radii.
+
+        Args:
+            circle2: ``((cx, cy), radius)`` of the other cell.
+
+        Returns:
+            ``True`` if the circles overlap.
+        """
         c2, r2 = circle2
         c1, r1 = self.get_circle()
         dist = np.hypot(c1[0] - c2[0], c1[1] - c2[1])
         return dist < (r1 + r2) * 0.8
 
-    def evaluate_dist(self, circle2):
+    def evaluate_dist(self, circle2: Tuple[Tuple[float, float], float]) -> float:
+        """Compute the Euclidean distance between this cell and another circle centre.
+
+        Args:
+            circle2: ``((cx, cy), radius)`` of the other cell.
+
+        Returns:
+            Distance in pixels between the two circle centres.
+        """
         c2, _ = circle2
         c1, _ = self.get_circle()
         return np.hypot(c1[0] - c2[0], c1[1] - c2[1])
 
-def sort_cell_info_by_index(time_dict, time_list):
+def sort_cell_info_by_index(
+    time_dict: collections.OrderedDict,
+    time_list: List[int],
+) -> collections.OrderedDict:
+    """Sort cell records within each timepoint by their assigned track ID.
+
+    Args:
+        time_dict: Mapping of timepoint -> list of ``[track_id, Cell]`` pairs.
+        time_list: Ordered list of timepoint keys.
+
+    Returns:
+        The same ``time_dict`` with each timepoint's list sorted by track ID.
+    """
     for tp in time_list:
         time_dict[tp] = sorted(
             [(int(idx), obj) for idx, obj in time_dict[tp]],
@@ -178,7 +282,23 @@ def sort_cell_info_by_index(time_dict, time_list):
         )
     return time_dict
 
-def populate_cell_ind_overlap(time_dict, time_list):
+def populate_cell_ind_overlap(
+    time_dict: collections.OrderedDict,
+    time_list: List[int],
+) -> collections.OrderedDict:
+    """Assign track IDs by checking enclosing-circle overlap with the previous frame.
+
+    Cells in the first timepoint receive sequential IDs starting at 1.
+    In subsequent frames each cell is matched to the first overlapping
+    cell from the prior frame; unmatched cells get a new ID.
+
+    Args:
+        time_dict: Mapping of timepoint -> list of ``[track_id, Cell]`` pairs.
+        time_list: Ordered list of timepoint keys.
+
+    Returns:
+        Updated ``time_dict`` with track IDs populated.
+    """
     first = time_list[0]
     for i, rec in enumerate(time_dict[first], 1):
         rec[0] = i
@@ -203,7 +323,24 @@ def populate_cell_ind_overlap(time_dict, time_list):
 
     return time_dict
 
-def populate_cell_ind_closest(time_dict, time_list, max_dist=100):
+def populate_cell_ind_closest(
+    time_dict: collections.OrderedDict,
+    time_list: List[int],
+    max_dist: float = 100,
+) -> collections.OrderedDict:
+    """Assign track IDs by nearest-neighbour matching to the previous frame.
+
+    Each cell is linked to the closest cell in the prior timepoint. If the
+    nearest distance exceeds ``max_dist``, a new track ID is assigned.
+
+    Args:
+        time_dict: Mapping of timepoint -> list of ``[track_id, Cell]`` pairs.
+        time_list: Ordered list of timepoint keys.
+        max_dist: Maximum pixel distance for a valid match.
+
+    Returns:
+        Updated ``time_dict`` with track IDs populated.
+    """
     first = time_list[0]
     for i, rec in enumerate(time_dict[first], 1):
         rec[0] = i
@@ -230,8 +367,26 @@ def populate_cell_ind_closest(time_dict, time_list, max_dist=100):
 
     return time_dict
 
-def populate_cell_ind_motion(time_dict, time_list, max_dist=100):
-    """Track cells using motion prediction and Hungarian algorithm"""
+def populate_cell_ind_motion(
+    time_dict: collections.OrderedDict,
+    time_list: List[int],
+    max_dist: float = 100,
+) -> collections.OrderedDict:
+    """Assign track IDs using linear motion prediction and the Hungarian algorithm.
+
+    For each frame, existing trackers predict their next position.  A cost
+    matrix of predicted-vs-observed distances is built and solved via
+    ``scipy.optimize.linear_sum_assignment``.  Unmatched detections start
+    new tracks; trackers without updates for 3+ frames are pruned.
+
+    Args:
+        time_dict: Mapping of timepoint -> list of ``[track_id, Cell]`` pairs.
+        time_list: Ordered list of timepoint keys.
+        max_dist: Maximum pixel distance for a valid assignment.
+
+    Returns:
+        Updated ``time_dict`` with track IDs populated.
+    """
     first = time_list[0]
     
     # Initialize trackers for first timepoint
@@ -334,7 +489,29 @@ def populate_cell_ind_motion(time_dict, time_list, max_dist=100):
     return time_dict
 
 class MontageDBTracker:
-    def __init__(self, experiment, track_type, max_dist, target_channel, motion=False):
+    """Orchestrates cell tracking across montaged wells using database-stored masks.
+
+    Reads encoded segmentation masks from the PostgreSQL database, applies one
+    of three tracking strategies (overlap, proximity, or motion-prediction),
+    writes tracked masks to disk, and records per-cell intensity measurements
+    in a summary CSV.
+
+    Attributes:
+        experiment: Experiment name in the database.
+        track_type: ``'overlap'`` or ``'proximity'``.
+        max_dist: Maximum pixel distance for proximity / motion matching.
+        target_channel: Channels for intensity measurement (not for tracking).
+        motion: Whether to use the Hungarian-algorithm motion tracker.
+    """
+
+    def __init__(
+        self,
+        experiment: str,
+        track_type: str,
+        max_dist: int,
+        target_channel: str,
+        motion: bool = False,
+    ) -> None:
         self.Db = Database()
         self.experiment = experiment
         self.track_type = track_type
@@ -371,8 +548,19 @@ class MontageDBTracker:
         if self.motion:
             logger.info("Motion tracking with linear prediction and Hungarian algorithm enabled")
     
-    def _get_channel_path(self, mask_path, channel):
-        """Optimized path transformation with caching."""
+    def _get_channel_path(self, mask_path: str, channel: str) -> str:
+        """Derive the aligned/montaged image path for a given channel.
+
+        Results are cached so repeated lookups for the same
+        ``(mask_path, channel)`` pair are free.
+
+        Args:
+            mask_path: Path to the encoded mask TIFF.
+            channel: Target channel name (e.g. ``'Cy5'``).
+
+        Returns:
+            Path to the corresponding channel image.
+        """
         cache_key = (mask_path, channel, self.selected)
         if cache_key in self._path_cache:
             return self._path_cache[cache_key]
@@ -404,7 +592,25 @@ class MontageDBTracker:
         self._path_cache[cache_key] = aligned_path
         return aligned_path
 
-    def gather_encoded_from_db(self, wells, channel_marker="_MONTAGE_ALIGNED_ENCODED"):
+    def gather_encoded_from_db(
+        self,
+        wells: List[str],
+        channel_marker: str = "_MONTAGE_ALIGNED_ENCODED",
+    ) -> Tuple[Dict[str, collections.OrderedDict], pd.DataFrame, pd.DataFrame]:
+        """Query the database for encoded montage masks and load them into memory.
+
+        Args:
+            wells: Wells to process (e.g. ``['A1', 'B2']``).
+            channel_marker: Substring that identifies aligned encoded masks
+                in the ``alignedmontagemaskpath`` column.
+
+        Returns:
+            A 3-tuple of:
+              - dict mapping each well to an ``OrderedDict`` of
+                ``timepoint -> [[None, Cell], ...]``.
+              - DataFrame of grouped ``(well, timepoint, mask_path)`` rows.
+              - Full tiledata DataFrame from the database.
+        """
         from db_util import Ops
         import argparse
 
@@ -519,7 +725,23 @@ class MontageDBTracker:
         print(f'Data gathering completed for {len(results)} wells')
         return results, df, tiledata_df
 
-    def get_cell_props(self, mask, image_stack, label):
+    def get_cell_props(
+        self,
+        mask: np.ndarray,
+        image_stack: Dict[str, np.ndarray],
+        label: int,
+    ) -> Optional[Tuple[int, int, int, Dict[str, float]]]:
+        """Compute centroid, area, and mean intensity for a single cell label.
+
+        Args:
+            mask: Encoded segmentation mask.
+            image_stack: Mapping of channel name to image array.
+            label: Label value identifying the cell in ``mask``.
+
+        Returns:
+            ``(cx, cy, area, {channel: mean_intensity})`` or ``None`` when
+            the label has zero area (degenerate mask).
+        """
         bin_mask = (mask == label).astype(np.uint8)
         M = cv2.moments(bin_mask)
         if M["m00"] == 0:
@@ -534,8 +756,23 @@ class MontageDBTracker:
 
         return cx, cy, area, intensities
 
-    def calculate_tracking_statistics(self, well, time_dict, tracked_dict):
-        """Calculate comprehensive tracking statistics for a well"""
+    def calculate_tracking_statistics(
+        self,
+        well: str,
+        time_dict: collections.OrderedDict,
+        tracked_dict: collections.OrderedDict,
+    ) -> Dict[str, Any]:
+        """Compute per-well tracking statistics (cell counts, motion, ID switching).
+
+        Args:
+            well: Well identifier (e.g. ``'A1'``).
+            time_dict: Original timepoint -> cell list mapping.
+            tracked_dict: Post-tracking timepoint -> ``[track_id, Cell]`` mapping.
+
+        Returns:
+            Dictionary of statistics including per-timepoint counts, motion
+            distances, and ID-retention metrics.
+        """
         tps = sorted(time_dict.keys())
         
         well_stats = {
@@ -585,8 +822,24 @@ class MontageDBTracker:
         
         return well_stats
     
-    def _calculate_motion_between_timepoints(self, prev_recs, curr_recs, prev_tp, curr_tp):
-        """Calculate motion statistics between two consecutive timepoints"""
+    def _calculate_motion_between_timepoints(
+        self,
+        prev_recs: List[List[Any]],
+        curr_recs: List[List[Any]],
+        prev_tp: int,
+        curr_tp: int,
+    ) -> Dict[str, Any]:
+        """Compute motion-distance statistics for cells tracked between two frames.
+
+        Args:
+            prev_recs: ``[track_id, Cell]`` records from the earlier timepoint.
+            curr_recs: ``[track_id, Cell]`` records from the later timepoint.
+            prev_tp: Earlier timepoint index.
+            curr_tp: Later timepoint index.
+
+        Returns:
+            Dictionary with mean/std/max/min motion distance and cell count.
+        """
         # Create mapping of IDs to positions
         prev_positions = {rec[0]: rec[1].get_center() for rec in prev_recs}
         curr_positions = {rec[0]: rec[1].get_center() for rec in curr_recs}
@@ -625,8 +878,20 @@ class MontageDBTracker:
             'min_motion_distance': float(np.min(motion_distances))
         }
     
-    def _calculate_id_switching(self, tracked_dict, tps):
-        """Calculate ID switching statistics"""
+    def _calculate_id_switching(
+        self,
+        tracked_dict: collections.OrderedDict,
+        tps: List[int],
+    ) -> List[Dict[str, Any]]:
+        """Measure track-ID retention, gain, and loss between consecutive frames.
+
+        Args:
+            tracked_dict: Timepoint -> ``[track_id, Cell]`` mapping.
+            tps: Sorted list of timepoint indices.
+
+        Returns:
+            List of per-transition dictionaries with retention and growth rates.
+        """
         if len(tps) < 2:
             return []
         
@@ -658,8 +923,12 @@ class MontageDBTracker:
         
         return switching_stats
     
-    def save_tracking_statistics(self):
-        """Save all tracking statistics to a single CSV file"""
+    def save_tracking_statistics(self) -> None:
+        """Persist all accumulated tracking statistics to a single CSV file.
+
+        Writes overall, per-timepoint, motion, and ID-switching rows to
+        ``<analysisdir>/<experiment>_tracking-info.csv``.
+        """
         if not self.tracking_stats['well_stats']:
             logger.warning("No tracking statistics to save")
             return
@@ -794,7 +1063,16 @@ class MontageDBTracker:
         else:
             logger.warning("No tracking statistics data to save")
 
-    def run(self, wells):
+    def run(self, wells: List[str]) -> None:
+        """Execute the full tracking pipeline for the given wells.
+
+        Gathers masks from the database, assigns track IDs, writes tracked
+        mask TIFFs, computes per-cell intensity measurements, and saves a
+        summary CSV and tracking-statistics CSV.
+
+        Args:
+            wells: List of well identifiers to process.
+        """
         self.start_time = time()
         self.total_wells = len(wells)
         

@@ -1,57 +1,89 @@
-'''
-Common functions used by other programs in processing neuron images.
-'''
+"""Shared utility functions for the Finkbeiner Lab image analysis pipeline.
+
+Provides file I/O helpers, natural sorting, image manipulation, filename
+tokenization, ImageMagick wrappers, and user-input parsing used across
+multiple pipeline modules.
+"""
 
 import re
 import os
 import glob
 import sys
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 import numpy as np
 import cv2
-import pickle, pprint
-import subprocess, datetime
+import pickle
+import pprint
+import subprocess
+import datetime
 import shutil
 
+# Pre-compiled pattern for splitting strings on digit sequences
 numbers = re.compile(r'(\d+)')
 
 
-def natural_sort(l):
-    '''
-    Takes list and returns natural sorted list.
-    '''
+def natural_sort(l: List[str]) -> List[str]:
+    """Sort a list of strings in natural (human-friendly) order.
+
+    Numeric substrings are compared by value rather than lexicographically,
+    so ``['img2', 'img10', 'img1']`` becomes ``['img1', 'img2', 'img10']``.
+
+    Args:
+        l: List of strings to sort.
+
+    Returns:
+        A new list sorted in natural order.
+    """
     convert = lambda text: int(text) if text.isdigit() else text.lower()
     alphanum_key = lambda key: [convert(c) for c in re.split('([0-9]+)', key)]
     return sorted(l, key=alphanum_key)
 
 
-def numericalSort(value):
-    '''
-    Turns a string (containing integers) into a list of elements,
-    split on the numbers.  The strings containing integers are
-    transformed into integers, so that the array is properly
-    sortable.  Useful as a key function for sorted().
-    '''
-    # splits on numbers, e.g., 'ho-1-22-333' ->
-    #     ['ho-', '1', '-', '22', '-', '333']
+def numericalSort(value: str) -> List[Union[str, int]]:
+    """Convert a string into a mixed list of strings and ints for sorting.
+
+    Splits the input on digit sequences and converts the numeric parts to
+    integers.  Useful as a ``key`` function for ``sorted()``.
+
+    Example:
+        ``'ho-1-22-333'`` becomes ``['ho-', 1, '-', 22, '-', 333]``
+
+    Args:
+        value: The string to split and convert.
+
+    Returns:
+        A list of alternating string and integer elements.
+    """
+    # Split on digit groups: 'ho-1-22-333' -> ['ho-', '1', '-', '22', '-', '333']
     parts = numbers.split(value)
-    # integerizes and replaces all the strings containing numbers
-    # (which is every other element), e.g., ['ho-', 1, '-', 22, '-', 333]
+    # Convert every other element (the digit groups) to int for numeric comparison
     parts[1::2] = map(int, parts[1::2])
     return parts
 
 
-def create_dir(path):
-    '''
-    Creates directory if it doesn't already exist.
-    '''
+def create_dir(path: str) -> None:
+    """Create a directory (and parents) if it does not already exist.
+
+    Args:
+        path: Filesystem path of the directory to create.
+    """
     if not os.path.exists(path):
         os.makedirs(path)
 
 
-def get_path(user_path, default_path, default_folder):
-    '''
-    If user entered a path, return that path. If user left input field blank, then returns the default path.
-    '''
+def get_path(user_path: str, default_path: str, default_folder: str) -> str:
+    """Return user-supplied path if non-empty, otherwise a default.
+
+    Args:
+        user_path: Path entered by the user (may be blank/whitespace).
+        default_path: Base directory for the fallback path.
+        default_folder: Folder name appended to *default_path* when
+            *user_path* is blank.
+
+    Returns:
+        The resolved filesystem path.
+    """
     if str.strip(user_path) != '':
         path = str.strip(user_path)
     else:
@@ -60,11 +92,17 @@ def get_path(user_path, default_path, default_folder):
     return path
 
 
-def make_filelist(path, identifier, verbose=False):
-    '''
-    Takes a directory and a string identifier.
-    Returns a list of files.
-    '''
+def make_filelist(path: str, identifier: str, verbose: bool = False) -> List[str]:
+    """Glob files in *path* matching *identifier* and return them sorted.
+
+    Args:
+        path: Directory to search.
+        identifier: Substring that filenames must contain.
+        verbose: If True, print the glob pattern and matching filenames.
+
+    Returns:
+        Naturally-sorted list of absolute file paths.
+    """
     filelist = sorted(
         glob.glob(os.path.join(path, '*' + identifier + '*')), key=numericalSort)
 
@@ -76,12 +114,18 @@ def make_filelist(path, identifier, verbose=False):
     return filelist
 
 
-def make_filelist_wells(path, identifier, verbose=False):
-    '''
-    Takes a directory and a string identifier.
-    Returns a list of files within the input path
-    and all the files one subdirectory inside the initial path.
-    '''
+def make_filelist_wells(path: str, identifier: str, verbose: bool = False) -> List[str]:
+    """Glob files matching *identifier* in *path* and all its subdirectories.
+
+    Args:
+        path: Root directory to walk.
+        identifier: Substring that filenames must contain.
+        verbose: If True, print discovery details.
+
+    Returns:
+        Flat, naturally-sorted list of absolute file paths from all
+        subdirectories.
+    """
     folders = [x[0] for x in os.walk(path)]
     filelist = []
     ffilelist = []
@@ -103,22 +147,25 @@ def make_filelist_wells(path, identifier, verbose=False):
     return ffilelist
 
 
-def reroute_imgpntr_to_wells(img_pointer, well, verbose=False):
-    '''
-    Takes an image pointer,
-    creates well folder if not present,
-    regenerates img_pointer for well subdirectory.
+def reroute_imgpntr_to_wells(img_pointer: str, well: str, verbose: bool = False) -> str:
+    """Insert a well subdirectory into an image path if not already present.
 
-    img_pointer should have the following format:
-    /gladstone/finkbeiner/your_data/CellMasks/my_image.tif
-    it will become:
-    /gladstone/finkbeiner/your_data/CellMasks/A1/my_image.tif
+    Example::
 
-    If original input has no well subdirectory, output should be unchanged.
-    /gladstone/finkbeiner/your_data/CellMasks/A1/my_image.tif
-    should remain as:
-    /gladstone/finkbeiner/your_data/CellMasks/A1/my_image.tif
-    '''
+        Input:  /data/CellMasks/my_image.tif
+        Output: /data/CellMasks/A1/my_image.tif
+
+    If the well subdirectory already exists in the path, the pointer is
+    returned unchanged.
+
+    Args:
+        img_pointer: Full path to the image file.
+        well: Well identifier (e.g. ``'A1'``).
+        verbose: If True, print before/after paths.
+
+    Returns:
+        Updated image path containing the well subdirectory.
+    """
     tif_path, tif_name = os.path.split(img_pointer)
     assert well in tif_name, 'The well is not part of the filename.'
     assert tif_name.split('_')[4] == well, 'Well token is in unexpected location.'
@@ -136,31 +183,51 @@ def reroute_imgpntr_to_wells(img_pointer, well, verbose=False):
     return updated_img_pointer
 
 
-def find_stack_size(path, identifier):
-    '''
-    From list of files in folder specified by path.
-    Return number of files with the identifier string.
-    '''
+def find_stack_size(path: str, identifier: str) -> int:
+    """Count files in *path* whose names contain *identifier*.
+
+    Args:
+        path: Directory to search.
+        identifier: Substring to match in filenames.
+
+    Returns:
+        Number of matching files.
+    """
     num_images = len(glob.glob(os.path.join(path, '*' + identifier + '*')))
     print('Number of images:', num_images)
     return num_images
 
 
-def find_max_dimensions(filelist):
-    '''
-    Finds the largest number of rows and largest number of columns
-    for all images in a list of files.
-    '''
+def find_max_dimensions(filelist: List[str]) -> Tuple[int, int]:
+    """Find the maximum height and width across all images in *filelist*.
+
+    Args:
+        filelist: List of image file paths.
+
+    Returns:
+        Tuple of ``(max_rows, max_cols)``.
+    """
     max_rows = max([cv2.imread(filename, 0).shape[0] for filename in filelist])
     max_cols = max([cv2.imread(filename, 0).shape[1] for filename in filelist])
     return (max_rows, max_cols)
 
 
-def find_image_canvas(aligned_path, unprocessed_data_path, identifier, label):
-    '''
-    Check if maximum row, column dimensions are in the directory.
-    If so, read in. Otherwise, calculate them and write out.
-    '''
+def find_image_canvas(aligned_path: str, unprocessed_data_path: str,
+                      identifier: str, label: str) -> Tuple[int, int]:
+    """Load or compute the maximum image dimensions for the experiment.
+
+    If a cached dimensions file exists in *aligned_path*, it is loaded.
+    Otherwise, dimensions are computed from channel-1 images and saved.
+
+    Args:
+        aligned_path: Directory where cached dimension files live.
+        unprocessed_data_path: Directory of raw images used to compute dims.
+        identifier: Substring used to locate the cached file (e.g. ``'dim'``).
+        label: Prefix for the saved dimensions filename.
+
+    Returns:
+        Tuple of ``(max_height, max_width)``.
+    """
     max_dim_entry = make_filelist(aligned_path, identifier)
     if len(max_dim_entry) > 0:
         max_dim = load_obj(
@@ -176,46 +243,90 @@ def find_image_canvas(aligned_path, unprocessed_data_path, identifier, label):
     return max_dim
 
 
-def make_file_name_from_tokens(img_pointer, step_related_suffix, specific_token='N'):
-    '''
-    For Robo0, generate correct filename from tokens.
-    Image pointer might be the first file in the list: ie. montage_files[0]
-    Step-related suffix might be 'MN'.
-    '''
-    #
+def make_file_name_from_tokens(img_pointer: str, step_related_suffix: str,
+                               specific_token: Union[str, int] = 'N') -> str:
+    """Build a new filename by appending a suffix to an existing tokenized name.
+
+    For Robo0 naming conventions.  Optionally overrides a specific token
+    position with ``'1'`` before joining.
+
+    Args:
+        img_pointer: Full path to the reference image file.
+        step_related_suffix: Suffix to append (e.g. ``'MN'``).
+        specific_token: Token index to override with ``'1'``, or ``'N'``
+            to leave all tokens unchanged.
+
+    Returns:
+        New image file path with the suffix appended.
+    """
     img_path = os.path.dirname(img_pointer)
     img_name_tokens = os.path.splitext(os.path.basename(img_pointer))[0].split('_')
-    #
+
     if specific_token != 'N':
         img_name_tokens[specific_token] = str(1)
     new_img_pointer = '_'.join(['_'.join(img_name_tokens[0:len(img_name_tokens)]), step_related_suffix + '.tif'])
     new_img_pointer = os.path.join(img_path, new_img_pointer)
-    #
+
     return new_img_pointer
 
 
-def extract_file_name(filename_path):
-    '''Parses out file name from long path.'''
+def extract_file_name(filename_path: str) -> str:
+    """Extract the filename stem (no directory, no extension) from a path.
+
+    Args:
+        filename_path: Full or relative file path.
+
+    Returns:
+        Filename without extension.
+    """
     img_file_name = os.path.basename(filename_path)
     img_name = os.path.splitext(img_file_name)
     return img_name[0]
 
 
-def make_file_name(path, image_name, ext='.tif'):
-    '''Generates file name'''
+def make_file_name(path: str, image_name: str, ext: str = '.tif') -> str:
+    """Join a directory, image name, and extension into a full path.
+
+    Args:
+        path: Directory path.
+        image_name: Base name without extension.
+        ext: File extension including the dot.
+
+    Returns:
+        Full file path.
+    """
     return os.path.join(path, image_name + ext)
 
 
-def modify_file_name(filename_path, identifier):
-    '''Changes a file name by appending info.'''
+def modify_file_name(filename_path: str, identifier: str) -> str:
+    """Append *identifier* to a filename (before the ``.tif`` extension).
+
+    Args:
+        filename_path: Original file path.
+        identifier: String to append to the base name.
+
+    Returns:
+        Modified file path ending in ``.tif``.
+    """
     path = os.path.dirname(filename_path)
     original_name = extract_file_name(filename_path)
     new_file_name = os.path.join(path, original_name + identifier + '.tif')
     return new_file_name
 
 
-def cnum_to_tnum_renamer(filename_cnum, character_string):
-    '''Generates new name to save thresholded files.'''
+def cnum_to_tnum_renamer(filename_cnum: str, character_string: str) -> str:
+    """Replace the channel prefix in a filename with *character_string*.
+
+    Used when renaming channel-numbered files (e.g. ``c1``) to
+    threshold-numbered files (e.g. ``t1``).
+
+    Args:
+        filename_cnum: File path with channel-style naming.
+        character_string: Replacement prefix (e.g. ``'t'``).
+
+    Returns:
+        New filename stem with the substituted prefix.
+    """
     original_name = extract_file_name(filename_cnum)
     filename_tnum = ''.join((
         original_name[0:len(original_name) - 2],
@@ -224,23 +335,34 @@ def cnum_to_tnum_renamer(filename_cnum, character_string):
     return filename_tnum
 
 
-def channel_free_name_extractor(filename_cnum):
-    '''Generates new name to save thresholded files.'''
+def channel_free_name_extractor(filename_cnum: str) -> str:
+    """Strip the trailing channel token from a filename.
+
+    Removes the last 3 characters of the stem (e.g. ``_c1``).
+
+    Args:
+        filename_cnum: File path with a channel suffix.
+
+    Returns:
+        Filename stem without the channel token.
+    """
     original_name = extract_file_name(filename_cnum)
     channel_free_name = original_name[0:len(original_name) - 3]
     return channel_free_name
 
 
-def get_filelists(path, channel_list):
-    '''
-    Generate channel-keyed dictionary of filename lists grouped by channel.
+def get_filelists(path: str, channel_list: List[str]) -> Dict[str, List[str]]:
+    """Build a dictionary mapping channel identifiers to their file lists.
 
-    Usage:
-    path = '/Users/masha/Dropbox (MIT)/unison/Projects/ \
-                ucsf_brain_imaging/brain_images/DLX'
-    channel_list is a list of strings.
-    example: ['c1', 'c2', 'c3', 'c4', 't1', 't2', 'coloc', 'c1c2']
-    '''
+    Args:
+        path: Directory to search.
+        channel_list: Channel identifier strings
+            (e.g. ``['c1', 'c2', 'c3', 'c4']``).
+
+    Returns:
+        Dictionary keyed by channel name, with values being sorted file
+        lists. Channels with no matching files are omitted.
+    """
     channel_dictionary = {}
     for channel_name in channel_list:
         filelist = make_filelist(path, channel_name)
@@ -251,8 +373,16 @@ def get_filelists(path, channel_list):
 
 
 # --------------------stuck on this---------------------------------------
-def compare_filename_lists(channel_dictionary):
-    '''Checks that all lists are equivalent in length and filename.'''
+def compare_filename_lists(channel_dictionary: Dict[str, List[str]]) -> None:
+    """Assert that every channel has the same number of files with matching names.
+
+    Args:
+        channel_dictionary: Mapping of channel name to file list (as
+            returned by :func:`get_filelists`).
+
+    Raises:
+        AssertionError: If any channel's file list differs from the first.
+    """
     # create a reference
     first_filelist = channel_dictionary.values()[0]
     ref_filelist = [channel_free_name_extractor(first_filelist[ind])
@@ -276,29 +406,42 @@ def compare_filename_lists(channel_dictionary):
 
 # ------------------------------------------------------------------------
 
-def save_obj(object_name, destination_path, obj_save_name):
-    '''
-    Saves object called object_name to destination_path
-    with filename 'obj_save_name', type(obj_save_name) = string.
-    '''
+def save_obj(object_name: Any, destination_path: str, obj_save_name: str) -> None:
+    """Pickle an object to disk.
+
+    Args:
+        object_name: Python object to serialize.
+        destination_path: Directory in which to save the file.
+        obj_save_name: Filename stem (a ``.p`` extension is appended).
+    """
     pickle.dump(object_name, open(os.path.join(
         destination_path, obj_save_name + '.p'), 'wb'))
 
 
-def load_obj(source_path, obj_save_name):
-    '''
-    Reads object with filename obj_save_name, from the source_path.
-    '''
+def load_obj(source_path: str, obj_save_name: str) -> Any:
+    """Unpickle an object from disk.
+
+    Args:
+        source_path: Directory containing the pickle file.
+        obj_save_name: Filename stem (a ``.p`` extension is appended).
+
+    Returns:
+        The deserialized Python object.
+    """
     return pickle.load(open(os.path.join(
         source_path, obj_save_name + '.p'), 'rb'))
 
 
-def resizer(img, factor=0.25):
-    ''''
-    Takes each image in stach.
-    Saves it to smaller image.
-    For quickly viewing registration result.
-    '''
+def resizer(img: np.ndarray, factor: float = 0.25) -> np.ndarray:
+    """Resize an image by a constant scale factor.
+
+    Args:
+        img: 2-D grayscale image array.
+        factor: Scale factor (e.g. 0.25 for quarter size).
+
+    Returns:
+        Resized image.
+    """
     height, width = img.shape
     small_width, small_height = int(factor * width), int(factor * height)
     small_img = cv2.resize(img, (
@@ -307,12 +450,16 @@ def resizer(img, factor=0.25):
     return small_img
 
 
-def width_resizer(img, target_width=100):
-    ''''
-    Takes each image in stach.
-    Saves it to smaller image.
-    For quickly viewing registration result.
-    '''
+def width_resizer(img: np.ndarray, target_width: int = 100) -> np.ndarray:
+    """Resize an image to a target width, preserving aspect ratio.
+
+    Args:
+        img: 2-D or 3-D image array.
+        target_width: Desired width in pixels.
+
+    Returns:
+        Resized image.
+    """
     height, width = img.shape[0:2]
     factor = float(target_width) / width
     small_width, small_height = int(factor * width), int(factor * height)
@@ -322,12 +469,16 @@ def width_resizer(img, target_width=100):
     return small_img
 
 
-def height_resizer(img, target_height=100):
-    ''''
-    Takes each image in stach.
-    Saves it to smaller image.
-    For quickly viewing registration result.
-    '''
+def height_resizer(img: np.ndarray, target_height: int = 100) -> np.ndarray:
+    """Resize an image to a target height, preserving aspect ratio.
+
+    Args:
+        img: 2-D or 3-D image array.
+        target_height: Desired height in pixels.
+
+    Returns:
+        Resized image.
+    """
     height, width = img.shape[0:2]
     factor = float(target_height) / height
     small_width, small_height = int(factor * width), int(factor * height)
@@ -337,21 +488,28 @@ def height_resizer(img, target_height=100):
     return small_img
 
 
-def show_wait_close(display_string, image):
-    '''
-    Shows image, with window name = display_string.
-    Closes window upon keystroke.
-    '''
+def show_wait_close(display_string: str, image: np.ndarray) -> None:
+    """Display an equalized, resized image and wait for a keypress to close.
+
+    Args:
+        display_string: Window title.
+        image: Grayscale image to display.
+    """
     cv2.imshow(display_string, resizer(cv2.equalizeHist(image), 0.1))
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
 
-def show_stack(path, identifier):
-    '''
-    Takes channel identifier string and path.
-    Sequentially shows all images in path corresponding to channel.
-    '''
+def show_stack(path: str, identifier: str) -> None:
+    """Sequentially display all images in *path* matching *identifier*.
+
+    Each image is shown with its filename overlaid; press any key to
+    advance.
+
+    Args:
+        path: Directory containing images.
+        identifier: Substring to filter filenames.
+    """
     filelist = make_filelist(path, identifier)
     for ind in range(len(filelist)):
         image = cv2.imread(filelist[ind], 0)
@@ -364,13 +522,16 @@ def show_stack(path, identifier):
     cv2.destroyAllWindows()
 
 
-def find_ind_of_filename(image_path, image_filename):
-    '''
-    Gets an index associated with complete filename.
-    Ex. image_filename = 'Shh_slide1_slice1_c1.tif'
-    Generates filelist based on identifier.
-    Returns index of that file.
-    '''
+def find_ind_of_filename(image_path: str, image_filename: str) -> Union[int, bool]:
+    """Find the index of a specific file within its channel's sorted file list.
+
+    Args:
+        image_path: Directory containing the images.
+        image_filename: Basename of the image (e.g. ``'Shh_slide1_slice1_c1.tif'``).
+
+    Returns:
+        Integer index of the file in the sorted list, or ``False`` if not found.
+    """
     image_name = extract_file_name(image_filename)
     print(image_name)
     ch_id = image_name[len(image_name) - 2:]
@@ -385,11 +546,16 @@ def find_ind_of_filename(image_path, image_filename):
     return ind
 
 
-def return_image_indices(bad_image_list, image_path):
-    '''
-    Takes a list of bad image strings and prints their indices.
-    Ex. bad_image_list = ['Shh_slide1_slice12_c1.tif', 'Shh_slide9_slice9_c1.tif']
-    '''
+def return_image_indices(bad_image_list: List[str], image_path: str) -> List[int]:
+    """Look up sorted-list indices for a list of image filenames.
+
+    Args:
+        bad_image_list: Basenames of images to locate.
+        image_path: Directory containing the images.
+
+    Returns:
+        List of integer indices (files not found are silently excluded).
+    """
     bad_img_indices = [
         find_ind_of_filename(image_path, image)
         for image in bad_image_list
@@ -397,16 +563,26 @@ def return_image_indices(bad_image_list, image_path):
     return bad_img_indices
 
 
-def assign_or_make_dir_path(base_path, directory):
-    '''
-    Creates a new directory with name 'directory', within the base_path.
-    '''
+def assign_or_make_dir_path(base_path: str, directory: str) -> None:
+    """Create *directory* inside *base_path* if it does not exist.
+
+    Args:
+        base_path: Parent directory (concatenated directly, not joined).
+        directory: Subdirectory name to create.
+    """
     if not os.path.exists(base_path + directory):
         os.makedirs(base_path + directory)
 
 
-def create_folder_hierarchy(output_subdirs, base_path):
-    '''Creates folder hierarchy. Takes a list of paths.'''
+def create_folder_hierarchy(output_subdirs: List[str], base_path: str) -> None:
+    """Create each directory in *output_subdirs* if it does not exist.
+
+    Existing non-empty directories are skipped silently.
+
+    Args:
+        output_subdirs: List of directory paths to create.
+        base_path: Unused (kept for backward compatibility).
+    """
     for directory in output_subdirs:
         if not os.path.exists(directory):
             os.makedirs(directory)
@@ -415,11 +591,19 @@ def create_folder_hierarchy(output_subdirs, base_path):
             continue
 
 
-def get_image_parameters(renamed_unaligned_path, aligned_path, label):
-    '''
-    Collects relevant stack parameters.
-    Returns dimensions and number of channels and images.
-    '''
+def get_image_parameters(renamed_unaligned_path: str, aligned_path: str,
+                         label: str) -> Tuple[int, Tuple[int, int], int, float, Tuple[int, int]]:
+    """Collect image-stack metadata: counts, dimensions, and scale factor.
+
+    Args:
+        renamed_unaligned_path: Directory with renamed, unaligned images.
+        aligned_path: Directory for cached dimension data.
+        label: Prefix for cached dimension files.
+
+    Returns:
+        Tuple of ``(num_images, max_dim, num_channels, scale_factor,
+        scaled_max_dim)``.
+    """
     num_images = find_stack_size(renamed_unaligned_path, 'c3')
     max_dim = find_image_canvas(
         aligned_path, renamed_unaligned_path, 'dim', label)
@@ -431,10 +615,13 @@ def get_image_parameters(renamed_unaligned_path, aligned_path, label):
     return num_images, max_dim, num_channels, scale_factor, sc_max_dim
 
 
-def draw_1mm_scale_bar(image, num_pixels_in_1mm):
-    '''
-    Add 5mm scale bar to image.
-    '''
+def draw_1mm_scale_bar(image: np.ndarray, num_pixels_in_1mm: int) -> None:
+    """Draw a 1 mm scale bar on *image* (in-place, bottom-left corner).
+
+    Args:
+        image: Image array to annotate (modified in place).
+        num_pixels_in_1mm: Number of pixels corresponding to 1 mm.
+    """
     num_rows, num_cols = image.shape[0:2]  # (y,x)
     cv2.line(image, (int(num_cols * .05), int(num_rows * .95)), (
         int(num_cols * .05) + int(num_pixels_in_1mm), int(num_rows * .95)), (
@@ -444,12 +631,19 @@ def draw_1mm_scale_bar(image, num_pixels_in_1mm):
         num_rows * .93)), font, 1, (255, 255, 255), 2, cv2.CV_AA)
 
 
-def align_renamer(well, path_aligned_images, path_montaged_images):
-    '''
-    For IJ alignment output where names cannot be saved in stacking.
-    Takes names in filelist.
-    Uses output from previous step to generate correct names.
-    '''
+def align_renamer(well: str, path_aligned_images: str,
+                  path_montaged_images: str) -> None:
+    """Rename ImageJ alignment output files to match montage naming.
+
+    ImageJ stack alignment does not preserve filenames, so this function
+    pairs aligned outputs with their montage counterparts and renames
+    them with an ``_ALIGNED`` suffix.
+
+    Args:
+        well: Well identifier used to filter file lists.
+        path_aligned_images: Directory containing aligned output files.
+        path_montaged_images: Directory containing reference montage files.
+    """
     rename_list = make_filelist(path_aligned_images, well)
     previous_list = make_filelist(path_montaged_images, well)
     prev_green = [fname for fname in previous_list if 'FITC' in fname]
@@ -468,11 +662,18 @@ def align_renamer(well, path_aligned_images, path_montaged_images):
         os.rename(rname, rname_new)
 
 
-def zerone_normalizer(image):
-    '''
-    Normalizes matrix to have values between some min and some max.
-    This is exactly equivalent to cv2.equalizeHist(image) if min and max are 0 and 255
-    '''
+def zerone_normalizer(image: np.ndarray) -> np.ndarray:
+    """Normalize pixel values to a fixed range [0, 240].
+
+    Applies a linear rescale similar to ``cv2.equalizeHist`` but with
+    configurable output bounds.
+
+    Args:
+        image: Input image array.
+
+    Returns:
+        Rescaled copy of the image.
+    """
     copy_image = image.copy()
     # set scale
     new_img_min, new_img_max = 0, 240
@@ -481,18 +682,30 @@ def zerone_normalizer(image):
     return zero_one_norm
 
 
-def give_error_exit(error_string):
+def give_error_exit(error_string: str) -> None:
+    """Print an error message and terminate the process.
+
+    Args:
+        error_string: Message to print and pass to ``sys.exit``.
+    """
     print('---------------')
     print(error_string)
     print('---------------')
     sys.exit(error_string)
 
 
-def collapse_stack_to_image(file_list, collapse_type='max_proj'):
-    '''
-    Takes each image in file_list.
-    Returns a maximum z-projection or average.
-    '''
+def collapse_stack_to_image(file_list: List[str],
+                           collapse_type: str = 'max_proj') -> Optional[np.ndarray]:
+    """Collapse an image stack to a single image via projection.
+
+    Args:
+        file_list: Paths to the images in the stack.
+        collapse_type: ``'max_proj'`` for maximum intensity projection or
+            ``'avg_proj'`` for average projection.
+
+    Returns:
+        Projected image array, or ``None`` if *collapse_type* is unrecognized.
+    """
     start_time = datetime.datetime.utcnow()
     if collapse_type == 'max_proj':
         img_list = [cv2.imread(img_pointer, -1) for img_pointer in file_list]
@@ -512,12 +725,17 @@ def collapse_stack_to_image(file_list, collapse_type='max_proj'):
 
 
 # ----Magick---------------------------
-def collapse_stack_magically(output_file_name, selector, collapse_type='max_proj', verbose=False):
-    '''
-    Takes a selector string for specific files.
-    Returns a maximum z-projection or average.
-    Uses imagemagick. Faster.
-    '''
+def collapse_stack_magically(output_file_name: str, selector: str,
+                             collapse_type: str = 'max_proj',
+                             verbose: bool = False) -> None:
+    """Collapse an image stack using ImageMagick (faster than NumPy).
+
+    Args:
+        output_file_name: Path for the output image.
+        selector: Glob pattern selecting the input images.
+        collapse_type: ``'max_proj'`` or ``'avg_proj'``.
+        verbose: If True, print timing and file info.
+    """
     start_time = datetime.datetime.utcnow()
     if collapse_type == 'max_proj':
         magic_command = ['convert', '-maximum', selector, output_file_name]
@@ -536,18 +754,16 @@ def collapse_stack_magically(output_file_name, selector, collapse_type='max_proj
         print('Magic collapse run time:', end_time - start_time)
 
 
-def split_stack_magically(stack_selector, output_filenames, verbose=False):
-    '''
-    Calls image magick split stack into individual images.
+def split_stack_magically(stack_selector: str, output_filenames: str,
+                          verbose: bool = False) -> None:
+    """Split an image stack into individual files using ImageMagick.
 
-    @Usage
-    Output should be specified with %d to number.
-        Ex. output_filenames = single%d.tif
-    Stack is selected with * args.
-        Ex. stack_selector = *selector*
-    Make sure selector includes path.
-    %d can only be used once
-    '''
+    Args:
+        stack_selector: Glob pattern or path selecting the stack file(s).
+        output_filenames: Output path template with ``%d`` for numbering
+            (e.g. ``'single%d.tif'``).
+        verbose: If True, print timing and file info.
+    """
     start_time = datetime.datetime.utcnow()
 
     magic_command = ['convert', stack_selector, output_filenames]
@@ -562,10 +778,15 @@ def split_stack_magically(stack_selector, output_filenames, verbose=False):
         print('Magic stack images run time:', end_time - start_time)
 
 
-def make_stack_magically(selector, output_filename, verbose=False):
-    '''
-    Calls image magick to stack individual images into a stack.
-    '''
+def make_stack_magically(selector: str, output_filename: str,
+                         verbose: bool = False) -> None:
+    """Combine individual images into a stack using ImageMagick.
+
+    Args:
+        selector: Glob pattern selecting the input images.
+        output_filename: Path for the output stack file.
+        verbose: If True, print timing and file info.
+    """
     start_time = datetime.datetime.utcnow()
 
     magic_command = ['convert', selector, output_filename]
@@ -579,37 +800,49 @@ def make_stack_magically(selector, output_filename, verbose=False):
         print('Magic stack images run time:', end_time - start_time)
 
 
-def make_unstacking_folder(path):
-    '''Make folder to recieve unstacked singles.'''
+def make_unstacking_folder(path: str) -> None:
+    """Create an ``Unstacked_Collector`` subdirectory in *path*.
+
+    Args:
+        path: Parent directory.
+    """
     directory = os.path.join(path, 'Unstacked_Collector')
     if not os.path.exists(directory):
         os.makedirs(directory)
 
 
-def unstack_stacks(stack_pointer):
-    '''
-    Take any stack image and write it out to single files.
-    '''
+def unstack_stacks(stack_pointer: str) -> None:
+    """Split a stack image into individual files in the ``Unstacked_Collector`` folder.
+
+    Args:
+        stack_pointer: Path to the stack image file.
+    """
     path = os.path.dirname(stack_pointer)
     directory = os.path.join(path, 'Unstacked_Collector')
     output_filenames = os.path.join(directory, 'unstacked-%d.tif')
     split_stack_magically(stack_pointer, output_filenames)
 
 
-def kill_unstacking_folder(path):
-    '''Remove folder holding temporary single files.'''
+def kill_unstacking_folder(path: str) -> None:
+    """Remove the ``Unstacked_Collector`` subdirectory and its contents.
+
+    Args:
+        path: Parent directory containing the folder to remove.
+    """
     directory = os.path.join(path, 'Unstacked_Collector')
     if os.path.exists(directory):
         shutil.rmtree(directory)
 
 
-def create_cleanup_unstacked(path):
-    '''
-    Take path, loop through files in path.
-    If files are stacks, unstack them and save into new directory.
-    With each iteration, overwrite unstacked files.
-    Clean up the new directory with single files.
-    '''
+def create_cleanup_unstacked(path: str) -> None:
+    """Unstack all PID stack files in *path*, then remove the temp folder.
+
+    Iterates over stack files, splits each into singles in a temporary
+    directory, then removes the temporary directory.
+
+    Args:
+        path: Directory containing stack files.
+    """
     stack_files = make_filelist(path, 'PID')
     make_unstacking_folder(path)
     for stack in stack_files:
@@ -617,11 +850,19 @@ def create_cleanup_unstacked(path):
     kill_unstacking_folder(path)
 
 
-def get_frame_files(selected_image_list, frame, token_num):
-    '''
-    Takes a list of files, frame (burst or depth) and it's location within the filename.
-    Filters based on frame and returns relevant files with full path.
-    '''
+def get_frame_files(selected_image_list: List[str], frame: Union[str, int],
+                    token_num: int) -> List[str]:
+    """Filter a file list to those matching a specific frame token value.
+
+    Args:
+        selected_image_list: Full paths to image files.
+        frame: Frame identifier (burst or depth value) to match.
+        token_num: Underscore-delimited token index where the frame value
+            appears in the filename.
+
+    Returns:
+        Sorted list of matching file paths.
+    """
     path_images = os.path.dirname(selected_image_list[0])
 
     # Get all the files and tokenize them
@@ -636,12 +877,20 @@ def get_frame_files(selected_image_list, frame, token_num):
     return frame_selected_files
 
 
-def get_selected_files(path_images, well, timepoint, channel, robonum=0):
-    '''
-    Takes path, well, channel, and time point.
-    Collects all files in path, tokenizes, filters list.
-    Returns relevant files with full path.
-    '''
+def get_selected_files(path_images: str, well: str, timepoint: str,
+                       channel: str, robonum: int = 0) -> List[str]:
+    """Filter image files by well, timepoint, and channel.
+
+    Args:
+        path_images: Directory containing ``.tif`` images.
+        well: Well identifier (token index 4).
+        timepoint: Timepoint identifier (token index 2).
+        channel: Channel identifier.
+        robonum: Robot number controlling channel token position.
+
+    Returns:
+        Sorted list of matching file paths.
+    """
     ch_token_pos = get_channel_token(robonum)
     # Get all the files and tokenize them
     all_files = [fname for fname in os.listdir(path_images) if '.tif' in fname]
@@ -656,13 +905,24 @@ def get_selected_files(path_images, well, timepoint, channel, robonum=0):
     return selected_files
 
 
-def get_filename(tokenized_files, well, timepoint, channel, robonum=0):
-    '''
-    Takes tokenized files (e.g. from 'tokenize_files'), well, channel, timepoint, and robonum.
-    Filters list and returns relevant files with full path.
-    This version differs from 'get_selected_files' because it works with subdirectoried files and
-    separates collecting the list of all files (e.g. 'tokenize_files') from the filename construction
-    '''
+def get_filename(tokenized_files: List[List[str]], well: str, timepoint: str,
+                 channel: str, robonum: int = 0) -> List[str]:
+    """Filter pre-tokenized file records by well, timepoint, and channel.
+
+    Unlike :func:`get_selected_files`, this works with pre-tokenized input
+    (from :func:`tokenize_files`) and supports files in subdirectories.
+
+    Args:
+        tokenized_files: Nested list where each element is
+            ``[full_path, token0, token1, ...]``.
+        well: Well identifier.
+        timepoint: Timepoint identifier.
+        channel: Channel identifier.
+        robonum: Robot number controlling channel token position.
+
+    Returns:
+        List of full file paths matching the criteria.
+    """
     # Get channel token standard
     ch_token_pos = get_channel_token(robonum)
     # Filter the files (0 position is the full file path)
@@ -672,10 +932,15 @@ def get_filename(tokenized_files, well, timepoint, channel, robonum=0):
     return [fname[0] for fname in selected_files]
 
 
-def tokenize_files(paths):
-    '''
-    Takes list of paths and returns nested list with full path and tokenized filename.
-    '''
+def tokenize_files(paths: List[str]) -> List[List[str]]:
+    """Split each ``.tif`` filename on underscores, prepending the full path.
+
+    Args:
+        paths: List of file paths.
+
+    Returns:
+        Nested list where each element is ``[full_path, token0, token1, ...]``.
+    """
     tokenized_files = []
     for p in paths:
         if '.tif' in os.path.basename(p):
@@ -685,8 +950,20 @@ def tokenize_files(paths):
     return tokenized_files
 
 
-def make_selector_from_tokens(robonum, well='*', time='*', channel='*', panel='*'):
-    'Generate regex selector for image magick.'
+def make_selector_from_tokens(robonum: int, well: str = '*', time: str = '*',
+                              channel: str = '*', panel: str = '*') -> str:
+    """Build a glob selector string from filename token values.
+
+    Args:
+        robonum: Robot number controlling channel token position.
+        well: Well identifier or ``'*'`` for all.
+        time: Timepoint or ``'*'`` for all.
+        channel: Channel or ``'*'`` for all.
+        panel: Panel index or ``'*'`` for all.
+
+    Returns:
+        Glob-style selector string (e.g. ``'*_T0_*_*_A1_1_GFP_*_*_*.tif'``).
+    """
     ch_token_pos = get_channel_token(robonum)
     stokens = ['*'] * 10
     stokens[2] = time
@@ -698,10 +975,23 @@ def make_selector_from_tokens(robonum, well='*', time='*', channel='*', panel='*
     return selector
 
 
-def get_channel_token(robonum, light_path='epi', verbose=False):
-    '''
-    Returns position of channel token based on robo number.
-    '''
+def get_channel_token(robonum: int, light_path: str = 'epi',
+                      verbose: bool = False) -> int:
+    """Return the underscore-delimited token index of the channel field.
+
+    The position depends on the robot and light-path configuration.
+
+    Args:
+        robonum: Robot number (0, 3, or 4).
+        light_path: ``'epi'`` or ``'confocal'`` (only relevant for Robo 4).
+        verbose: If True, print the resolved position.
+
+    Returns:
+        Token index for the channel identifier.
+
+    Raises:
+        AssertionError: If *robonum* or *light_path* is unsupported.
+    """
     robonum = int(robonum)
     if robonum == 3 or robonum == 0:
         ch_pos = 6
@@ -720,8 +1010,23 @@ def get_channel_token(robonum, light_path='epi', verbose=False):
     return ch_pos
 
 
-def make_selector(iterator='', well='', timepoint='', channel='', frame='', verbose=False, robo0=True):
-    'Constructor of selector string to glob appropriate files.'
+def make_selector(iterator: str = '', well: str = '', timepoint: str = '',
+                  channel: str = '', frame: str = '', verbose: bool = False,
+                  robo0: bool = True) -> str:
+    """Construct a glob selector string for matching image files.
+
+    Args:
+        iterator: Iterator type (``'TimeBursts'``, ``'ZDepths'``, or empty).
+        well: Well identifier.
+        timepoint: Timepoint identifier.
+        channel: Channel identifier.
+        frame: Frame value for bursts or depths.
+        verbose: If True, print debug details.
+        robo0: Whether to use Robo0 naming convention.
+
+    Returns:
+        Glob-style selector string.
+    """
 
     burst = ''
     depth = ''
@@ -742,10 +1047,17 @@ def make_selector(iterator='', well='', timepoint='', channel='', frame='', verb
     return selector
 
 
-def set_iterator(var_dict):
-    '''
-    Evaluated file parameters to decide if bursts or depths are captured.
-    '''
+def set_iterator(var_dict: Dict[str, Any]) -> Tuple[Optional[str], list]:
+    """Determine whether the experiment uses burst or depth iterations.
+
+    Args:
+        var_dict: Experiment variable dictionary with ``'Bursts'``,
+            ``'BurstIDs'``, and ``'Depths'`` keys.
+
+    Returns:
+        Tuple of ``(iterator_name, iter_list)`` where *iterator_name* is
+        ``'TimeBursts'``, ``'ZDepths'``, or ``None``.
+    """
     if len(var_dict['Bursts']) > 1:
         iter_list = var_dict['BurstIDs']
         iterator = 'TimeBursts'
@@ -760,18 +1072,28 @@ def set_iterator(var_dict):
     return iterator, iter_list
 
 
-def order_wells_correctly(value):
-    '''
-    Lets me sort list to follow A1, A2, A3, A11, A12....
-    Instead of A1, A11, A12...
-    '''
+def order_wells_correctly(value: str) -> Tuple[str, int]:
+    """Key function for sorting well IDs in natural order (A1, A2, ... A11).
+
+    Args:
+        value: Well identifier string (e.g. ``'A1'``, ``'B12'``).
+
+    Returns:
+        Tuple of ``(letter, number)`` for comparison.
+    """
     return value[0], int(value[1:])
 
 
-def get_all_files(input_path, verbose=False):
-    '''
-    Takes all PID image files in input path. Removes fiduciary image files.
-    '''
+def get_all_files(input_path: str, verbose: bool = False) -> List[str]:
+    """List all PID ``.tif`` images in *input_path*, excluding fiduciary files.
+
+    Args:
+        input_path: Directory to search.
+        verbose: If True, print the count of files found.
+
+    Returns:
+        Sorted list of matching file paths.
+    """
     all_files = make_filelist(input_path, 'PID')
     all_files = [afile for afile in all_files if 'FIDUCIARY' not in afile]
     all_files = [afile for afile in all_files if '.tif' in afile]
@@ -780,10 +1102,16 @@ def get_all_files(input_path, verbose=False):
     return all_files
 
 
-def get_all_files_all_subdir(input_path, verbose=False):
-    '''
-    Takes all PID image files in input path. Removes fiduciary image files.
-    '''
+def get_all_files_all_subdir(input_path: str, verbose: bool = False) -> List[str]:
+    """Like :func:`get_all_files` but also searches subdirectories.
+
+    Args:
+        input_path: Root directory to walk.
+        verbose: If True, print discovery details.
+
+    Returns:
+        Flat list of matching PID ``.tif`` file paths.
+    """
     all_files = make_filelist_wells(input_path, 'PID', verbose=verbose)
     all_files = [afile for afile in all_files if 'FIDUCIARY' not in afile]
     all_files = [afile for afile in all_files if '.tif' in afile]
@@ -792,10 +1120,16 @@ def get_all_files_all_subdir(input_path, verbose=False):
     return all_files
 
 
-def get_wells(all_files, verbose=False):
-    '''
-    Use appropriate well token to collect the ordered set of wells.
-    '''
+def get_wells(all_files: List[str], verbose: bool = False) -> List[str]:
+    """Extract the unique, naturally-sorted well identifiers from filenames.
+
+    Args:
+        all_files: List of image file paths.
+        verbose: If True, print the discovered wells.
+
+    Returns:
+        Sorted list of unique well strings.
+    """
     wells = []
     for one_file in all_files:
         if os.path.basename(one_file).split('_')[4] == '0':
@@ -809,10 +1143,16 @@ def get_wells(all_files, verbose=False):
     return wells
 
 
-def get_well_panel(all_files, verbose=False):
-    '''
-    Use appropriate timepoint token to collect the ordered set of timepoints.
-    '''
+def get_well_panel(all_files: List[str], verbose: bool = False) -> List[int]:
+    """Extract the unique, sorted well-panel indices from filenames.
+
+    Args:
+        all_files: List of image file paths.
+        verbose: If True, print the discovered panels.
+
+    Returns:
+        Sorted list of unique panel indices (as integers).
+    """
     well_panels = []
     for one_file in all_files:
         panel_index = os.path.basename(one_file).split('_')[5]
@@ -824,10 +1164,16 @@ def get_well_panel(all_files, verbose=False):
     return well_panels
 
 
-def get_timepoints(all_files, verbose=False):
-    '''
-    Use appropriate timepoint token to collect the ordered set of timepoints.
-    '''
+def get_timepoints(all_files: List[str], verbose: bool = False) -> List[str]:
+    """Extract the unique, naturally-sorted timepoint identifiers from filenames.
+
+    Args:
+        all_files: List of image file paths.
+        verbose: If True, print the discovered timepoints.
+
+    Returns:
+        Sorted list of unique timepoint strings.
+    """
     timepoints = []
     for one_file in all_files:
         time = os.path.basename(one_file).split('_')[2]
@@ -839,11 +1185,19 @@ def get_timepoints(all_files, verbose=False):
     return timepoints
 
 
-def get_channels(all_files, robonum, light_path='epi', verbose=False):
-    '''
-    Use appropriate channel token for robo to collect the represented channels.
-    Return list of channels.
-    '''
+def get_channels(all_files: List[str], robonum: int, light_path: str = 'epi',
+                 verbose: bool = False) -> List[str]:
+    """Extract unique channel identifiers from filenames using robot-specific parsing.
+
+    Args:
+        all_files: List of image file paths.
+        robonum: Robot number (0, 3, or 4).
+        light_path: ``'epi'`` or ``'confocal'`` (Robo 4 only).
+        verbose: If True, print the discovered channels.
+
+    Returns:
+        List of unique channel strings.
+    """
     robonum = int(robonum)
     channels = []
     for one_file in all_files:
@@ -867,11 +1221,20 @@ def get_channels(all_files, robonum, light_path='epi', verbose=False):
     return channels
 
 
-def get_channels_from_user(all_files, channel_token, verbose=False):
-    '''
-    Use appropriate channel token for robo to collect the represented channels.
-    Return list of channels.
-    '''
+def get_channels_from_user(all_files: List[str], channel_token: int,
+                           verbose: bool = False) -> List[str]:
+    """Extract unique channel identifiers using a user-specified token index.
+
+    Brightfield channels are excluded from the result.
+
+    Args:
+        all_files: List of image file paths.
+        channel_token: Underscore-delimited token index for the channel.
+        verbose: If True, print the discovered channels.
+
+    Returns:
+        List of unique non-Brightfield channel strings.
+    """
 
     channel_token = int(channel_token)
     channels = []
@@ -886,11 +1249,21 @@ def get_channels_from_user(all_files, channel_token, verbose=False):
     return channels
 
 
-def get_ref_channel(morph_channel, channels, verbose=False):
-    '''
-    Take list of channels and case-insensitive substring for morphology channel.
-    Return the complete morphology channel reference.
-    '''
+def get_ref_channel(morph_channel: str, channels: List[str],
+                    verbose: bool = False) -> str:
+    """Find the full channel name matching a case-insensitive substring.
+
+    Args:
+        morph_channel: Substring to search for (e.g. ``'gfp'``).
+        channels: Available channel names.
+        verbose: If True, print the matched channel.
+
+    Returns:
+        The unique matching channel name.
+
+    Raises:
+        AssertionError: If zero or multiple channels match.
+    """
     morphology_channel = [ch for ch in channels if morph_channel.lower() in ch.lower()]
     assert len(morphology_channel) > 0, 'Your channel string (%s) was not found.' % morph_channel
     assert len(morphology_channel) == 1, 'Your channel string (%s) was not unique.' % morph_channel
@@ -900,10 +1273,16 @@ def get_ref_channel(morph_channel, channels, verbose=False):
     return morphology_channel
 
 
-def get_plate_id(all_files, verbose=False):
-    '''
-    Use appropriate plate ID tokens to return plate id of first image.
-    '''
+def get_plate_id(all_files: List[str], verbose: bool = False) -> str:
+    """Extract the plate ID from the first file's name (tokens 0 and 1).
+
+    Args:
+        all_files: List of image file paths.
+        verbose: If True, print the plate ID.
+
+    Returns:
+        Plate ID string (e.g. ``'PID_12345'``).
+    """
     first_data_file = os.path.basename(all_files[0])
     plateID_tokens = first_data_file.split('_')[0:2]
     plateID = '_'.join(plateID_tokens)
@@ -912,10 +1291,16 @@ def get_plate_id(all_files, verbose=False):
     return plateID
 
 
-def get_bursts(all_files, verbose=False):
-    '''
-    Use appropriate burst tokens to return a list of bursts.
-    '''
+def get_bursts(all_files: List[str], verbose: bool = False) -> List[str]:
+    """Extract unique, sorted burst identifiers from filenames (token 3).
+
+    Args:
+        all_files: List of image file paths.
+        verbose: If True, print the burst IDs.
+
+    Returns:
+        Naturally-sorted list of unique burst ID strings.
+    """
     burstIDs = list(set(
         [os.path.basename(fname).split('_')[3] for fname in all_files]))
     burstIDs.sort(key=numericalSort)
@@ -924,10 +1309,16 @@ def get_bursts(all_files, verbose=False):
     return burstIDs
 
 
-def get_burst_iter(all_files, verbose=False):
-    '''
-    Use appropriate burst iterator tokens to return a list of burst iterators.
-    '''
+def get_burst_iter(all_files: List[str], verbose: bool = False) -> List[str]:
+    """Extract burst frame sub-identifiers (the part after the dash).
+
+    Args:
+        all_files: List of image file paths.
+        verbose: If True, print the burst frames.
+
+    Returns:
+        Sorted list of unique burst frame strings (e.g. ``['-1', '-2']``).
+    """
     burstIDs = get_bursts(all_files, verbose=False)
     burst_frames = []
     for burst in burstIDs:
@@ -942,10 +1333,18 @@ def get_burst_iter(all_files, verbose=False):
     return burst_frames
 
 
-def get_depths(all_files, robonum, verbose=False):
-    '''
-    Use appropriate depth tokens to return a list of depths.
-    '''
+def get_depths(all_files: List[str], robonum: int,
+               verbose: bool = False) -> list:
+    """Extract unique Z-depth values from filenames using robot-specific parsing.
+
+    Args:
+        all_files: List of image file paths.
+        robonum: Robot number (0, 3, or 4).
+        verbose: If True, print the depth values.
+
+    Returns:
+        Sorted list of depth values (empty if only one depth exists).
+    """
     # Depths are  stored as stacks for robo4
 
     robonum = int(robonum)
@@ -975,34 +1374,70 @@ def get_depths(all_files, robonum, verbose=False):
     return depths
 
 
-def get_iter_from_user(comma_list_without_spaces, iter_value='', verbose=False):
-    '''
-    Takes list from user and returns a set to overwrite 'found' params for var_dict.
-    '''
+def get_iter_from_user(comma_list_without_spaces: str, iter_value: str = '',
+                       verbose: bool = False) -> List[str]:
+    """Parse a user-supplied comma-separated list, expanding any ranges.
+
+    Supports individual items (``'A1,A3'``) and alphanumeric ranges
+    (``'A1-B3'``).  Ranges expand across both letters and numbers:
+    ``'A1-B3'`` yields ``A1, A2, A3, B1, B2, B3``.  Leading zeros in
+    numeric parts are preserved for single-digit values.
+
+    Args:
+        comma_list_without_spaces: Comma-separated string of items and/or
+            ranges (e.g. ``'A1,A3-B2'``).
+        iter_value: Label for verbose output (e.g. ``'wells'``).
+        verbose: If True, print the resolved list.
+
+    Returns:
+        Deduplicated, naturally-sorted list of identifiers.
+    """
+    # Normalize: strip spaces, uppercase everything
     comma_list_without_spaces = comma_list_without_spaces.replace(" ", "").upper()
     user_chosen_iter = comma_list_without_spaces.split(',')
+
+    # Identify range entries (items containing a dash, e.g. 'A1-B3')
     user_range = [user_iter for user_iter in user_chosen_iter if len(user_iter.split('-')) > 1]
+
+    # Build the full alphabet for letter-range expansion
     all_letters = sorted(map(chr, range(65, 91)))
+
     if len(user_range) > 0:
         for iter_range in user_range:
+            # Remove the range token; we will expand it into individual items
             user_chosen_iter.remove(iter_range)
+
+            # Split range into start and end (e.g. 'A1' and 'B3')
             end_values = iter_range.split('-')
+
+            # Determine the letter span (e.g. A..B)
             start_letter = all_letters.index(end_values[0][0])
             end_letter = all_letters.index(end_values[1][0])
             letter_range = all_letters[start_letter:end_letter + 1]
+
+            # Determine the numeric span (e.g. 1..3)
             number_start = end_values[0][1:]
             number_end = end_values[1][1:]
+
+            # Detect leading-zero formatting (e.g. '01')
             leading_zero = re.match(r'0\d+', str(number_start))
             num_range = range(int(number_start), int(number_end) + 1)
+
+            # Expand the full Cartesian product of letters x numbers
             complete_range = []
             for letter in letter_range:
                 for num in num_range:
+                    # Preserve leading zero for single-digit numbers if original had one
                     if leading_zero and num < 10:
                         num = '0' + str(num)
                     complete_range.append(letter + str(num))
+
+            # Include both endpoints and the expanded range
             user_chosen_iter.append(end_values[0])
             user_chosen_iter.extend(complete_range)
             user_chosen_iter.append(end_values[1])
+
+    # Deduplicate and sort naturally
     user_chosen_iter = list(set(user_chosen_iter))
     user_chosen_iter.sort(key=numericalSort)
     if verbose:
@@ -1010,12 +1445,21 @@ def get_iter_from_user(comma_list_without_spaces, iter_value='', verbose=False):
     return user_chosen_iter
 
 
-def overwrite_io_paths(var_dict, output_path, verbose=False):
-    '''
-    If var_dict is given as input, the data input_path
-    for this module will be set from var_dict['OutputPath']
-    of the previous step. The new var_dict['OutputPath']
-    will be set as output_path.'''
+def overwrite_io_paths(var_dict: Dict[str, Any], output_path: str,
+                       verbose: bool = False) -> Dict[str, Any]:
+    """Chain pipeline steps by redirecting input/output paths in *var_dict*.
+
+    Sets ``InputPath`` to the previous step's ``OutputPath``, then updates
+    ``OutputPath`` to the new *output_path*.
+
+    Args:
+        var_dict: Mutable experiment variable dictionary.
+        output_path: New output directory for the current step.
+        verbose: If True, print before/after paths.
+
+    Returns:
+        The updated *var_dict* (modified in place).
+    """
 
     if verbose:
         print('Initial input (passed var_dict)', var_dict['InputPath'])
@@ -1032,11 +1476,16 @@ def overwrite_io_paths(var_dict, output_path, verbose=False):
     return var_dict
 
 
-def save_user_args_to_csv(arg_parser, save_path, module_string, verbose=True):
-    '''
-    Take the arguments collected in argparse
-    and write their values to csv.
-    '''
+def save_user_args_to_csv(arg_parser: Any, save_path: str, module_string: str,
+                          verbose: bool = True) -> None:
+    """Serialize argparse arguments to a CSV file for reproducibility.
+
+    Args:
+        arg_parser: Parsed ``argparse.Namespace`` object.
+        save_path: Directory to write the CSV into.
+        module_string: Module name used as the CSV filename stem.
+        verbose: If True, print the output path.
+    """
     with open(os.path.join(save_path, module_string + '.csv'), 'w') as params_txt:
         for arg, user_val in vars(arg_parser).items():
             if arg != 'input_dict' and arg != 'output_dict' and arg != 'outfile':
@@ -1045,8 +1494,12 @@ def save_user_args_to_csv(arg_parser, save_path, module_string, verbose=True):
         print('Parameter output written to', os.path.join(save_path, module_string + '.csv'))
 
 
-def update_timestring():
-    '''Update identifying timestring'''
+def update_timestring() -> str:
+    """Generate a timestamp string in ``YYYY_MM_DD_HH_MM_SS`` format.
+
+    Returns:
+        Formatted timestamp of the current local time.
+    """
     now = datetime.datetime.now()
     timestring = '%.4d_%.2d_%.2d_%.2d_%.2d_%.2d' % (now.year, now.month, now.day, now.hour, now.minute, now.second)
     return timestring

@@ -1,22 +1,50 @@
 #!/usr/bin/env python
-"""Overlay cell IDs on aligned montage images based on tracked CSV and database experiment info."""
+"""Overlay tracked cell IDs onto aligned montage images.
+
+Reads tracked-cell coordinates and IDs from a summary CSV produced by the
+tracking pipeline, loads the corresponding montage images, and renders
+green text labels with leader lines at each cell centroid.  Output images
+are saved as RGB PNGs.  Supports parallel processing across timepoints,
+optional restriction to a subset of cell IDs (via a stable CSV), and
+well/timepoint filtering.
+"""
 
 import imageio
 import os
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
+
 from PIL import Image, ImageFont, ImageDraw
 import numpy as np
 import pandas as pd
 import argparse
 from sql import Database
-import pdb
 import datetime
 from time import time
 from multiprocessing import Pool, cpu_count
-from functools import partial
 
 
 class OverlayBatch:
-    def __init__(self, opt):
+    """Batch overlay of tracked cell IDs onto montaged microscopy images.
+
+    Reads experiment metadata from the database, loads the tracking summary
+    CSV, and writes overlay PNGs (green text on greyscale) for each
+    well/timepoint combination.
+
+    Attributes:
+        experiment_name: Name of the experiment in the database.
+        montage_root: Directory containing aligned or raw montage TIFFs.
+        overlay_root: Output directory for overlay PNGs.
+        df: Tracking summary DataFrame.
+        max_cores: Number of worker processes for parallel overlay.
+    """
+
+    def __init__(self, opt: argparse.Namespace) -> None:
+        """Initialise the overlay batch from command-line options.
+
+        Args:
+            opt: Parsed arguments including experiment name, well/timepoint
+                filters, contrast, shift, and optional cell-ID restrictions.
+        """
         self.opt = opt
         self.Db = Database()
         self.experiment_name = opt.experiment_name
@@ -72,7 +100,12 @@ class OverlayBatch:
         # Performance monitoring
         self.start_time = None
 
-    def run(self):
+    def run(self) -> None:
+        """Generate overlay images for all matching wells and timepoints.
+
+        Distributes work across ``self.max_cores`` processes when there are
+        multiple timepoints to render.
+        """
         self.start_time = time()
         
         # Collect all timepoint tasks for parallel processing
@@ -158,24 +191,61 @@ class OverlayBatch:
         total_time = time() - self.start_time
         print(f'Overlay Montage completed in {total_time:.1f} seconds ({total_time/60:.1f} min)')
 
-    def extract_timepoint(self, filename):
+    def extract_timepoint(self, filename: str) -> int:
+        """Parse the integer timepoint from a montage filename.
+
+        Expects a ``T<number>`` token separated by underscores (e.g.
+        ``Well_A1_T3_Cy5_MONTAGE_ALIGNED.tif``).
+
+        Args:
+            filename: Basename of the montage image file.
+
+        Returns:
+            Integer timepoint index.
+
+        Raises:
+            ValueError: If no ``T<digits>`` token is found.
+        """
         parts = filename.split('_')
         for part in parts:
             if part.startswith('T') and part[1:].isdigit():
                 return int(part[1:])
         raise ValueError(f"Could not find timepoint in filename: {filename}")
 
-    def parse_timepoints(self, tp_string):
+    def parse_timepoints(self, tp_string: str) -> List[int]:
+        """Convert a timepoint specification string to a list of integers.
+
+        Args:
+            tp_string: ``'all'``, a single value like ``'T3'``, or a range
+                like ``'T0-T7'``.
+
+        Returns:
+            List of integer timepoint indices.
+        """
         if tp_string == "all":
-            return list(range(100))  # Assume max 100 timepoints
+            return list(range(100))  # upper bound; filtered by available data
         elif "-" in tp_string:
             start, end = map(int, tp_string.replace("T", "").split("-"))
             return list(range(start, end + 1))
         else:
             return [int(tp_string.replace("T", ""))]
 
-def load_stable_csv(csv_path):
-    """Load stable CSV with columns well, tracked_id, timepoint. Returns dict (well, timepoint) -> set(tracked_id)."""
+def load_stable_csv(csv_path: str) -> Dict[Tuple[str, int], Set[int]]:
+    """Load a stable-cell CSV and group tracked IDs by (well, timepoint).
+
+    The CSV must contain the columns ``well``, ``tracked_id``, and
+    ``timepoint``.
+
+    Args:
+        csv_path: Path to the CSV file.
+
+    Returns:
+        Mapping of ``(well, timepoint)`` to the set of tracked cell IDs
+        present in that combination.
+
+    Raises:
+        ValueError: If required columns are missing.
+    """
     df = pd.read_csv(csv_path)
     required = {'well', 'tracked_id', 'timepoint'}
     if not required.issubset(df.columns):
@@ -187,8 +257,22 @@ def load_stable_csv(csv_path):
     return out
 
 
-def overlay_single_timepoint(args):
-    """Process a single timepoint - standalone function for parallel execution"""
+def overlay_single_timepoint(
+    args: Tuple[str, int, str, List[Dict], str, Dict[str, Any], str],
+) -> str:
+    """Render an overlay image for a single well/timepoint combination.
+
+    This is a module-level function (rather than a method) so it can be
+    dispatched by ``multiprocessing.Pool.map`` without pickling issues.
+
+    Args:
+        args: A 7-tuple of ``(well, timepoint, aligned_image_path,
+            tracking_df_as_dicts, experiment_name, opt_params_dict,
+            overlay_output_root)``.
+
+    Returns:
+        A status string describing success or failure for logging.
+    """
     well, timepoint, aligned_path, df_data, experiment_name, opt_params, overlay_root = args
     
     try:
@@ -224,22 +308,29 @@ def overlay_single_timepoint(args):
         img[img > 128] = 128
         img = np.uint8(img)
 
-        # Create text overlay
-        text_img = np.zeros_like(img)
-        text_img = Image.fromarray(text_img)
-        draw = ImageDraw.Draw(text_img)
-        
-        # Load font for this process
+        # Create text + leader-line overlay (single channel, 255 = green in final RGB)
+        text_img = np.zeros_like(img, dtype=np.uint8)
+        text_pil = Image.fromarray(text_img)
+        draw = ImageDraw.Draw(text_pil)
         font = ImageFont.truetype('/usr/share/fonts/dejavu/DejaVuSansMono.ttf', 50)
 
+        line_width = max(4, min(8, max(img.shape) // 500))  # 4–8 px so the line is clearly visible
         for _, row in df_filtered.iterrows():
             cellid = int(row['tracked_id'])
-            x = int(min(max(row['centroid_x'] + opt_params['shift'], 0), img.shape[1] - 20))
-            y = int(min(max(row['centroid_y'] + opt_params['shift'], 0), img.shape[0] - 20))
-            draw.text((x, y), str(cellid), (127), font)
+            cx, cy = int(row['centroid_x']), int(row['centroid_y'])
+            x = int(min(max(cx + opt_params['shift'], 0), img.shape[1] - 20))
+            y = int(min(max(cy + opt_params['shift'], 0), img.shape[0] - 20))
+            # Leader line from cell centroid to ID label
+            draw.line((cx, cy, x, y), fill=255, width=line_width)
+            # Small circle at cell so the line clearly starts at the cell
+            r = max(3, line_width + 2)
+            draw.ellipse((cx - r, cy - r, cx + r, cy + r), outline=255, width=2)
+            draw.text((x, y), str(cellid), fill=255, font=font)
 
-        text_img = np.array(text_img)
-        overlay_img = np.dstack([img, img + text_img, img])
+        text_img = np.array(text_pil)
+        # Clip green so line/text (255) stay bright; img can be up to 128 so R+G would overflow uint8
+        green = np.clip(img.astype(np.int32) + text_img, 0, 255).astype(np.uint8)
+        overlay_img = np.dstack([img, green, img])
 
         # Save overlay
         overlaydir = os.path.join(overlay_root, well)

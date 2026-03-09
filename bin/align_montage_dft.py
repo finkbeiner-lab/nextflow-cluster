@@ -1,32 +1,55 @@
 #!/usr/bin/env python
-"""
-Aligns tile images using phase cross-correlation and DFT fallback.
-Computes shifts only on the morphology channel; applies those shifts to other channels as defined by params.chosen_channels (or all if "all").
-Updates alignedtilepath in the database.
+"""Montage alignment via DFT-based image registration.
+
+Computes inter-frame translational shifts on the morphology channel using
+phase cross-correlation (with an ``imreg_dft`` fallback when the shift
+exceeds a plausibility threshold), then applies those same shifts to every
+other selected channel so that all channels are spatially co-registered
+across timepoints.
+
+Aligned images are saved as 16-bit TIFFs under an ``AlignedMontages/``
+directory, and the ``alignedmontagepath`` column in the ``tiledata``
+database table is updated accordingly.
 """
 
-import os
-import cv2
 import argparse
+import datetime
+import os
+import pickle
+from typing import Tuple
+
+import cv2
+import imageio
 import numpy as np
 from skimage import transform
 from skimage.registration import phase_cross_correlation
 import imreg_dft as ird
-from sql import Database
 from tqdm import tqdm
-import imageio
-import pickle
+
 from db_util import Ops
-import datetime
-#from normalization_montage import Normalize
+from sql import Database
 
 
-def cross_correlation_dft_combo(ref_img, img):
-    """
-    Measure shift between ref_img and img using phase correlation first, fallback to DFT.
-    Returns: (shift_vector, method_string).
+def cross_correlation_dft_combo(
+    ref_img: np.ndarray, img: np.ndarray
+) -> Tuple[np.ndarray, str]:
+    """Measure the translational shift between two images.
+
+    Tries scikit-image phase cross-correlation first.  If the resulting
+    shift exceeds 1/9 of the image dimensions (likely an artefact), falls
+    back to ``imreg_dft`` translation estimation.
+
+    Args:
+        ref_img: Reference (fixed) image as a 2-D array.
+        img: Moving image to be registered against *ref_img*.
+
+    Returns:
+        A tuple of ``(shift, method)`` where *shift* is a length-2 numpy
+        array ``[dy, dx]`` and *method* is one of ``'phase'``,
+        ``'phase_error'``, ``'dft'``, or ``'dft_error'``.
     """
     fix_by_dft = False
+    # Plausibility thresholds: shifts larger than ~11% of each axis are suspect
     y_thresh = ref_img.shape[0] / 9
     x_thresh = ref_img.shape[1] / 9
 
@@ -47,7 +70,7 @@ def cross_correlation_dft_combo(ref_img, img):
                 shift = np.zeros(2)
                 method = 'dft_error'
 
-        # Retry if shift too large
+        # If shift exceeds plausibility threshold, retry with DFT method
         if (abs(shift[0]) >= y_thresh or abs(shift[1]) >= x_thresh) and not fix_by_dft:
             fix_by_dft = True
             continue
@@ -56,9 +79,16 @@ def cross_correlation_dft_combo(ref_img, img):
     return shift, method
 
 
-def save_image_uint16(path, img):
-    """
-    Save img as uint16, scaling float images appropriately.
+def save_image_uint16(path: str, img: np.ndarray) -> None:
+    """Save an image array as a 16-bit unsigned integer TIFF.
+
+    Float images in the [0, 1] range are scaled to the full uint16 range.
+    Float images with values > 1 are clipped to uint16 max.  Integer
+    images are cast directly.
+
+    Args:
+        path: Destination file path (should end in ``.tif``).
+        img: Image array to save.
     """
     if np.issubdtype(img.dtype, np.floating):
         max_val = img.max()
@@ -71,20 +101,35 @@ def save_image_uint16(path, img):
     imageio.imwrite(path, out)
 
 
-def align_tiles(opt):
+def align_tiles(opt: argparse.Namespace) -> None:
+    """Compute and apply translational alignment to montaged tile images.
+
+    Alignment is performed in two passes:
+
+    1. **Morphology channel**: For each (well, tile) group sorted by
+       timepoint, consecutive-frame shifts are accumulated into a running
+       offset.  The aligned morphology images are saved and the database
+       is updated.
+    2. **Other channels**: The pre-computed shifts from step 1 are applied
+       to every remaining selected channel so that all channels share the
+       same spatial registration.
+
+    The computed shift dictionary is persisted as a pickle file under the
+    ``AlignedMontages/`` output directory for later inspection.
+
+    Args:
+        opt: Namespace with experiment parameters including
+            ``experiment``, ``morphology_channel``, ``chosen_channels``,
+            well/timepoint/channel selection toggles, and
+            ``img_norm_name``.
+    """
     ops = Ops(opt)
     df = ops.get_df_for_training(['channeldata'])
-    
-    #Norm = Normalize(opt)
 
     if 'timepoint' not in df.columns:
         raise KeyError("tiledata must contain 'timepoint' column")
 
     df = df[df['newimagemontage'].str.endswith('.tif')]
-
-    # precompute backgrounds per well/timepoint
-    #for (well, timepoint), sub in df.groupby(['well','timepoint']):
-    #    Norm.get_background_image(sub, well, timepoint)
 
     db = Database()
     _, analysisdir = ops.get_raw_and_analysis_dir()
@@ -92,9 +137,9 @@ def align_tiles(opt):
     out_root = os.path.join(analysisdir, 'AlignedMontages')
     os.makedirs(out_root, exist_ok=True)
 
-    # Determine channels to align beyond morphology
+    # Determine which non-morphology channels to align; None means all
     if opt.chosen_channels.lower() == 'all':
-        other_channels = None  # means all except morphology
+        other_channels = None
     else:
         other_channels = [c.strip() for c in opt.chosen_channels.split(',')]
 
@@ -108,7 +153,6 @@ def align_tiles(opt):
         running = np.zeros(2)
         for idx, row in enumerate(group.itertuples()):
             img = cv2.imread(row.newimagemontage, cv2.IMREAD_UNCHANGED)
-            #img = Norm.image_bg_correction[opt.img_norm_name](raw, row.well, row.timepoint)
             if idx == 0:
                 running = np.zeros(2)
                 prev = img.copy()
@@ -122,6 +166,7 @@ def align_tiles(opt):
             out_dir = os.path.join(out_root, well)
             os.makedirs(out_dir, exist_ok=True)
             out_path = os.path.join(out_dir, os.path.basename(row.newimagemontage).replace('.tif','_ALIGNED.tif'))
+            # Negate and swap (dy,dx)->(tx,ty) to convert shift to inverse warp
             tform = transform.SimilarityTransform(translation=(-running[1], -running[0]))
             aligned = transform.warp(img, tform, preserve_range=True)
             save_image_uint16(out_path, aligned)
@@ -145,7 +190,6 @@ def align_tiles(opt):
             continue
         running = new_shifts[key]
         img = cv2.imread(row.newimagemontage, cv2.IMREAD_UNCHANGED)
-        #img = Norm.image_bg_correction[opt.img_norm_name](raw, row.well, row.timepoint)
         tform = transform.SimilarityTransform(translation=(-running[1], -running[0]))
         aligned = transform.warp(img, tform, preserve_range=True)
         out_dir = os.path.join(out_root, row.well)
