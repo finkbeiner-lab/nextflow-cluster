@@ -1,10 +1,10 @@
 #!/bin/bash
 
-# Slurm job options (output path is relative so logs go under the directory where sbatch is run)
+# Slurm job options
 #SBATCH --job-name=nextflow-run
 #SBATCH --time=08:00:00
 #SBATCH -N 2
-#SBATCH --output=slurm-%j.out
+#SBATCH --output=/dev/null
 ##SBATCH --gres=gpu:v100:1
 #SBATCH --distribution=block:block
 
@@ -16,6 +16,11 @@ else
     WORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
 cd "${WORK_DIR}" || exit 1
+
+# Redirect all output to a user-friendly log file: <username>_<YYYYMMDD_HHMMSS>.out
+LOG_FILE="${WORK_DIR}/$(whoami)_$(date +%Y%m%d_%H%M%S).out"
+exec > "${LOG_FILE}" 2>&1
+echo "Log file: ${LOG_FILE}"
 
 # Disable color output in Nextflow
 export NXF_CLI_COLOR=false
