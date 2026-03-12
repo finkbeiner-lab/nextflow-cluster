@@ -636,23 +636,24 @@ process SEGMENTATION_MONTAGE {
           val(lower_area_thresh),
           val(upper_area_thresh),
           val(sd_scale_factor),
-          val(well),                    
+          val(proximity_filter_radius),
+          val(well),
           val(chosen_timepoints),
           val(wells_toggle),
           val(timepoints_toggle)
-   
 
-    output: 
-    tuple val(true), val(well) 
+
+    output:
+    tuple val(true), val(well)
 
 
     script:
     """
     segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
     --img_norm_name ${img_norm_name}  --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
-    --sd_scale_factor ${sd_scale_factor} \
+    --sd_scale_factor ${sd_scale_factor} --proximity_filter_radius ${proximity_filter_radius} \
     --chosen_wells ${well} --chosen_channels ${morphology_channel} --chosen_timepoints ${chosen_timepoints} \
-    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}  
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
     """
 }
 
@@ -717,7 +718,7 @@ process OVERLAY_MONTAGE {
 process BUNDLED_WORKFLOW_IXM {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     tag "BUNDLED_WORKFLOW_IXM-${exp}_${well}"
-    
+
     // Galaxy CPU nodes: 28 cores, ~377 GB RAM (fb-docker-compute*, fb-galaxy-cpu*)
     // Per well: 4 cpus → 7 wells/node (28 cpus); with QOSMaxNodePerUserLimit=2 → 14 wells concurrent
     // MONTAGE ~2 CPU, SEGMENTATION ~4 CPU, TRACKING ~2 CPU, OVERLAY ~1 CPU → 4 cpus
@@ -741,6 +742,7 @@ process BUNDLED_WORKFLOW_IXM {
           val(lower_area_thresh),
           val(upper_area_thresh),
           val(sd_scale_factor),
+          val(proximity_filter_radius),
           val(track_type),
           val(distance_threshold),
           val(target_channel),
@@ -803,16 +805,17 @@ process BUNDLED_WORKFLOW_IXM {
     echo "🔬 Step 2/4: Running segmentation for well ${well}"
     segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
     --img_norm_name ${img_norm_name} --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
-    --sd_scale_factor ${sd_scale_factor} --chosen_wells ${well} --chosen_channels ${morphology_channel} \
+    --sd_scale_factor ${sd_scale_factor} --proximity_filter_radius ${proximity_filter_radius} \
+    --chosen_wells ${well} --chosen_channels ${morphology_channel} \
     --chosen_timepoints ${chosen_timepoints} --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
-    
+
     if [ \$? -eq 0 ]; then
         echo "✅ Segmentation completed successfully for well ${well}"
     else
         echo "❌ Segmentation failed for well ${well}"
         exit 1
     fi
-    
+
     # Step 3: TRACKING
     echo "🎯 Step 3/4: Running tracking for well ${well}"
     tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \
@@ -857,13 +860,13 @@ process BUNDLED_WORKFLOW_IXM {
 process BUNDLED_STD_WORKFLOW {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     tag "BUNDLED_STD_WORKFLOW-${exp}_${well}"
-    
+
     // Resource requirements for the bundled process
     // These can be adjusted based on your cluster capacity
     cpus 17
     memory 20.GB
     time '8h'
-    
+
     // Process-specific resource hints (for monitoring)
     // MONTAGE: ~2 CPU, ~8GB RAM
     // ALIGN_MONTAGE_DFT: ~4 CPU, ~12GB RAM
@@ -888,6 +891,7 @@ process BUNDLED_STD_WORKFLOW {
           val(lower_area_thresh),
           val(upper_area_thresh),
           val(sd_scale_factor),
+          val(proximity_filter_radius),
           val(track_type),
           val(distance_threshold),
           val(target_channel),
@@ -974,16 +978,17 @@ process BUNDLED_STD_WORKFLOW {
     echo "🔬 Step 3/5: Running segmentation for well ${well}"
     segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \
     --img_norm_name ${img_norm_name} --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \
-    --sd_scale_factor ${sd_scale_factor} --chosen_wells ${well} --chosen_channels ${morphology_channel} \
+    --sd_scale_factor ${sd_scale_factor} --proximity_filter_radius ${proximity_filter_radius} \
+    --chosen_wells ${well} --chosen_channels ${morphology_channel} \
     --chosen_timepoints ${chosen_timepoints} --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
-    
+
     if [ \$? -eq 0 ]; then
         echo "✅ Segmentation completed successfully for well ${well}"
     else
         echo "❌ Segmentation failed for well ${well}"
         exit 1
     fi
-    
+
     # Step 4: TRACKING
     echo "🎯 Step 4/5: Running tracking for well ${well}"
     tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \

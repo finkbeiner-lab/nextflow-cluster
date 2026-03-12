@@ -21,6 +21,7 @@ norm_ch = Channel.of(params.img_norm_name)
 lower_ch = Channel.of(params.lower_area_thresh)
 upper_ch = Channel.of(params.upper_area_thresh)
 sd_ch = Channel.of(params.sd_scale_factor)
+proximity_radius_ch = Channel.of(params.proximity_filter_radius)
 // Read CSV platemap file -TODO Read from DB
 def csv_lines
 try {
@@ -239,7 +240,7 @@ workflow {
     if (params.DO_SEGMENTATION_MONTAGE) {
         register_flag = updatepaths_result.mix(register_result).collect()
         seg_ch = SEGMENTATION_MONTAGE(register_flag, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
-        well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
+        proximity_radius_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
         seg_ch.view { it }
         seg_result = SEGMENTATION_MONTAGE.out
     }
@@ -481,6 +482,7 @@ if (params.DO_STD_WORKFLOW) {
         .combine(lower_ch)
         .combine(upper_ch)
         .combine(sd_ch)
+        .combine(proximity_radius_ch)
         .combine(track_type_ch)
         .combine(distance_threshold_ch)
         .combine(target_channel_ch)
@@ -492,13 +494,13 @@ if (params.DO_STD_WORKFLOW) {
         .combine(overlay_montage_cell_ids_ch)
         .map { nestedTuple ->
             def flat = nestedTuple.flatten()
-            
+
             // Map to the BUNDLED_STD_WORKFLOW input order:
-            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle, 
+            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
             // timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
-            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-            // distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion, cell_ids
-            
+            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, proximity_filter_radius,
+            // track_type, distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion, cell_ids
+
             def exp               = flat[1]
             def tiletype          = flat[2]
             def montage_pattern   = flat[3]
@@ -514,28 +516,29 @@ if (params.DO_STD_WORKFLOW) {
             def lower_area_thresh = flat[13]
             def upper_area_thresh = flat[14]
             def sd_scale_factor   = flat[15]
-            def track_type        = flat[16]
-            def distance_threshold = flat[17]
-            def target_channel    = flat[18]
+            def proximity_filter_radius = flat[16]
+            def track_type        = flat[17]
+            def distance_threshold = flat[18]
+            def target_channel    = flat[19]
             def well              = flat[0]
-            def shift             = flat[19]
-            def contrast          = flat[20]
-            def tile              = flat[21]
-            def shift_dict        = flat[22]
-            def motion            = flat[23]
-            def cell_ids          = flat[24]
+            def shift             = flat[20]
+            def contrast          = flat[21]
+            def tile              = flat[22]
+            def shift_dict        = flat[23]
+            def motion            = flat[24]
+            def cell_ids          = flat[25]
 
             return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
                        timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
-                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-                       distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion, cell_ids)
+                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, proximity_filter_radius,
+                       track_type, distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion, cell_ids)
         }
-    
-  
+
+
 
     bundled_std_result_ch = BUNDLED_STD_WORKFLOW(combined_bundled_std_ch)
-    
-    
+
+
     bundled_std_result_ch.view { tuple ->
         def (well, flag) = tuple
         def bundle_end_time = System.currentTimeMillis()
@@ -543,7 +546,7 @@ if (params.DO_STD_WORKFLOW) {
         def total_time_ms = bundle_end_time - bundle_start_time
         def total_time_seconds = total_time_ms / 1000.0
         def total_time_minutes = total_time_seconds / 60.0
-        
+
         println "🎉 [${bundle_end_timestamp}] COMPLETED... BUNDLED_STD_WORKFLOW for well: $well (MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION → TRACKING → OVERLAY)"
         println "⏱️  Total time: ${total_time_seconds.round(1)}s (${total_time_minutes.round(2)} min)"
     }
@@ -577,6 +580,7 @@ if (params.DO_STD_WORKFLOW_IXM) {
         .combine(lower_ch)
         .combine(upper_ch)
         .combine(sd_ch)
+        .combine(proximity_radius_ch)
         .combine(track_type_ch)
         .combine(distance_threshold_ch)
         .combine(target_channel_ch)
@@ -586,13 +590,13 @@ if (params.DO_STD_WORKFLOW_IXM) {
         .combine(overlay_montage_cell_ids_ch)
         .map { nestedTuple ->
             def flat = nestedTuple.flatten()
-            
+
             // Map to the BUNDLED_WORKFLOW_IXM input order:
-            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle, 
+            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
             // timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
-            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-            // distance_threshold, target_channel, well, shift, contrast, motion, cell_ids
-            
+            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, proximity_filter_radius,
+            // track_type, distance_threshold, target_channel, well, shift, contrast, motion, cell_ids
+
             def exp               = flat[1]
             def tiletype          = flat[2]
             def montage_pattern   = flat[3]
@@ -608,19 +612,20 @@ if (params.DO_STD_WORKFLOW_IXM) {
             def lower_area_thresh = flat[13]
             def upper_area_thresh = flat[14]
             def sd_scale_factor   = flat[15]
-            def track_type        = flat[16]
-            def distance_threshold = flat[17]
-            def target_channel    = flat[18]
+            def proximity_filter_radius = flat[16]
+            def track_type        = flat[17]
+            def distance_threshold = flat[18]
+            def target_channel    = flat[19]
             def well              = flat[0]
-            def shift             = flat[19]
-            def contrast          = flat[20]
-            def motion            = flat[21]
-            def cell_ids          = flat[22]
+            def shift             = flat[20]
+            def contrast          = flat[21]
+            def motion            = flat[22]
+            def cell_ids          = flat[23]
 
             return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
                        timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
-                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-                       distance_threshold, target_channel, well, shift, contrast, motion, cell_ids)
+                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, proximity_filter_radius,
+                       track_type, distance_threshold, target_channel, well, shift, contrast, motion, cell_ids)
         }
     
   
@@ -668,6 +673,7 @@ if (params.DO_BUNDLED_STD_WORKFLOW) {
         .combine(lower_ch)
         .combine(upper_ch)
         .combine(sd_ch)
+        .combine(proximity_radius_ch)
         .combine(track_type_ch)
         .combine(distance_threshold_ch)
         .combine(target_channel_ch)
@@ -679,13 +685,13 @@ if (params.DO_BUNDLED_STD_WORKFLOW) {
         .combine(overlay_montage_cell_ids_ch)
         .map { nestedTuple ->
             def flat = nestedTuple.flatten()
-            
+
             // Map to the BUNDLED_STD_WORKFLOW input order:
-            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle, 
+            // exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
             // timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
-            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-            // distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion, cell_ids
-            
+            // img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, proximity_filter_radius,
+            // track_type, distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion, cell_ids
+
             def exp               = flat[1]
             def tiletype          = flat[2]
             def montage_pattern   = flat[3]
@@ -701,28 +707,29 @@ if (params.DO_BUNDLED_STD_WORKFLOW) {
             def lower_area_thresh = flat[13]
             def upper_area_thresh = flat[14]
             def sd_scale_factor   = flat[15]
-            def track_type        = flat[16]
-            def distance_threshold = flat[17]
-            def target_channel    = flat[18]
+            def proximity_filter_radius = flat[16]
+            def track_type        = flat[17]
+            def distance_threshold = flat[18]
+            def target_channel    = flat[19]
             def well              = flat[0]
-            def shift             = flat[19]
-            def contrast          = flat[20]
-            def tile              = flat[21]
-            def shift_dict        = flat[22]
-            def motion            = flat[23]
-            def cell_ids          = flat[24]
+            def shift             = flat[20]
+            def contrast          = flat[21]
+            def tile              = flat[22]
+            def shift_dict        = flat[23]
+            def motion            = flat[24]
+            def cell_ids          = flat[25]
 
             return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
                        timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
-                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, track_type,
-                       distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion, cell_ids)
+                       img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, proximity_filter_radius,
+                       track_type, distance_threshold, target_channel, well, shift, contrast, tile, shift_dict, motion, cell_ids)
         }
-    
-  
+
+
 
     bundled_std_result_ch = BUNDLED_STD_WORKFLOW(combined_bundled_std_ch)
-    
-    
+
+
     bundled_std_result_ch.view { tuple ->
         def (well, flag) = tuple
         def bundle_end_time = System.currentTimeMillis()
@@ -730,7 +737,7 @@ if (params.DO_BUNDLED_STD_WORKFLOW) {
         def total_time_ms = bundle_end_time - bundle_start_time
         def total_time_seconds = total_time_ms / 1000.0
         def total_time_minutes = total_time_seconds / 60.0
-        
+
         println "🎉 [${bundle_end_timestamp}] COMPLETED... BUNDLED_STD_WORKFLOW for well: $well (MONTAGE → ALIGN_MONTAGE_DFT → SEGMENTATION → TRACKING → OVERLAY)"
         println "⏱️  Total time: ${total_time_seconds.round(1)}s (${total_time_minutes.round(2)} min)"
     }

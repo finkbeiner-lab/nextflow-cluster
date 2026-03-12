@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import numpy as np
 import pandas as pd
 import tifffile
+from scipy.spatial import cKDTree
 from skimage import filters, measure
 
 from db_util import Ops
@@ -113,6 +114,10 @@ class Segmentation:
             'intensity_min', 'axis_major_length',
             'axis_minor_length',
         )
+
+        self.proximity_filter_radius: int = getattr(opt, 'proximity_filter_radius', 0)
+        if self.proximity_filter_radius > 0:
+            logger.warning(f'Proximity filter enabled: radius={self.proximity_filter_radius}px')
 
         self.Norm = Normalize(self.opt)
         _, self.analysisdir = self.Norm.get_raw_and_analysis_dir()
@@ -361,6 +366,7 @@ class Segmentation:
 
         props_df = pd.DataFrame(props)
         props_df, masks = self.filter_by_area_optimized(props_df, masks)
+        props_df, masks = self.filter_by_proximity(props_df, masks)
 
         mask_dir = os.path.join(self.analysisdir, self.mask_folder_name, row.well)
         maskpath: str = save_mask(masks, img_path, mask_dir)
@@ -434,6 +440,61 @@ class Segmentation:
         if to_delete:
             mask = np.isin(labelled_mask, list(to_delete))
             labelled_mask[mask] = 0
+        return props_df, labelled_mask
+
+    def filter_by_proximity(
+        self,
+        props_df: pd.DataFrame,
+        labelled_mask: np.ndarray,
+    ) -> Tuple[pd.DataFrame, np.ndarray]:
+        """Remove cells whose centroids are within *proximity_filter_radius* pixels of another cell.
+
+        Uses a KD-tree to efficiently find all centroid pairs closer than
+        the configured radius.  Every cell involved in at least one such
+        pair is removed (both partners), so only well-isolated cells
+        remain for downstream tracking.
+
+        Args:
+            props_df: DataFrame with ``centroid_weighted-0`` (y) and
+                ``centroid_weighted-1`` (x) columns, plus ``label``.
+            labelled_mask: 2-D integer array of labelled regions.
+
+        Returns:
+            Tuple of (filtered_props_df, updated_labelled_mask).
+        """
+        if self.proximity_filter_radius <= 0 or len(props_df) < 2:
+            return props_df, labelled_mask
+
+        centroids = props_df[['centroid_weighted-1', 'centroid_weighted-0']].values
+        tree = cKDTree(centroids)
+        pairs = tree.query_pairs(r=self.proximity_filter_radius)
+
+        if not pairs:
+            return props_df, labelled_mask
+
+        # Collect indices of all cells involved in any close pair
+        clumped_indices: set = set()
+        for i, j in pairs:
+            clumped_indices.add(i)
+            clumped_indices.add(j)
+
+        clumped_labels: set = set(props_df.iloc[list(clumped_indices)]['label'].values)
+
+        n_before = len(props_df)
+        props_df = props_df[~props_df['label'].isin(clumped_labels)]
+        n_removed = n_before - len(props_df)
+
+        logger.warning(
+            f'Proximity filter (r={self.proximity_filter_radius}px): '
+            f'removed {n_removed}/{n_before} clumped cells, '
+            f'{len(props_df)} remain'
+        )
+
+        # Zero out removed labels in the mask
+        if clumped_labels:
+            mask = np.isin(labelled_mask, list(clumped_labels))
+            labelled_mask[mask] = 0
+
         return props_df, labelled_mask
 
     def filter_by_area(
@@ -579,6 +640,8 @@ if __name__ == '__main__':
     parser.add_argument('--upper_area_thresh', default=36000, type=int, help="Upperbound for cell area. Remove cells with area greater than this value.")
     parser.add_argument('--sd_scale_factor', default=3.5, type=float, help="Standard Deviation (SD) scale factor if using sd_from_mean threshold.")
     parser.add_argument('--manual_thresh', default=0, type=int, help="Threshold if using manual threshold method.")
+    parser.add_argument('--proximity_filter_radius', default=0, type=int,
+                        help="Remove cells whose centroids are within this many pixels of another cell. 0 to disable.")
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle", default='include',
