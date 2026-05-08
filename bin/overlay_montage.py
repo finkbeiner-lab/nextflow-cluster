@@ -3,8 +3,8 @@
 
 Reads tracked-cell coordinates and IDs from a summary CSV produced by the
 tracking pipeline, loads the corresponding montage images, and renders
-green text labels with leader lines at each cell centroid.  Output images
-are saved as RGB PNGs.  Supports parallel processing across timepoints,
+white text labels with leader lines at each cell centroid.  Output images
+are saved as grayscale PNGs.  Supports parallel processing across timepoints,
 optional restriction to a subset of cell IDs (via a stable CSV), and
 well/timepoint filtering.
 """
@@ -27,7 +27,7 @@ class OverlayBatch:
     """Batch overlay of tracked cell IDs onto montaged microscopy images.
 
     Reads experiment metadata from the database, loads the tracking summary
-    CSV, and writes overlay PNGs (green text on greyscale) for each
+    CSV, and writes overlay PNGs (white text on greyscale) for each
     well/timepoint combination.
 
     Attributes:
@@ -75,7 +75,7 @@ class OverlayBatch:
             print(f"[INFO] Using MontagedImages directory: {montaged_path}")
 
         # When filtering by cell IDs (set or CSV), write to Overlay_Montages_selected_ids so we don't overwrite the full overlay
-        if getattr(self.opt, 'cell_ids', None) or getattr(self.opt, 'cell_ids_by_well_timepoint', None):
+        if getattr(self.opt, 'cell_ids', None) or getattr(self.opt, 'cell_ids_by_well_timepoint', None) is not None:
             self.overlay_root = os.path.join(self.experiment_root, "Overlay_Montages_selected_ids")
             print(f"[INFO] Selected cell IDs (or stable CSV) provided → output: {self.overlay_root}")
         else:
@@ -308,7 +308,7 @@ def overlay_single_timepoint(
         img[img > 128] = 128
         img = np.uint8(img)
 
-        # Create text + leader-line overlay (single channel, 255 = green in final RGB)
+        # Create text + leader-line overlay (single channel, 255 = white in final grayscale)
         text_img = np.zeros_like(img, dtype=np.uint8)
         text_pil = Image.fromarray(text_img)
         draw = ImageDraw.Draw(text_pil)
@@ -328,9 +328,8 @@ def overlay_single_timepoint(
             draw.text((x, y), str(cellid), fill=255, font=font)
 
         text_img = np.array(text_pil)
-        # Clip green so line/text (255) stay bright; img can be up to 128 so R+G would overflow uint8
-        green = np.clip(img.astype(np.int32) + text_img, 0, 255).astype(np.uint8)
-        overlay_img = np.dstack([img, green, img])
+        # Merge text/lines (white) onto the grayscale base image
+        overlay_img = np.clip(img.astype(np.int32) + text_img, 0, 255).astype(np.uint8)
 
         # Save overlay
         overlaydir = os.path.join(overlay_root, well)

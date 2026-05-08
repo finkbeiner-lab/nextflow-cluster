@@ -1,5 +1,9 @@
 #!/usr/bin/env nextflow
 
+// Defaults for params that may be missing from older user configs
+if (!params.containsKey('proximity_filter_radius')) { params.proximity_filter_radius = 0 }
+if (!params.containsKey('overlay_montage_cell_ids')) { params.overlay_montage_cell_ids = '' }
+if (!params.containsKey('DO_BUNDLED_STD_WORKFLOW'))  { params.DO_BUNDLED_STD_WORKFLOW = false }
 
 input_path_ch = Channel.of(params.input_path)
 output_path_ch = Channel.of(params.output_path)
