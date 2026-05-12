@@ -241,7 +241,10 @@ class Intro:
             logger.warning(f'Channels found in filenames (after parsing): {sorted(channels_after_parsing)}')
             
             # Show sample filenames for each channel to debug parsing
-            for ch in ['FITC', 'DAPI', 'RFP', 'Cy5']:
+            for ch in ['CloverWide', 'Cy3', 'Cy5', 'DAPI', 'FITC',
+                       'Hyper400', 'Hyper500', 'MitoKeimaAcidic', 'MitoKeimaNeutral',
+                       'RFP', 'TL10', 'TL100', 'TL25', 'TL50', 'TLOff',
+                       'TexasRed624', 'mApple593', 'mK02']:
                 ch_files = files_df[files_df['channel'] == ch]
                 if len(ch_files) > 0:
                     print(f'   {ch}: {len(ch_files)} files found. Sample: {os.path.basename(ch_files.iloc[0]["filename"])}')
