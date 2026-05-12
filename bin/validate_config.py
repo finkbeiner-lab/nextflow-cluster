@@ -1,286 +1,404 @@
 #!/usr/bin/env python3
-"""
-Validation script for finkbeiner.config file.
-Checks for whitespace issues, unexpected backslashes, and other common configuration errors.
+"""Validation script for finkbeiner.config (Nextflow config).
+
+This validator parses each non-comment line and checks that it has the
+exact form::
+
+    params.NAME = VALUE        // optional comment
+
+where VALUE is a quoted string, a number, a boolean, ``null``, or a
+balanced list.  Anything else — stray characters, broken quotes, smart
+quotes, hidden Unicode, BOM, duplicate parameters, or comments using
+``#`` instead of ``//`` — is flagged.
 """
 
-import sys
-import re
+from __future__ import annotations
+
 import os
+import re
+import sys
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional, Tuple
+
+# ---------------------------------------------------------------------------
+# Character classes that catch invisible / look-alike issues
+# ---------------------------------------------------------------------------
+SMART_QUOTES = {
+    '‘': "'",  # LEFT SINGLE QUOTATION MARK
+    '’': "'",  # RIGHT SINGLE QUOTATION MARK
+    '“': '"',  # LEFT DOUBLE QUOTATION MARK
+    '”': '"',  # RIGHT DOUBLE QUOTATION MARK
+}
+INVISIBLE_CHARS = {
+    ' ': 'NO-BREAK SPACE',
+    '​': 'ZERO WIDTH SPACE',
+    '‌': 'ZERO WIDTH NON-JOINER',
+    '‍': 'ZERO WIDTH JOINER',
+    '﻿': 'BYTE ORDER MARK / ZERO WIDTH NO-BREAK SPACE',
+}
+
+PARAM_NAME_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 
-def check_trailing_whitespace(lines: List[str], filename: str) -> List[dict]:
-    """Check for trailing whitespace on lines (spaces/tabs before newline).
+def add(issues: List[dict], line_num: int, col: Optional[int],
+        category: str, message: str, content: str) -> None:
+    """Append a uniformly-shaped issue dict."""
+    issues.append({
+        'line': line_num,
+        'col': col,
+        'type': category,
+        'message': message,
+        'content': content,
+    })
 
-    Args:
-        lines: Raw lines read from the config file (including newlines).
-        filename: Path to the config file (for reporting context).
 
-    Returns:
-        List of issue dicts with keys ``line``, ``type``, ``message``,
-        ``content``.
-    """
-    issues = []
+# ---------------------------------------------------------------------------
+# Pre-parse checks (run on raw bytes / raw strings)
+# ---------------------------------------------------------------------------
+
+def check_encoding_and_bom(path: str, issues: List[dict]) -> Optional[str]:
+    """Return decoded text or None on failure; record BOM/encoding issues."""
+    with open(path, 'rb') as f:
+        raw = f.read()
+
+    if raw.startswith(b'\xef\xbb\xbf'):
+        add(issues, 1, 1, 'bom',
+            'File starts with a UTF-8 BOM (byte-order mark). Remove it.',
+            repr(raw[:3]))
+        raw = raw[3:]
+
+    try:
+        return raw.decode('utf-8')
+    except UnicodeDecodeError as e:
+        # Find the offending byte's line number
+        prefix = raw[:e.start]
+        line_num = prefix.count(b'\n') + 1
+        add(issues, line_num, None, 'non_utf8',
+            f'File contains non-UTF-8 byte at offset {e.start}: {raw[e.start:e.start+1]!r}',
+            repr(raw[max(0, e.start - 10):e.start + 10]))
+        return raw.decode('utf-8', errors='replace')
+
+
+def check_invisible_chars(lines: List[str], issues: List[dict]) -> None:
+    """Flag smart quotes, NBSP, zero-width chars anywhere in the file."""
     for line_num, line in enumerate(lines, 1):
-        # Check for trailing spaces or tabs (not just the newline character)
-        stripped = line.rstrip('\n\r')
-        if stripped != line.rstrip() or (stripped and stripped[-1] in ' \t'):
-            # Only flag if there are actual spaces/tabs before the newline
-            if stripped.endswith(' ') or stripped.endswith('\t'):
-                issues.append({
-                    'line': line_num,
-                    'type': 'trailing_whitespace',
-                    'message': f"Line {line_num} has trailing whitespace (spaces or tabs)",
-                    'content': repr(line)
-                })
-    return issues
+        for col, ch in enumerate(line, 1):
+            if ch in SMART_QUOTES:
+                add(issues, line_num, col, 'smart_quote',
+                    f"Smart quote {ch!r} (U+{ord(ch):04X}) at column {col}. "
+                    f"Replace with ASCII {SMART_QUOTES[ch]!r}.",
+                    repr(line.rstrip('\n')))
+            elif ch in INVISIBLE_CHARS:
+                add(issues, line_num, col, 'invisible_char',
+                    f"Invisible character at column {col}: {INVISIBLE_CHARS[ch]} (U+{ord(ch):04X}).",
+                    repr(line.rstrip('\n')))
 
 
-def check_unexpected_backslashes(lines: List[str], filename: str) -> List[dict]:
-    """Check for unexpected backslashes that might cause issues.
+# ---------------------------------------------------------------------------
+# Line-level structural checks
+# ---------------------------------------------------------------------------
 
-    Args:
-        lines: Raw lines read from the config file.
-        filename: Path to the config file (for reporting context).
+def strip_inline_comment(text: str) -> str:
+    """Remove a trailing ``//...`` comment while respecting quotes.
 
-    Returns:
-        List of issue dicts describing each problematic backslash.
+    Walks the string char-by-char so that ``//`` inside a quoted value
+    (e.g. ``'http://foo'``) is not treated as the start of a comment.
     """
-    issues = []
-    for line_num, line in enumerate(lines, 1):
-        # Skip comment-only lines
-        stripped = line.strip()
-        if stripped.startswith('//') or not stripped:
+    in_single = False
+    in_double = False
+    i = 0
+    while i < len(text):
+        ch = text[i]
+        if ch == '\\' and i + 1 < len(text):
+            i += 2  # skip escaped char
             continue
-        
-        # Check for backslashes that aren't part of valid paths or escape sequences
-        # In Nextflow config, backslashes in paths are typically not needed on Linux
-        # But we should flag standalone backslashes that might be accidental
-        if '\\' in line:
-            # Check if it's a valid escape sequence or path
-            # Valid cases: \n, \t, \r, \\, or part of a Windows path (though this is Linux)
-            # Invalid: standalone \ at end of line, or \ followed by unexpected char
-            
-            # Check for standalone backslash at end of line (before comment)
-            if line.rstrip().endswith('\\') and not line.rstrip().endswith('\\\\'):
-                issues.append({
-                    'line': line_num,
-                    'type': 'unexpected_backslash',
-                    'message': f"Line {line_num} ends with a backslash (might be accidental line continuation)",
-                    'content': repr(line)
-                })
-            
-            # Check for backslash not in quotes (outside string context)
-            # This is tricky - we'll look for backslashes that aren't in quoted strings
-            # Simple check: backslash not followed by n, t, r, or another backslash
-            matches = list(re.finditer(r'\\(?![ntr\\])', line))
-            for match in matches:
-                # Check if we're inside quotes
-                before_match = line[:match.start()]
-                single_quotes = before_match.count("'") - before_match.count("\\'")
-                double_quotes = before_match.count('"') - before_match.count('\\"')
-                
-                # If we're inside quotes, it might be okay (could be path)
-                # But flag it anyway as potentially problematic on Linux
-                if single_quotes % 2 == 0 and double_quotes % 2 == 0:
-                    # Not inside quotes - this is definitely suspicious
-                    issues.append({
-                        'line': line_num,
-                        'type': 'unexpected_backslash',
-                        'message': f"Line {line_num} contains a backslash outside of quotes (column {match.start() + 1})",
-                        'content': repr(line)
-                    })
-                else:
-                    # Inside quotes - might be Windows path, flag as warning
-                    issues.append({
-                        'line': line_num,
-                        'type': 'backslash_in_path',
-                        'message': f"Line {line_num} contains backslash in quoted string (might be Windows path on Linux system)",
-                        'content': repr(line)
-                    })
-    
-    return issues
+        if not in_double and ch == "'":
+            in_single = not in_single
+        elif not in_single and ch == '"':
+            in_double = not in_double
+        elif not in_single and not in_double:
+            if ch == '/' and i + 1 < len(text) and text[i + 1] == '/':
+                return text[:i].rstrip()
+        i += 1
+    return text.rstrip()
 
 
-def check_whitespace_in_values(lines: List[str], filename: str) -> List[dict]:
-    """Check for problematic whitespace in parameter values.
+def validate_value(value: str) -> Optional[str]:
+    """Return None if *value* parses cleanly, else an error message.
 
-    Args:
-        lines: Raw lines read from the config file.
-        filename: Path to the config file (for reporting context).
-
-    Returns:
-        List of issue dicts for whitespace-in-value problems.
+    Accepts: quoted strings, integers/floats (incl. scientific), booleans,
+    ``null``, or balanced lists ``[...]``.  Anything trailing the value
+    (e.g. ``10x``, ``10 5``) is rejected.
     """
-    issues = []
-    for line_num, line in enumerate(lines, 1):
+    v = value.strip()
+    if not v:
+        return "Value is empty"
+
+    # Quoted string — must start and end with the same quote, no unescaped
+    # quotes in between.
+    if v[0] in ("'", '"'):
+        quote = v[0]
+        if len(v) < 2 or v[-1] != quote:
+            return f"Quoted value not closed with matching {quote}"
+        inner = v[1:-1]
+        # Reject unescaped quote of the same type inside
+        i = 0
+        while i < len(inner):
+            if inner[i] == '\\' and i + 1 < len(inner):
+                i += 2
+                continue
+            if inner[i] == quote:
+                return f"Unescaped {quote} inside quoted value at position {i+1}"
+            i += 1
+        return None
+
+    # List literal
+    if v.startswith('['):
+        if not v.endswith(']'):
+            return "List value is not closed with ']'"
+        depth = 0
+        in_single = False
+        in_double = False
+        i = 0
+        while i < len(v):
+            ch = v[i]
+            if ch == '\\' and i + 1 < len(v):
+                i += 2
+                continue
+            if not in_double and ch == "'":
+                in_single = not in_single
+            elif not in_single and ch == '"':
+                in_double = not in_double
+            elif not in_single and not in_double:
+                if ch == '[':
+                    depth += 1
+                elif ch == ']':
+                    depth -= 1
+                    if depth == 0 and i != len(v) - 1:
+                        return f"Stray characters after closing ']': {v[i+1:]!r}"
+            i += 1
+        if depth != 0:
+            return f"Unbalanced brackets in list (depth={depth})"
+        if in_single or in_double:
+            return "Unclosed quote inside list value"
+        return None
+
+    # Boolean / null
+    if v in ('true', 'false', 'null'):
+        return None
+
+    # Number (int, float, scientific)
+    if re.fullmatch(r'-?\d+(\.\d+)?([eE][+-]?\d+)?', v):
+        return None
+
+    return (f"Unrecognised value {v!r}. Expected a quoted string, number, "
+            f"boolean, null, or list.")
+
+
+def check_lines(lines: List[str], issues: List[dict]) -> None:
+    """Parse each non-comment, non-blank line as ``params.NAME = VALUE``."""
+    seen_params: Dict[str, int] = {}
+    in_block_comment = False
+
+    for line_num, raw_line in enumerate(lines, 1):
+        line = raw_line.rstrip('\n').rstrip('\r')
+
+        # Handle /* ... */ block comments (multi-line allowed)
+        if in_block_comment:
+            end = line.find('*/')
+            if end >= 0:
+                in_block_comment = False
+                line = line[end + 2:]
+            else:
+                continue
+        # Strip any embedded /* ... */ that opens and closes on this line
+        while True:
+            start = line.find('/*')
+            if start < 0:
+                break
+            end = line.find('*/', start + 2)
+            if end < 0:
+                in_block_comment = True
+                line = line[:start]
+                break
+            line = line[:start] + line[end + 2:]
+
+        # Blank or // comment-only line
         stripped = line.strip()
         if not stripped or stripped.startswith('//'):
+            # Trailing whitespace check still applies
+            if raw_line.rstrip('\n').rstrip('\r') != line.rstrip() and stripped:
+                pass  # comment lines: trailing whitespace not a problem
             continue
-        
-        # Check for parameter assignments
-        if '=' in line:
-            parts = line.split('=', 1)
-            if len(parts) == 2:
-                param_name = parts[0].strip()
-                param_value = parts[1]
-                
-                # Check for leading/trailing whitespace in quoted values
-                # This looks for patterns like: param = ' value ' or param = " value "
-                quoted_value_match = re.search(r"['\"]([^'\"]*)['\"]", param_value)
-                if quoted_value_match:
-                    quoted_content = quoted_value_match.group(1)
-                    if quoted_content.startswith(' ') or quoted_content.endswith(' '):
-                        issues.append({
-                            'line': line_num,
-                            'type': 'whitespace_in_quoted_value',
-                            'message': f"Line {line_num}: Parameter '{param_name}' has leading/trailing whitespace in quoted value",
-                            'content': repr(line)
-                        })
-                
-                # Check for tabs in values (might cause issues)
-                if '\t' in param_value:
-                    issues.append({
-                        'line': line_num,
-                        'type': 'tab_in_value',
-                        'message': f"Line {line_num}: Parameter '{param_name}' contains tab character",
-                        'content': repr(line)
-                    })
-    
-    return issues
 
+        # Tabs vs spaces in leading whitespace — flag tabs (Nextflow style)
+        leading = line[:len(line) - len(line.lstrip())]
+        if '\t' in leading:
+            add(issues, line_num, leading.index('\t') + 1, 'tab_indent',
+                "Line uses tab indentation; use spaces.",
+                repr(raw_line.rstrip('\n')))
 
-def check_malformed_assignments(lines: List[str], filename: str) -> List[dict]:
-    """Check for malformed parameter assignments.
+        # Trailing whitespace on the code part
+        if raw_line.rstrip('\n').rstrip('\r').rstrip(' \t') != raw_line.rstrip('\n').rstrip('\r'):
+            add(issues, line_num, None, 'trailing_whitespace',
+                "Line has trailing whitespace.",
+                repr(raw_line.rstrip('\n')))
 
-    Args:
-        lines: Raw lines read from the config file.
-        filename: Path to the config file (for reporting context).
-
-    Returns:
-        List of issue dicts for lines with multiple ``=`` signs.
-    """
-    issues = []
-    for line_num, line in enumerate(lines, 1):
-        stripped = line.strip()
-        if not stripped or stripped.startswith('//'):
+        # `#` comments are not valid in Nextflow config
+        code_no_comment = strip_inline_comment(stripped)
+        if code_no_comment.lstrip().startswith('#'):
+            add(issues, line_num, None, 'hash_comment',
+                "Use '//' for comments, not '#'.",
+                repr(raw_line.rstrip('\n')))
             continue
-        
-        # Check for parameter assignments (only in non-comment part)
-        # Split on comment marker to ignore equals in comments
-        if '//' in line:
-            code_part = line.split('//')[0]
+
+        # Strip a trailing // comment for parsing
+        code = strip_inline_comment(line)
+        code_stripped = code.strip()
+        if not code_stripped:
+            continue
+
+        # Must start with "params."
+        if not code_stripped.startswith('params.'):
+            add(issues, line_num, None, 'not_a_params_line',
+                f"Line does not start with 'params.': {code_stripped!r}",
+                repr(raw_line.rstrip('\n')))
+            continue
+
+        # Split on the first '=' that is NOT inside quotes
+        eq_pos = _find_top_level_eq(code_stripped)
+        if eq_pos is None:
+            add(issues, line_num, None, 'missing_equals',
+                "Parameter line has no '=' assignment.",
+                repr(raw_line.rstrip('\n')))
+            continue
+
+        # Check for `==` typo
+        if eq_pos + 1 < len(code_stripped) and code_stripped[eq_pos + 1] == '=':
+            add(issues, line_num, eq_pos + 1, 'double_equals',
+                "Use a single '=' for assignment, not '=='.",
+                repr(raw_line.rstrip('\n')))
+            continue
+
+        lhs = code_stripped[:eq_pos].strip()
+        rhs = code_stripped[eq_pos + 1:].strip()
+
+        # LHS must be "params.NAME" — validate NAME
+        if not lhs.startswith('params.'):
+            add(issues, line_num, None, 'bad_lhs',
+                f"Left-hand side must be 'params.NAME', got {lhs!r}",
+                repr(raw_line.rstrip('\n')))
+            continue
+        name = lhs[len('params.'):]
+        if not PARAM_NAME_RE.match(name):
+            add(issues, line_num, None, 'bad_param_name',
+                f"Invalid parameter name {name!r}. Use letters, digits, underscore; "
+                f"cannot start with a digit.",
+                repr(raw_line.rstrip('\n')))
+            continue
+
+        # Validate RHS
+        err = validate_value(rhs)
+        if err:
+            add(issues, line_num, None, 'bad_value',
+                f"params.{name}: {err}",
+                repr(raw_line.rstrip('\n')))
+            continue
+
+        # Duplicate detection
+        if name in seen_params:
+            add(issues, line_num, None, 'duplicate_param',
+                f"Parameter 'params.{name}' is defined again (first defined on line {seen_params[name]}).",
+                repr(raw_line.rstrip('\n')))
         else:
-            code_part = line
-        
-        if '=' in code_part:
-            # Check for multiple equals signs in the code part (might be accidental)
-            if code_part.count('=') > 1:
-                issues.append({
-                    'line': line_num,
-                    'type': 'multiple_equals',
-                    'message': f"Line {line_num} contains multiple '=' signs in parameter assignment",
-                    'content': repr(line)
-                })
-    
-    return issues
+            seen_params[name] = line_num
 
 
-def check_empty_lines_with_whitespace(lines: List[str], filename: str) -> List[dict]:
-    """Check for lines that appear empty but contain whitespace.
+def _find_top_level_eq(s: str) -> Optional[int]:
+    """Return the index of the first ``=`` that is NOT inside quotes/brackets."""
+    in_single = False
+    in_double = False
+    depth = 0
+    i = 0
+    while i < len(s):
+        ch = s[i]
+        if ch == '\\' and i + 1 < len(s):
+            i += 2
+            continue
+        if not in_double and ch == "'":
+            in_single = not in_single
+        elif not in_single and ch == '"':
+            in_double = not in_double
+        elif not in_single and not in_double:
+            if ch == '[':
+                depth += 1
+            elif ch == ']':
+                depth -= 1
+            elif ch == '=' and depth == 0:
+                return i
+        i += 1
+    return None
 
-    Args:
-        lines: Raw lines read from the config file.
-        filename: Path to the config file (for reporting context).
 
-    Returns:
-        List of issue dicts for blank lines containing hidden whitespace.
-    """
-    issues = []
-    for line_num, line in enumerate(lines, 1):
-        if line.strip() == '' and line != '\n' and line != '':
-            issues.append({
-                'line': line_num,
-                'type': 'empty_line_with_whitespace',
-                'message': f"Line {line_num} appears empty but contains whitespace",
-                'content': repr(line)
-            })
-    return issues
-
+# ---------------------------------------------------------------------------
+# Main entry
+# ---------------------------------------------------------------------------
 
 def validate_config_file(config_path: str) -> int:
-    """Run all validation checks on a Nextflow config file.
-
-    Args:
-        config_path: Path to the config file to validate.
-
-    Returns:
-        Exit code: 0 if no issues found, 1 if issues detected or file
-        not found.
-    """
+    """Run all checks. Return 0 if clean, 1 if any issues found."""
     if not os.path.exists(config_path):
         print(f"ERROR: Config file not found: {config_path}", file=sys.stderr)
         return 1
-    
-    with open(config_path, 'r', encoding='utf-8') as f:
-        lines = f.readlines()
-    
-    all_issues = []
-    
-    # Run all checks
-    all_issues.extend(check_trailing_whitespace(lines, config_path))
-    all_issues.extend(check_unexpected_backslashes(lines, config_path))
-    all_issues.extend(check_whitespace_in_values(lines, config_path))
-    all_issues.extend(check_malformed_assignments(lines, config_path))
-    all_issues.extend(check_empty_lines_with_whitespace(lines, config_path))
-    
-    # Report issues
-    if all_issues:
-        print(f"\n{'='*80}")
-        print(f"CONFIG VALIDATION REPORT: {config_path}")
-        print(f"{'='*80}\n")
-        
-        # Group issues by type
-        issues_by_type = {}
-        for issue in all_issues:
-            issue_type = issue['type']
-            if issue_type not in issues_by_type:
-                issues_by_type[issue_type] = []
-            issues_by_type[issue_type].append(issue)
-        
-        # Print summary
-        print(f"Found {len(all_issues)} issue(s) across {len(issues_by_type)} category(ies):\n")
-        
-        for issue_type, type_issues in sorted(issues_by_type.items()):
-            print(f"\n{issue_type.upper().replace('_', ' ')} ({len(type_issues)} issue(s)):")
-            print("-" * 80)
-            for issue in type_issues:
-                print(f"  Line {issue['line']:4d}: {issue['message']}")
-                print(f"           Content: {issue['content']}")
-        
-        print(f"\n{'='*80}")
-        print("Please review and fix these issues before running your experiment.")
-        print(f"{'='*80}\n")
-        return 1
-    else:
-        print(f"\n✓ Config file validation passed: {config_path}")
-        print("  No whitespace or backslash issues detected.\n")
+
+    issues: List[dict] = []
+    text = check_encoding_and_bom(config_path, issues)
+    if text is None:
+        text = ''
+
+    # Preserve line numbering — splitlines(keepends=True) makes BOM-affected
+    # cases align with the raw line indexing.
+    lines = text.splitlines(keepends=False)
+
+    check_invisible_chars(lines, issues)
+    check_lines(lines, issues)
+
+    if not issues:
+        print(f"\n[OK] Config file validation passed: {config_path}\n")
         return 0
+
+    print(f"\n{'=' * 80}")
+    print(f"CONFIG VALIDATION REPORT: {config_path}")
+    print(f"{'=' * 80}\n")
+
+    issues.sort(key=lambda i: (i['line'], i.get('col') or 0))
+    by_type: Dict[str, List[dict]] = {}
+    for issue in issues:
+        by_type.setdefault(issue['type'], []).append(issue)
+
+    print(f"Found {len(issues)} issue(s) across {len(by_type)} categor{'y' if len(by_type) == 1 else 'ies'}:\n")
+    for cat in sorted(by_type):
+        cat_issues = by_type[cat]
+        print(f"\n{cat.upper().replace('_', ' ')} ({len(cat_issues)} issue(s)):")
+        print('-' * 80)
+        for issue in cat_issues:
+            loc = f"Line {issue['line']:4d}"
+            if issue.get('col'):
+                loc += f", col {issue['col']}"
+            print(f"  {loc}: {issue['message']}")
+            print(f"           Content: {issue['content']}")
+
+    print(f"\n{'=' * 80}")
+    print("Fix these issues before running the pipeline.")
+    print(f"{'=' * 80}\n")
+    return 1
 
 
 def main() -> None:
-    """Main entry point.  Reads config path from argv or defaults to cwd."""
-    # Config path: use argument if given; otherwise use current working directory
-    # so it works when run from the directory where sbatch was run (or any project copy)
     if len(sys.argv) > 1:
         config_path = sys.argv[1]
     else:
         config_path = str(Path.cwd() / 'finkbeiner.config')
-    
-    exit_code = validate_config_file(config_path)
-    sys.exit(exit_code)
+    sys.exit(validate_config_file(config_path))
 
 
 if __name__ == '__main__':
