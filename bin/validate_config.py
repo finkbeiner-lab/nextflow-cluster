@@ -12,8 +12,6 @@ quotes, hidden Unicode, BOM, duplicate parameters, or comments using
 ``#`` instead of ``//`` — is flagged.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import sys
