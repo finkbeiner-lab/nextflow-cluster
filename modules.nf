@@ -1,7 +1,7 @@
 #!/usr/bin/env nextflow
 
-params.greeting = 'Hello world!'
-greeting_ch = Channel.of(params.greeting)
+// params.greeting = 'Hello world!'
+// greeting_ch = Channel.of(params.greeting)
 
 
 
@@ -403,7 +403,7 @@ process PLATEMONTAGE {
 
 process CNN {
     containerOptions "--gpus all --mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    maxForks = 1
+    maxForks 1
 
     input:
     val ready
@@ -494,6 +494,7 @@ process SPLITLETTERS {
     output:
     path 'chunk_*'
 
+    script:
     """
     printf '$x' | split -b 6 - chunk_
     """
@@ -506,16 +507,13 @@ process CONVERTTOUPPER {
     output:
     stdout
 
+    script:
     """
-    cat $y | tr '[a-z]' '[A-Z]' 
+    cat $y | tr '[a-z]' '[A-Z]'
     """
 }
 
-workflow {
-    letters_ch = SPLITLETTERS(greeting_ch)
-    results_ch = CONVERTTOUPPER(letters_ch.flatten())
-    results_ch.view{ it }
-}
+// Test workflow removed for v2 parser compatibility
 // KS edit to include overlays
 process OVERLAY {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
@@ -660,7 +658,7 @@ process SEGMENTATION_MONTAGE {
 process TRACKING_MONTAGE {
 
     tag "$well"
-    echo = true
+    debug true
     
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
 
@@ -722,7 +720,7 @@ process BUNDLED_WORKFLOW_IXM {
     // Galaxy CPU nodes: 28 cores, ~377 GB RAM (fb-docker-compute*, fb-galaxy-cpu*)
     // Per well: 4 cpus → 7 wells/node (28 cpus); with QOSMaxNodePerUserLimit=2 → 14 wells concurrent
     // MONTAGE ~2 CPU, SEGMENTATION ~4 CPU, TRACKING ~2 CPU, OVERLAY ~1 CPU → 4 cpus
-    cpus 4
+    cpus 1
     memory 20.GB
     time '8h'
 

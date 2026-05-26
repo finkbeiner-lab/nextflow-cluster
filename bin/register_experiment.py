@@ -77,7 +77,8 @@ class Intro:
             print(files_df['burstindex']=='s8')
             print(files_df['zstep']=='s8')
 
-            files_df[['timepoint', 'tile', 'burstindex', 'zstep']] = files_df[['timepoint', 'tile', 'burstindex', 'zstep']].astype(int)
+            for col in ['timepoint', 'tile', 'burstindex', 'zstep']:
+                files_df[col] = files_df[col].astype(str).str.extract(r'(\d+)').fillna(0).astype(int)
             files_df.sort_values(by=['well', 'timepoint', 'channel', 'tile', 'burstindex', 'zstep'], inplace=True)
             #files_df.sort_index(level=['well', 'timepoint', 'channel', 'tile', 'burstindex', 'zstep'], inplace=True)
         elif robo_num == 3:
@@ -236,9 +237,9 @@ class Intro:
         
         # Debug: Check what channels are in files_df immediately after parsing
         if 'channel' in files_df.columns:
-            channels_after_parsing = files_df['channel'].unique()
-            print(f'📊 Channels found in filenames (after parsing, before any filtering): {sorted(channels_after_parsing)}')
-            logger.warning(f'Channels found in filenames (after parsing): {sorted(channels_after_parsing)}')
+            channels_after_parsing = [c for c in files_df['channel'].unique() if c is not None]
+            print(f'Channels found in filenames (after parsing, before any filtering): {sorted(x for x in channels_after_parsing if x is not None)}')
+            logger.warning(f'Channels found in filenames (after parsing): {sorted(x for x in channels_after_parsing if x is not None)}')
             
             # Show sample filenames for each channel to debug parsing
             for ch in ['CloverWide', 'Cy3', 'Cy5', 'DAPI', 'FITC',
@@ -278,9 +279,9 @@ class Intro:
         # Debug: Check what channels are in files_df before channel filtering
         channels_before_channel_filter = files_df['channel'].unique() if 'channel' in files_df.columns else []
         print(f'\n{"="*80}')
-        print(f'📊 Channels in files_df (before channel filtering): {sorted(channels_before_channel_filter)}')
+        print(f'📊 Channels in files_df (before channel filtering): {sorted(x for x in channels_before_channel_filter if x is not None)}')
         print(f'📊 Total files before channel filtering: {len(files_df)}')
-        logger.warning(f'Channels in files_df (before channel filtering): {sorted(channels_before_channel_filter)}')
+        logger.warning(f'Channels in files_df (before channel filtering): {sorted(x for x in channels_before_channel_filter if x is not None)}')
         
         user_chosen_channels = args.chosen_channels.strip()
         print(f'🔍 Filtering channels with: chosen_channels="{user_chosen_channels}", toggle="{args.channels_toggle}"')
@@ -290,14 +291,14 @@ class Intro:
         
         # Debug: Check what channels remain after filtering
         channels_after_filter = files_df['channel'].unique() if 'channel' in files_df.columns else []
-        print(f'📊 Channels in files_df (after filtering): {sorted(channels_after_filter)}')
+        print(f'📊 Channels in files_df (after filtering): {sorted(x for x in channels_after_filter if x is not None)}')
         print(f'📊 Total files after filtering: {len(files_df)}')
         print(f'{"="*80}\n')
-        logger.warning(f'Channels in files_df (after filtering): {sorted(channels_after_filter)}')
+        logger.warning(f'Channels in files_df (after filtering): {sorted(x for x in channels_after_filter if x is not None)}')
         
         # Show breakdown by channel
         if 'channel' in files_df.columns:
-            for ch in sorted(channels_after_filter):
+            for ch in sorted(x for x in channels_after_filter if x is not None):
                 count = len(files_df[files_df['channel'] == ch])
                 print(f'   {ch}: {count} files')
         
@@ -404,8 +405,8 @@ class Intro:
         
         # Debug: Check what channels are in files_df
         channels_in_files_df = files_df['channel'].unique() if 'channel' in files_df.columns else []
-        print(f'📊 Channels in files_df for tiledata: {sorted(channels_in_files_df)}')
-        logger.warning(f'Channels in files_df for tiledata: {sorted(channels_in_files_df)}')
+        print(f'📊 Channels in files_df for tiledata: {sorted(x for x in channels_in_files_df if x is not None)}')
+        logger.warning(f'Channels in files_df for tiledata: {sorted(x for x in channels_in_files_df if x is not None)}')
         
         channel_uuid_dict ={}
 
