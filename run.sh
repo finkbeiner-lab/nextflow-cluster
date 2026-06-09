@@ -3,7 +3,7 @@
 # Slurm job options
 #SBATCH --job-name=nextflow-run
 #SBATCH --time=08:00:00
-#SBATCH -N 2
+#SBATCH -N 1
 #SBATCH --output=/dev/null
 ##SBATCH --gres=gpu:v100:1
 #SBATCH --distribution=block:block
@@ -59,6 +59,15 @@ echo "Log file: ${LOG_FILE}"
 # Disable color output in Nextflow
 export NXF_CLI_COLOR=false
 
+# Use local nextflow — prepend USER_DIR to PATH so it takes priority
+LOCAL_NF="${USER_DIR}/nextflow"
+if [ ! -x "${LOCAL_NF}" ]; then
+    echo "Installing nextflow locally..."
+    curl -fsSL https://get.nextflow.io -o "${LOCAL_NF}"
+    chmod +x "${LOCAL_NF}"
+fi
+export PATH="${USER_DIR}:${PATH}"
+
 # Log environment info
 echo "================================="
 echo "Starting job on node: $(hostname)"
@@ -113,8 +122,9 @@ else
     exit 1
 fi
 
-# Run Nextflow — pipeline.nf is in INSTALL_DIR, config + all output in USER_DIR
-nextflow run "${INSTALL_DIR}/pipeline.nf" \
+# Run Nextflow — pipeline.nf is in USER_DIR, config + all output in USER_DIR
+export APPTAINER_BIND="/gladstone/finkbeiner:/gladstone/finkbeiner:rw"
+nextflow run "${USER_DIR}/pipeline.nf" \
   -with-apptainer "${CONTAINER}" \
   -c "${CONFIG_FILE}" \
   -work-dir "${USER_DIR}/work_${SLURM_JOB_ID:-$$}" \
