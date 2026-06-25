@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Update path on database after moving from TM
 """
 from sql import Database
@@ -11,9 +12,11 @@ class UpdatePath:
     def __init__(self, opt):
         self.opt = opt
         self.Db = Database()
-        self.robofolder = dict(TM='ThinkingMicroscope', ROBO4='Robo4Images',ROBO3='Robo3Images')
+        self.robofolder = dict(TM='ThinkingMicroscope', ROBO4='Robo4Images', ROBO3='Robo3Images', IXM='IXM4Galaxy', ROBO5='Robo5Images')
         # self.origfolder = dict(TM=['D:/Images', 'X:'], ROBO4=['E:/Images'],ROBO3=['C:/Test']) #Original
-        self.origfolder = dict(TM=['D:/Images', 'Z:/ThinkingMicroscope',], ROBO4=['E:/Images'],ROBO3=['D:/Images'])
+        # IXM and ROBO5 data live directly on /gladstone (no Windows-path
+        # migration needed) — empty list so the rewrite loop is a no-op.
+        self.origfolder = dict(TM=['D:/Images', 'Z:/ThinkingMicroscope',], ROBO4=['E:/Images'], ROBO3=['D:/Images'], IXM=[], ROBO5=[])
         # self.targetfolder = {'D:/Images':'/gladstone/finkbeiner/robodata',
         #                      'X:':'/gladstone/finkbeiner/robodata',
         #                      'E:/Images':'/gladstone/finkbeiner/robodata','C:/Test':'/gladstone/finkbeiner/robodata'} #Original
