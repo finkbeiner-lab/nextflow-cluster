@@ -555,14 +555,31 @@ if (params.DO_OVERLAY) {
 }
 
 if (params.DO_OVERLAY_MONTAGE) {
-    // OVERLAY_MONTAGE's --cell_ids resolution, in priority order:
-    //   1. User-supplied `params.overlay_montage_cell_ids` (non-empty) — always wins
-    //   2. Auto-derived from STABLE_CELL_FILTER's emitted path — when DO_STABLE_CELL_FILTER is on
-    //   3. Empty string — overlay every tracked cell
+    // OVERLAY_MONTAGE's --cell_ids resolution:
+    //   1. User-supplied `params.overlay_montage_cell_ids` (non-empty) — wins
+    //      for the VALUE, but we still gate timing on STABLE_CELL_FILTER
+    //      when it's enabled. Otherwise OVERLAY runs in parallel with
+    //      BUNDLED_IXM_STABLE_TRACK and consumes a stale file from a prior
+    //      run.
+    //   2. Auto-derived from STABLE_CELL_FILTER's emitted path — when
+    //      DO_STABLE_CELL_FILTER is on and no user override.
+    //   3. Empty string — overlay every tracked cell.
     def user_cell_ids = params.overlay_montage_cell_ids ?: ''
-    overlay_cell_ids_ch = user_cell_ids
-        ? Channel.of(user_cell_ids)
-        : (params.DO_STABLE_CELL_FILTER ? stable_ids_path_ch : Channel.of(''))
+    if (params.DO_STABLE_CELL_FILTER) {
+        if (user_cell_ids) {
+            // User override path WITH the STABLE_CELL_FILTER ready gate:
+            // wait until the filter has produced its stable_ids file,
+            // then emit the user's chosen path string. This preserves
+            // the user's value while keeping the dependency edge intact
+            // so Nextflow does not schedule OVERLAY in parallel with
+            // upstream tracking.
+            overlay_cell_ids_ch = stable_ids_path_ch.map { _stable_path -> user_cell_ids }
+        } else {
+            overlay_cell_ids_ch = stable_ids_path_ch
+        }
+    } else {
+        overlay_cell_ids_ch = Channel.of(user_cell_ids)
+    }
 
     combined_overlay_montage_ch = overlay_cell_ids_ch
         .combine(experiment_ch)
