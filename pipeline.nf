@@ -4,6 +4,14 @@
 if (!params.containsKey('proximity_filter_radius')) { params.proximity_filter_radius = 0 }
 if (!params.containsKey('overlay_montage_cell_ids')) { params.overlay_montage_cell_ids = '' }
 if (!params.containsKey('DO_BUNDLED_STD_WORKFLOW'))  { params.DO_BUNDLED_STD_WORKFLOW = false }
+if (!params.containsKey('DO_BUNDLED_IXM_STABLE_TRACK')) { params.DO_BUNDLED_IXM_STABLE_TRACK = false }
+if (!params.containsKey('DO_STABLE_CELL_FILTER'))    { params.DO_STABLE_CELL_FILTER = false }
+if (!params.containsKey('stable_cell_filter_input_csv')) { params.stable_cell_filter_input_csv = '' }
+if (!params.containsKey('stable_cell_filter_morphology_channel')) { params.stable_cell_filter_morphology_channel = 'FITC' }
+if (!params.containsKey('stable_cell_filter_reporter_channel')) { params.stable_cell_filter_reporter_channel = 'RFP' }
+if (!params.containsKey('stable_cell_filter_displacement_threshold')) { params.stable_cell_filter_displacement_threshold = 100 }
+if (!params.containsKey('stable_cell_filter_area_fold_threshold')) { params.stable_cell_filter_area_fold_threshold = 1.5 }
+if (!params.containsKey('stable_cell_filter_intensity_fold_threshold')) { params.stable_cell_filter_intensity_fold_threshold = 1.5 }
 
 input_path_ch = Channel.of(params.input_path)
 output_path_ch = Channel.of(params.output_path)
@@ -144,8 +152,8 @@ optimizer_ch = Channel.of(params.optimizer)
 
 
 include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;SEGMENTATION_MONTAGE;
-    CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY; 
-    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW} from './modules.nf'
+    CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY;
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; STABLE_CELL_FILTER; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW; BUNDLED_IXM_STABLE_TRACK} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -180,6 +188,8 @@ log.info """\
     Standard Workflow: ${params.DO_STD_WORKFLOW}
     Standard IXM Workflow: ${params.DO_STD_WORKFLOW_IXM}
     Bundled Standard Workflow: ${params.DO_BUNDLED_STD_WORKFLOW}
+    Bundled IXM Stable Track: ${params.DO_BUNDLED_IXM_STABLE_TRACK}
+    Stable Cell Filter: ${params.DO_STABLE_CELL_FILTER}
     """
     .stripIndent()
 
@@ -422,6 +432,110 @@ if (params.DO_GET_CSVS) {
     csv_ch = GETCSVS(csv_ready, experiment_ch)
     csv_ch.view { it }
 }
+
+// BUNDLED_IXM_STABLE_TRACK: per-well MONTAGE + SEGMENTATION_MONTAGE + TRACKING_MONTAGE
+// in ONE Slurm job. Mirrors BUNDLED_WORKFLOW_IXM 1:1 minus the OVERLAY step.
+if (params.DO_BUNDLED_IXM_STABLE_TRACK) {
+
+    log.info "\n Running BUNDLED_IXM_STABLE_TRACK (MONTAGE -> SEGMENTATION -> TRACKING per well)"
+
+    def bundle_start_time = System.currentTimeMillis()
+    def bundle_start_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+
+    println "[${bundle_start_timestamp}] STARTING... BUNDLED_IXM_STABLE_TRACK for wells: ${wells_to_use.join(', ')}"
+
+    combined_bundled_track_ch = well_ch
+        .combine(experiment_ch)
+        .combine(tiletype_ch)
+        .combine(montage_pattern_ch)
+        .combine(tp_ch)
+        .combine(channel_ch)
+        .combine(well_toggle_ch)
+        .combine(tp_toggle_ch)
+        .combine(channel_toggle_ch)
+        .combine(image_overlap_ch)
+        .combine(morphology_ch)
+        .combine(seg_ch)
+        .combine(norm_ch)
+        .combine(lower_ch)
+        .combine(upper_ch)
+        .combine(sd_ch)
+        .combine(proximity_radius_ch)
+        .combine(track_type_ch)
+        .combine(distance_threshold_ch)
+        .combine(target_channel_ch)
+        .combine(motion_ch)
+        .map { nestedTuple ->
+            def flat = nestedTuple.flatten()
+            def exp                  = flat[1]
+            def tiletype             = flat[2]
+            def montage_pattern      = flat[3]
+            def chosen_timepoints    = flat[4]
+            def chosen_channels      = flat[5]
+            def wells_toggle         = flat[6]
+            def timepoints_toggle    = flat[7]
+            def channels_toggle      = flat[8]
+            def image_overlap        = flat[9]
+            def morphology_channel   = flat[10]
+            def segmentation_method  = flat[11]
+            def img_norm_name        = flat[12]
+            def lower_area_thresh    = flat[13]
+            def upper_area_thresh    = flat[14]
+            def sd_scale_factor      = flat[15]
+            def proximity_filter_radius = flat[16]
+            def track_type           = flat[17]
+            def distance_threshold   = flat[18]
+            def target_channel       = flat[19]
+            def well                 = flat[0]
+            def motion               = flat[20]
+            return tuple(exp, tiletype, montage_pattern, chosen_timepoints, chosen_channels, wells_toggle,
+                         timepoints_toggle, channels_toggle, image_overlap, morphology_channel, segmentation_method,
+                         img_norm_name, lower_area_thresh, upper_area_thresh, sd_scale_factor, proximity_filter_radius,
+                         track_type, distance_threshold, target_channel, well, motion)
+        }
+
+    bundled_ixm_stable_track_ch = BUNDLED_IXM_STABLE_TRACK(combined_bundled_track_ch)
+
+    bundled_ixm_stable_track_ch.view { t ->
+        def (well, flag) = t
+        def bundle_end_time = System.currentTimeMillis()
+        def bundle_end_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
+        def total_time_seconds = (bundle_end_time - bundle_start_time) / 1000.0
+        println "[${bundle_end_timestamp}] COMPLETED BUNDLED_IXM_STABLE_TRACK for well: $well in ${total_time_seconds.round(1)}s"
+    }
+
+    bundled_ixm_stable_track_result = BUNDLED_IXM_STABLE_TRACK.out
+}
+else {
+    bundled_ixm_stable_track_result = Channel.of(true)
+}
+
+// STABLE_CELL_FILTER: reads <analysisdir>/<experiment>_tracked_montage_summary.csv
+// (which bin/tracking_montage.py writes directly) and emits stable-IDs +
+// reporter trajectories CSVs.
+if (params.DO_STABLE_CELL_FILTER) {
+    stable_filter_upstream = bundled_ixm_stable_track_result.collect()
+    STABLE_CELL_FILTER(
+        stable_filter_upstream,
+        experiment_ch,
+        params.stable_cell_filter_input_csv,
+        params.stable_cell_filter_morphology_channel,
+        params.stable_cell_filter_reporter_channel,
+        params.stable_cell_filter_displacement_threshold,
+        params.stable_cell_filter_area_fold_threshold,
+        params.stable_cell_filter_intensity_fold_threshold
+    )
+    // The script writes the absolute stable-IDs CSV path to stable_ids_path.txt
+    // (captured by the process's `path` output). Read that file once it's
+    // produced and emit the path string on a value channel for OVERLAY_MONTAGE.
+    stable_ids_path_ch = STABLE_CELL_FILTER.out.stable_ids_file.map { it.text.trim() }
+    stable_ids_path_ch.view { p -> "[STABLE_CELL_FILTER] stable_ids CSV: ${p}" }
+    stable_filter_result = STABLE_CELL_FILTER.out.stable_ids_file
+}
+else {
+    stable_filter_result = Channel.of(true)
+    stable_ids_path_ch = Channel.of('')
+}
 // Run OVERLAY only if enabled--KS edit for overlay
 if (params.DO_OVERLAY) {
     overlay_ch = OVERLAY(
@@ -441,7 +555,16 @@ if (params.DO_OVERLAY) {
 }
 
 if (params.DO_OVERLAY_MONTAGE) {
-    combined_overlay_montage_ch = Channel.of(true)
+    // OVERLAY_MONTAGE's --cell_ids resolution, in priority order:
+    //   1. User-supplied `params.overlay_montage_cell_ids` (non-empty) — always wins
+    //   2. Auto-derived from STABLE_CELL_FILTER's emitted path — when DO_STABLE_CELL_FILTER is on
+    //   3. Empty string — overlay every tracked cell
+    def user_cell_ids = params.overlay_montage_cell_ids ?: ''
+    overlay_cell_ids_ch = user_cell_ids
+        ? Channel.of(user_cell_ids)
+        : (params.DO_STABLE_CELL_FILTER ? stable_ids_path_ch : Channel.of(''))
+
+    combined_overlay_montage_ch = overlay_cell_ids_ch
         .combine(experiment_ch)
         .combine(morphology_ch)
         .combine(well_ch)
@@ -451,7 +574,17 @@ if (params.DO_OVERLAY_MONTAGE) {
         .combine(channel_toggle_ch)
         .combine(Channel.of(params.shift))
         .combine(Channel.of(params.contrast))
-        .combine(overlay_montage_cell_ids_ch)
+        .map { flat ->
+            // overlay_cell_ids_ch is the LEADING channel above, so flat[0]
+            // is the cell_ids path. OVERLAY_MONTAGE's input tuple expects
+            // (ready, exp, morphology, well, tp, well_toggle, tp_toggle,
+            //  channels_toggle, shift, contrast, cell_ids), so we relocate
+            // cell_ids to the END and supply `true` as the leading ready
+            // flag (STABLE_CELL_FILTER finishing is what gated us getting
+            // here in the first place).
+            return tuple(true, flat[1], flat[2], flat[3], flat[4], flat[5],
+                         flat[6], flat[7], flat[8], flat[9], flat[0])
+        }
 
     overlay_ch = OVERLAY_MONTAGE(combined_overlay_montage_ch)
 }
