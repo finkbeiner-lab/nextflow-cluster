@@ -1029,3 +1029,121 @@ process BUNDLED_STD_WORKFLOW {
     echo "⏱️  Total time: \${TOTAL_TIME} seconds (\${TOTAL_MINUTES}m \${TOTAL_SECONDS}s)"
     """
 }
+
+// STABLE_CELL_FILTER: filters a tracked-cell summary CSV down to cells that
+// are stably tracked across all timepoints (judged on the morphology channel)
+// and extracts the reporter channel's decay trajectory for those cells.
+// Python port of bin/stable_cell_filter.R using pandas. Runs once per
+// experiment against the CSV produced upstream by GETCSVS (or any equivalent
+// tracked-cell summary).
+process STABLE_CELL_FILTER {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    input:
+    val ready
+    val exp
+    val input_csv
+    val morphology_channel
+    val reporter_channel
+    val displacement_threshold
+    val area_fold_threshold
+    val intensity_fold_threshold
+
+    output:
+    // The script writes the absolute stable-IDs CSV path as the very last
+    // line on stdout (everything else goes to stderr). Capturing that line
+    // here lets pipeline.nf wire it directly into OVERLAY_MONTAGE's
+    // --cell_ids without any explicit user-supplied path.
+    path 'stable_ids_path.txt', emit: stable_ids_file
+
+    script:
+    """
+    stable_cell_filter.py \\
+        --input_csv "${input_csv}" \\
+        --experiment ${exp} \\
+        --morphology_channel ${morphology_channel} \\
+        --reporter_channel ${reporter_channel} \\
+        --displacement_threshold ${displacement_threshold} \\
+        --area_fold_threshold ${area_fold_threshold} \\
+        --intensity_fold_threshold ${intensity_fold_threshold} \\
+        > stable_ids_path.txt
+    """
+}
+
+// BUNDLED_IXM_STABLE_TRACK bundles MONTAGE + SEGMENTATION_MONTAGE +
+// TRACKING_MONTAGE into a SINGLE per-well Slurm job — the same speedup
+// trick as BUNDLED_WORKFLOW_IXM, but stopping AFTER tracking. Overlay
+// is left out of the bundle because the stable-cell filter has to run
+// once across all wells before overlay can know which cells to annotate.
+// Downstream: STABLE_CELL_FILTER (single, all wells) -> OVERLAY_MONTAGE
+// (per well, fed the stable-IDs CSV via --cell_ids).
+process BUNDLED_IXM_STABLE_TRACK {
+    tag "BUNDLED_IXM_STABLE_TRACK-${exp}_${well}"
+
+    cpus 4
+    memory 20.GB
+    time '8h'
+
+    input:
+    tuple val(exp),
+          val(tiletype),
+          val(montage_pattern),
+          val(chosen_timepoints),
+          val(chosen_channels),
+          val(wells_toggle),
+          val(timepoints_toggle),
+          val(channels_toggle),
+          val(image_overlap),
+          val(morphology_channel),
+          val(segmentation_method),
+          val(img_norm_name),
+          val(lower_area_thresh),
+          val(upper_area_thresh),
+          val(sd_scale_factor),
+          val(proximity_filter_radius),
+          val(track_type),
+          val(distance_threshold),
+          val(target_channel),
+          val(well),
+          val(motion)
+
+    output:
+    tuple val(well), val(true)
+
+    script:
+    """
+    #!/bin/bash
+    set -e
+
+    START_TIME=\$(date +%s)
+    START_TIMESTAMP=\$(date '+%Y-%m-%d %H:%M:%S')
+    echo "🚀 BUNDLED_IXM_STABLE_TRACK starting for well ${well} at \${START_TIMESTAMP}"
+    echo "📊 Steps: MONTAGE → SEGMENTATION_MONTAGE → TRACKING_MONTAGE"
+
+    echo "🔧 Step 1/3: MONTAGE ${well}"
+    montage.py --experiment ${exp} --tiletype ${tiletype} --montage_pattern ${montage_pattern} \\
+    --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} --chosen_channels ${chosen_channels} \\
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} --channels_toggle ${channels_toggle} \\
+    --image_overlap ${image_overlap}
+    if [ \$? -ne 0 ]; then echo "❌ MONTAGE failed for well ${well}"; exit 1; fi
+    echo "✅ MONTAGE done for well ${well}"
+
+    echo "🔬 Step 2/3: SEGMENTATION_MONTAGE ${well}"
+    segmentation_montage.py --experiment ${exp} --segmentation_method ${segmentation_method} \\
+    --img_norm_name ${img_norm_name} --lower_area_thresh ${lower_area_thresh} --upper_area_thresh ${upper_area_thresh} \\
+    --sd_scale_factor ${sd_scale_factor} --proximity_filter_radius ${proximity_filter_radius} \\
+    --chosen_wells ${well} --chosen_channels ${morphology_channel} \\
+    --chosen_timepoints ${chosen_timepoints} --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    if [ \$? -ne 0 ]; then echo "❌ SEGMENTATION_MONTAGE failed for well ${well}"; exit 1; fi
+    echo "✅ SEGMENTATION_MONTAGE done for well ${well}"
+
+    echo "🎯 Step 3/3: TRACKING_MONTAGE ${well}"
+    tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \\
+    --wells ${well} --target_channel ${target_channel} ${motion ? '--motion' : ''}
+    if [ \$? -ne 0 ]; then echo "❌ TRACKING_MONTAGE failed for well ${well}"; exit 1; fi
+    echo "✅ TRACKING_MONTAGE done for well ${well}"
+
+    END_TIME=\$(date +%s)
+    TOTAL_TIME=\$((END_TIME - START_TIME))
+    echo "🎉 BUNDLED_IXM_STABLE_TRACK complete for well ${well} in \${TOTAL_TIME}s"
+    """
+}
