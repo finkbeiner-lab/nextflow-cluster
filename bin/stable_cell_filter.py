@@ -26,7 +26,7 @@ reporter trajectory (decay curve over timepoints).
 Outputs (the input CSV is never modified)
 -----------------------------------------
 * ``<input>_annotated.csv``             — morphology rows + stability flags
-* ``<input>_stable_ids_1.csv``          — stable cell rows (well, tracked_id, timepoint)
+* ``<input>_stable_ids.csv``            — stable cell rows (well, tracked_id, timepoint)
 * ``<input>_reporter_trajectories.csv`` — reporter rows for the stable cells
 
 CLI
@@ -219,7 +219,7 @@ def run(opts: argparse.Namespace) -> int:
     # Output paths derived from the input — never overwrite the source.
     base = str(in_path.with_suffix(""))
     annotated_csv = Path(base + "_annotated.csv")
-    stable_ids_csv = Path(base + "_stable_ids_1.csv")
+    stable_ids_csv = Path(base + "_stable_ids.csv")
     reporter_traj_csv = Path(base + "_reporter_trajectories.csv")
     for out in (annotated_csv, stable_ids_csv, reporter_traj_csv):
         if out.resolve() == in_path.resolve():
@@ -265,13 +265,20 @@ def run(opts: argparse.Namespace) -> int:
             available_channels,
         )
         return 1
-    if opts.reporter_channel not in available_channels:
-        logger.error(
-            "reporter_channel %r not found. available: %s",
+    # reporter_channel is optional — when the experiment was imaged with
+    # only a morphology channel (e.g. FITC alone, no RFP photoconvert),
+    # we still want the stability filter to run on the morphology data
+    # and emit the stable-IDs CSV. The reporter-trajectory extraction
+    # block at the end will detect this and skip itself.
+    reporter_available = opts.reporter_channel in available_channels
+    if not reporter_available:
+        logger.warning(
+            "reporter_channel %r not found (available: %s) — "
+            "skipping reporter trajectory extraction; morphology filter "
+            "will still run and emit the stable-IDs CSV.",
             opts.reporter_channel,
             available_channels,
         )
-        return 1
 
     # ---- Filter to morphology channel for stability analysis ---------------
     dt = dt_full[dt_full["MeasurementTag"] == opts.morphology_channel].copy()
@@ -427,7 +434,14 @@ def run(opts: argparse.Namespace) -> int:
     )
 
     # ---- Reporter trajectories for stable cells ----------------------------
-    if stable_unique.empty:
+    if not reporter_available:
+        logger.info(
+            "skipping reporter trajectory CSV (%s) — reporter_channel %r "
+            "not present in the experiment.",
+            reporter_traj_csv,
+            opts.reporter_channel,
+        )
+    elif stable_unique.empty:
         logger.info("no stable cells; skipping %s", reporter_traj_csv)
     else:
         reporter = dt_full[dt_full["MeasurementTag"] == opts.reporter_channel]
