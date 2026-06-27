@@ -525,12 +525,13 @@ if (params.DO_STABLE_CELL_FILTER) {
         params.stable_cell_filter_area_fold_threshold,
         params.stable_cell_filter_intensity_fold_threshold
     )
-    // The script writes the absolute stable-IDs CSV path to stable_ids_path.txt
-    // (captured by the process's `path` output). Read that file once it's
-    // produced and emit the path string on a value channel for OVERLAY_MONTAGE.
-    stable_ids_path_ch = STABLE_CELL_FILTER.out.stable_ids_file.map { it.text.trim() }
+    // The script writes the absolute stable-IDs CSV path on stdout (logs
+    // go to stderr). Nextflow captures stdout into the `stable_ids_file_text`
+    // value channel; we trim the trailing newline and forward it as the
+    // overlay-cell-ids channel for OVERLAY_MONTAGE.
+    stable_ids_path_ch = STABLE_CELL_FILTER.out.stable_ids_file_text.map { it.trim() }
     stable_ids_path_ch.view { p -> "[STABLE_CELL_FILTER] stable_ids CSV: ${p}" }
-    stable_filter_result = STABLE_CELL_FILTER.out.stable_ids_file
+    stable_filter_result = STABLE_CELL_FILTER.out.stable_ids_file_text
 }
 else {
     stable_filter_result = Channel.of(true)

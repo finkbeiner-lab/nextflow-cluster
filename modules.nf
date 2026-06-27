@@ -1050,10 +1050,14 @@ process STABLE_CELL_FILTER {
 
     output:
     // The script writes the absolute stable-IDs CSV path as the very last
-    // line on stdout (everything else goes to stderr). Capturing that line
-    // here lets pipeline.nf wire it directly into OVERLAY_MONTAGE's
-    // --cell_ids without any explicit user-supplied path.
-    path 'stable_ids_path.txt', emit: stable_ids_file
+    // line on stdout; every other diagnostic goes to stderr. We capture
+    // stdout as a value channel here rather than redirecting it to a
+    // `path 'stable_ids_path.txt'` output, because nextflow.config has a
+    // broken global `publishDir = [:]` directive that crashes with
+    // "Target path for directive publishDir cannot be null" the moment
+    // any process declares a `path` output. `stdout` outputs are not
+    // affected by that directive.
+    stdout emit: stable_ids_file_text
 
     script:
     """
@@ -1064,8 +1068,7 @@ process STABLE_CELL_FILTER {
         --reporter_channel ${reporter_channel} \\
         --displacement_threshold ${displacement_threshold} \\
         --area_fold_threshold ${area_fold_threshold} \\
-        --intensity_fold_threshold ${intensity_fold_threshold} \\
-        > stable_ids_path.txt
+        --intensity_fold_threshold ${intensity_fold_threshold}
     """
 }
 
