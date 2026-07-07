@@ -439,6 +439,34 @@ if (params.DO_BUNDLED_IXM_STABLE_TRACK) {
 
     log.info "\n Running BUNDLED_IXM_STABLE_TRACK (MONTAGE -> SEGMENTATION -> TRACKING per well)"
 
+    // Wipe any accumulated CSVs from prior runs BEFORE any per-well
+    // tracking process fires. tracking_montage.py:1214 appends to the
+    // summary CSV if it exists (mode='a'); pandas.to_csv with mode='a'
+    // does NOT re-order columns to match the existing header, so an
+    // older header + new-order rows produce misaligned data that breaks
+    // every downstream reader (stable_cell_filter, overlay_montage, the
+    // R analysis script). Also delete the STABLE_CELL_FILTER derivatives
+    // so a subsequent failed re-run can't leave a stale stable_ids CSV
+    // lying around.
+    //
+    // Runs ONCE at workflow-body evaluation time (Groovy inside the
+    // workflow{} block executes top-to-bottom before processes fire), so
+    // parallel per-well processes never race to delete each other's data.
+    def _tracking_base = "${params.output_path}/${params.experiment}"
+    [
+        '_tracked_montage_summary.csv',
+        '_tracked_montage_summary_annotated.csv',
+        '_tracked_montage_summary_stable_ids.csv',
+        '_tracked_montage_summary_reporter_trajectories.csv',
+        '_tracking-info.csv',
+    ].each { suffix ->
+        def f = file("${_tracking_base}${suffix}")
+        if (f.exists()) {
+            log.info "[BUNDLED_IXM_STABLE_TRACK] wiping stale ${f.name}"
+            f.delete()
+        }
+    }
+
     def bundle_start_time = System.currentTimeMillis()
     def bundle_start_timestamp = new Date().format("yyyy-MM-dd HH:mm:ss")
 
