@@ -13,6 +13,7 @@ import numpy as np
 import logging
 import argparse
 import os
+import fcntl
 from typing import Any, Dict, List, Optional, Tuple
 
 from db_util import Ops
@@ -85,6 +86,23 @@ def process_label_contour(args: Tuple[np.ndarray, int]) -> Optional["Cell"]:
     except Exception:
         return None
 
+# Per-worker copy of the montage mask, set once by the Pool initializer so it
+# is not re-pickled and shipped with every label (which copies the whole array
+# hundreds/thousands of times per timepoint and can OOM compute nodes).
+_WORKER_MASK: Optional[np.ndarray] = None
+
+
+def _init_label_worker(mask: np.ndarray) -> None:
+    """Pool initializer: stash the montage mask once per worker process."""
+    global _WORKER_MASK
+    _WORKER_MASK = mask
+
+
+def _process_label_from_global(label: int) -> Optional["Cell"]:
+    """Pool worker: extract the contour for one label using the shared mask."""
+    return process_label_contour((_WORKER_MASK, label))
+
+
 def process_contours_parallel(
     mask: np.ndarray,
     labels: np.ndarray,
@@ -119,12 +137,14 @@ def process_contours_parallel(
                 results.append(cell)
         return results
     
-    # Process in parallel for large label counts
-    args_list = [(mask, label) for label in labels]
-    
-    with Pool(processes=num_processes) as pool:
-        results = pool.map(process_label_contour, args_list)
-    
+    # Process in parallel for large label counts. The mask is passed ONCE per
+    # worker via the pool initializer instead of being re-pickled and shipped
+    # with every label.
+    with Pool(processes=num_processes,
+              initializer=_init_label_worker,
+              initargs=(mask,)) as pool:
+        results = pool.map(_process_label_from_global, labels)
+
     # Filter out None results
     return [cell for cell in results if cell is not None]
 
@@ -576,10 +596,21 @@ class MontageDBTracker:
         
         # Replace channel name in filename
         parts = filename.split('_')
+        matched = False
         for i, part in enumerate(parts):
             if any(part.startswith(prefix) for prefix in ['Epi-', 'DAPI', 'Cy', 'FITC', 'RFP', 'Confocal-']):
                 parts[i] = channel
+                matched = True
                 break
+        if not matched:
+            # No recognized channel token: the filename is used unchanged,
+            # which means intensities would be measured from the WRONG channel
+            # image. Surface it instead of silently proceeding.
+            logger.warning(
+                f"_get_channel_path: no known channel prefix found in "
+                f"'{filename}'; cannot substitute channel '{channel}'. "
+                f"Intensity for this channel may be read from the wrong image."
+            )
         filename = '_'.join(parts)
         aligned_path = os.path.join(dirname, filename)
 
@@ -1053,15 +1084,47 @@ class MontageDBTracker:
                 }
                 all_data.append(switching_row)
         
-        # Save all data to a single CSV file
+        # Save all data to a single CSV file. Parallel per-well tracking jobs
+        # all append to the same experiment-level file, so the write is done
+        # under an exclusive file lock (see _append_df_locked).
         if all_data:
             combined_file = os.path.join(self.analysisdir, f"{self.experiment}_tracking-info.csv")
             combined_df = pd.DataFrame(all_data)
-            combined_df.to_csv(combined_file, index=False)
+            self._append_df_locked(combined_df, combined_file)
             logger.info(f"Saved all tracking statistics to {combined_file}")
             print(f"📊 Saved comprehensive tracking statistics to: {combined_file}")
         else:
             logger.warning("No tracking statistics data to save")
+
+    @staticmethod
+    def _append_df_locked(df: pd.DataFrame, path: str) -> None:
+        """Append a DataFrame to a CSV under an exclusive file lock.
+
+        TRACKING_MONTAGE runs one Slurm job per well concurrently, and every
+        well writes to the same experiment-level CSV. Without locking, the
+        check-then-append pattern races: two jobs can both see the file as
+        absent and both write a header, or interleave partial rows and lose
+        data. This takes an exclusive ``flock`` around the whole
+        header-decision + write so each well's rows are appended atomically.
+        The header is written only when the file is empty (first writer wins).
+
+        Args:
+            df: Rows to append.
+            path: Destination CSV path (shared across parallel wells).
+        """
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        # 'a+' creates the file if absent and lets us check its size under the
+        # lock to decide whether a header is needed.
+        with open(path, 'a+', newline='') as handle:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                handle.seek(0, os.SEEK_END)
+                need_header = handle.tell() == 0
+                df.to_csv(handle, header=need_header, index=False)
+                handle.flush()
+                os.fsync(handle.fileno())
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def run(self, wells: List[str]) -> None:
         """Execute the full tracking pipeline for the given wells.
@@ -1154,7 +1217,8 @@ class MontageDBTracker:
                 tracked_path = os.path.join(tracked_folder, tracked_filename)
 
                 # Save the tracked mask
-                cv2.imwrite(tracked_path, tracked_mask)
+                if not cv2.imwrite(tracked_path, tracked_mask):
+                    raise IOError(f"Failed to write tracked mask: {tracked_path}")
                 logger.info(f"Saved tracked mask: {tracked_path}")
                 channel_imgs = {}
                 object_count = len(recs)
@@ -1209,11 +1273,9 @@ class MontageDBTracker:
         if out_records:  # Only process if we have records
             out_df = pd.DataFrame(out_records)
             outfile = os.path.join(self.analysisdir, f"{self.experiment}_tracked_montage_summary.csv")
-
-            # More efficient CSV writing
-            file_exists = os.path.exists(outfile)
-            out_df.to_csv(outfile, mode='a' if file_exists else 'w', 
-                         header=not file_exists, index=False)
+            # Parallel per-well jobs share this file; append under a lock so
+            # concurrent wells cannot race on the header/append (data loss).
+            self._append_df_locked(out_df, outfile)
             logger.info(f"Wrote {len(out_records)} tracked records to {outfile}")
         else:
             logger.warning("No tracking records generated")

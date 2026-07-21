@@ -207,8 +207,15 @@ def find_max_dimensions(filelist: List[str]) -> Tuple[int, int]:
     Returns:
         Tuple of ``(max_rows, max_cols)``.
     """
-    max_rows = max([cv2.imread(filename, 0).shape[0] for filename in filelist])
-    max_cols = max([cv2.imread(filename, 0).shape[1] for filename in filelist])
+    shapes = []
+    for filename in filelist:
+        img = cv2.imread(filename, 0)
+        if img is None:
+            raise ValueError(
+                f'cv2.imread returned None (missing or corrupt image): {filename}')
+        shapes.append(img.shape)
+    max_rows = max([shape[0] for shape in shapes])
+    max_cols = max([shape[1] for shape in shapes])
     return (max_rows, max_cols)
 
 
@@ -515,7 +522,7 @@ def show_stack(path: str, identifier: str) -> None:
         image = cv2.imread(filelist[ind], 0)
         font = cv2.FONT_HERSHEY_PLAIN
         details = extract_file_name(filelist[ind])
-        cv2.putText(image, details, (10, 20), font, 1, 200, 2, cv2.CV_AA)
+        cv2.putText(image, details, (10, 20), font, 1, 200, 2, cv2.LINE_AA)
         cv2.imshow(extract_file_name(
             filelist[ind]), resizer(cv2.equalizeHist(image), 0.1))
         cv2.waitKey(0)
@@ -556,10 +563,11 @@ def return_image_indices(bad_image_list: List[str], image_path: str) -> List[int
     Returns:
         List of integer indices (files not found are silently excluded).
     """
-    bad_img_indices = [
-        find_ind_of_filename(image_path, image)
-        for image in bad_image_list
-        if type(find_ind_of_filename(image_path, image)) == int]
+    bad_img_indices = []
+    for image in bad_image_list:
+        ind = find_ind_of_filename(image_path, image)
+        if type(ind) == int:
+            bad_img_indices.append(ind)
     return bad_img_indices
 
 
@@ -628,7 +636,7 @@ def draw_1mm_scale_bar(image: np.ndarray, num_pixels_in_1mm: int) -> None:
                  255, 255, 255), int(num_cols * .005))
     font = cv2.FONT_HERSHEY_SIMPLEX
     cv2.putText(image, '1 mm', (int(num_cols * .05), int(
-        num_rows * .93)), font, 1, (255, 255, 255), 2, cv2.CV_AA)
+        num_rows * .93)), font, 1, (255, 255, 255), 2, cv2.LINE_AA)
 
 
 def align_renamer(well: str, path_aligned_images: str,
@@ -677,8 +685,12 @@ def zerone_normalizer(image: np.ndarray) -> np.ndarray:
     copy_image = image.copy()
     # set scale
     new_img_min, new_img_max = 0, 240
-    zero_one_norm = (copy_image - image.min()) * (
-            (new_img_max - new_img_min) / (image.max() - image.min())) + new_img_min
+    img_min, img_max = image.min(), image.max()
+    # guard against divide-by-zero on a flat (constant) image
+    if img_max == img_min:
+        return np.full(image.shape, new_img_min, dtype=image.dtype)
+    zero_one_norm = (copy_image - img_min) * (
+            (new_img_max - new_img_min) / (img_max - img_min)) + new_img_min
     return zero_one_norm
 
 
@@ -708,7 +720,13 @@ def collapse_stack_to_image(file_list: List[str],
     """
     start_time = datetime.datetime.utcnow()
     if collapse_type == 'max_proj':
-        img_list = [cv2.imread(img_pointer, -1) for img_pointer in file_list]
+        img_list = []
+        for img_pointer in file_list:
+            img = cv2.imread(img_pointer, -1)
+            if img is None:
+                raise ValueError(
+                    f'cv2.imread returned None (missing or corrupt image): {img_pointer}')
+            img_list.append(img)
         max_img = np.max(np.array(img_list), axis=0)
 
         end_time = datetime.datetime.utcnow()
@@ -716,7 +734,13 @@ def collapse_stack_to_image(file_list: List[str],
         return max_img
 
     if collapse_type == 'avg_proj':
-        img_list = [cv2.imread(img_pointer, -1) for img_pointer in file_list]
+        img_list = []
+        for img_pointer in file_list:
+            img = cv2.imread(img_pointer, -1)
+            if img is None:
+                raise ValueError(
+                    f'cv2.imread returned None (missing or corrupt image): {img_pointer}')
+            img_list.append(img)
         avg_img = np.average(np.array(img_list), axis=0)
 
         end_time = datetime.datetime.utcnow()
@@ -745,6 +769,11 @@ def collapse_stack_magically(output_file_name: str, selector: str,
 
     p = subprocess.Popen(magic_command, stderr=subprocess.PIPE)
     p.wait()
+    if p.returncode != 0:
+        stderr = p.stderr.read().decode(errors='replace') if p.stderr else ''
+        raise RuntimeError(
+            f'Command {magic_command} failed with return code '
+            f'{p.returncode}: {stderr}')
     end_time = datetime.datetime.utcnow()
 
     if verbose:
@@ -769,6 +798,11 @@ def split_stack_magically(stack_selector: str, output_filenames: str,
     magic_command = ['convert', stack_selector, output_filenames]
     p = subprocess.Popen(magic_command, stderr=subprocess.PIPE)
     p.wait()
+    if p.returncode != 0:
+        stderr = p.stderr.read().decode(errors='replace') if p.stderr else ''
+        raise RuntimeError(
+            f'Command {magic_command} failed with return code '
+            f'{p.returncode}: {stderr}')
 
     end_time = datetime.datetime.utcnow()
 
@@ -792,6 +826,11 @@ def make_stack_magically(selector: str, output_filename: str,
     magic_command = ['convert', selector, output_filename]
     p = subprocess.Popen(magic_command, stderr=subprocess.PIPE)
     p.wait()
+    if p.returncode != 0:
+        stderr = p.stderr.read().decode(errors='replace') if p.stderr else ''
+        raise RuntimeError(
+            f'Command {magic_command} failed with return code '
+            f'{p.returncode}: {stderr}')
 
     end_time = datetime.datetime.utcnow()
     if verbose:

@@ -70,6 +70,8 @@ class Ops:
 
         if _imagedir is None:
             raise Exception(f'Experiment name not found in database. {self.experiment}')
+        if _analysisdir is None:
+            raise Exception(f'Analysis directory not found in database. {self.experiment}')
         imagedir = _imagedir[0][0]
         analysisdir = _analysisdir[0][0]
         return imagedir, analysisdir
@@ -183,8 +185,14 @@ class Ops:
         """
         if Db is None:
             Db = Database()
+        # Scope the lookup to this experiment: tile numbers repeat across
+        # experiments, so filtering by tile/timepoint alone can return a path
+        # belonging to a different experiment. welldata_id is not available in
+        # this method's signature, so we cannot scope to a specific well here.
+        exp_uuid = Db.get_table_uuid('experimentdata', dict(experiment=self.experiment))
         result = Db.get_table_value(tablename='tiledata', column='trackedmaskpath', kwargs=dict(tile=tile,
-                                                                                                timepoint=timepoint))
+                                                                                                timepoint=timepoint,
+                                                                                                experimentdata_id=exp_uuid))
         trackedmaskpath = next((el for el in result if el is not None), None)
         return trackedmaskpath
 

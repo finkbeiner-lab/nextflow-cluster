@@ -352,7 +352,7 @@ class Segmentation:
                 thresh = self.thresh_func(img)
             except ValueError:
                 # Fallback: set threshold above any possible pixel value
-                thresh = np.ones_like(img) * 65535
+                thresh = 65535
 
         # Binary threshold -> connected-component labelling
         regions = (img > thresh).astype(np.uint8) * 255
@@ -611,9 +611,9 @@ class Segmentation:
                             tablename='intensitycelldata',
                             kwargs={'tiledata_id': tile_id},
                         )
-            except Exception:
+            except Exception as exc:
                 # Log and continue with next chunk rather than aborting
-                pass
+                logger.error(f"bulk_delete_celldata failed for chunk: {exc}")
 
 
 if __name__ == '__main__':

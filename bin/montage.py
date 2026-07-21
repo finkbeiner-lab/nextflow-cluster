@@ -275,11 +275,17 @@ class Montage:
                     name = os.path.basename(f)
                     name = name.split('.t')[0] + '_MONTAGE.tif'
                     welldir = os.path.join(self.montagedir, row.well)
-                    if not os.path.exists(welldir):
-                        os.makedirs(welldir)
+                    os.makedirs(welldir, exist_ok=True)
                     savepath = os.path.join(welldir, name)
-                img = imageio.v3.imread(f)
-                
+                try:
+                    img = imageio.v3.imread(f)
+                except Exception as exc:
+                    logger.error(
+                        f'Failed to read tile {f}: {exc}. '
+                        f'Skipping montage for this group.'
+                    )
+                    return None
+
                 # Use per-tile background if enabled
                 if hasattr(self.opt, 'bg_mode') and self.opt.bg_mode == 'per_tile' and self.opt.img_norm_name != 'identity' and self.opt.tiletype=='filename':
                     # Calculate background for this specific tile if not already done
@@ -311,91 +317,105 @@ class Montage:
                 if well in self.Norm.backgrounds and timepoint in self.Norm.backgrounds[well]:
                     del self.Norm.backgrounds[well][timepoint]
         num_tiles = len(images)
-       
+
         logger.warning(f'Num tiles: {num_tiles}')
+        if not num_tiles:
+            # Incomplete tile set (count mismatch, NaN path, or a tile that
+            # failed to read). Skip this group with a warning instead of
+            # falling through to the batch update below, where the montage
+            # metadata (update_field, *_id, well, timepoint) would be
+            # undefined and raise UnboundLocalError.
+            try:
+                skip_well = df.well.iloc[0]
+                skip_tp = int(df.timepoint.iloc[0])
+            except Exception:
+                skip_well, skip_tp = '?', '?'
+            logger.warning(
+                f'Skipping montage for {skip_well} T{skip_tp}: incomplete tile '
+                f'set ({len(df)} rows, tile.max={df.tile.max() if len(df) else 0}).'
+            )
+            return None
+
         side = int(np.sqrt(num_tiles))
-        if num_tiles:
-            montage_creation_start = time()
-            h, w = np.shape(images[0])
-            mont = np.zeros((int(h * side), int(w * side)), dtype=np.uint16)
-            for i in range(side):
-                for j in range(side):
-                    #TODO: map montages for legacy montage, new montages, and ixm montages
-                    if self.opt.montage_pattern == 'legacy':
-                        if i%2==0:
-                            k = side - (j+1)
-                        else:
-                            k = j
+        montage_creation_start = time()
+        h, w = np.shape(images[0])
+        mont = np.zeros((int(h * side), int(w * side)), dtype=np.uint16)
+        for i in range(side):
+            for j in range(side):
+                #TODO: map montages for legacy montage, new montages, and ixm montages
+                if self.opt.montage_pattern == 'legacy':
+                    if i%2==0:
+                        k = side - (j+1)
                     else:
                         k = j
-                    mont[i * h:(i + 1) * h, j * w:(j + 1) * w] = images[i * side + k]
-            
-            montage_creation_start = time()
-            
-            if savebool:
-                imageio.v3.imwrite(savepath, mont)
-            
-            # Add back the montage creation completed message
-            montage_creation_time = time() - montage_creation_start
-            print(f'⚡ Montage creation completed in {montage_creation_time:.2f}s')
-            
-            # if os.path.exists(savepath):
-            if os.path.exists(savepath):
-                # Get IDs
-                experimentdata_id = self.Db.get_table_uuid(
-                    'experimentdata',
-                    dict(experiment=self.opt.experiment)
-                )
-                welldata_id = self.Db.get_table_uuid(
-                    'welldata',
-                    dict(experimentdata_id=experimentdata_id, well=well)
-                )
-                channel = df.channel.iloc[0]
-                channeldata_id = self.Db.get_table_uuid(
-                    'channeldata',
-                    dict(
-                        experimentdata_id=experimentdata_id,
-                        welldata_id=welldata_id,
-                        channel=channel
-                    )
-                )
-
-                # Choose your new tiledata column
-                if self.opt.tiletype == 'filename':
-                    update_field = 'newimagemontage'
-                elif self.opt.tiletype == 'maskpath':
-                    update_field = 'newmaskmontage'
                 else:
-                    update_field = 'newtrackedmontage'
+                    k = j
+                mont[i * h:(i + 1) * h, j * w:(j + 1) * w] = images[i * side + k]
 
-                                # Database update will be handled in batch later
-                # Just log that we're preparing the update
-                logger.warning(
-                    f'Prepared {update_field} update for {well} T{timepoint}'
+        if savebool:
+            imageio.v3.imwrite(savepath, mont)
+
+        # Add back the montage creation completed message
+        montage_creation_time = time() - montage_creation_start
+        print(f'⚡ Montage creation completed in {montage_creation_time:.2f}s')
+
+        # Only record a DB update when the montage file was actually written.
+        # All of well/timepoint/update_field/*_id are guaranteed defined here
+        # because num_tiles > 0 implies the tile-loading block above ran.
+        if savepath and os.path.exists(savepath):
+            # Get IDs
+            experimentdata_id = self.Db.get_table_uuid(
+                'experimentdata',
+                dict(experiment=self.opt.experiment)
+            )
+            welldata_id = self.Db.get_table_uuid(
+                'welldata',
+                dict(experimentdata_id=experimentdata_id, well=well)
+            )
+            channel = df.channel.iloc[0]
+            channeldata_id = self.Db.get_table_uuid(
+                'channeldata',
+                dict(
+                    experimentdata_id=experimentdata_id,
+                    welldata_id=welldata_id,
+                    channel=channel
                 )
+            )
 
-        # Add to batch updates instead of immediate update
-        self.batch_updates.append({
-            'update_field': update_field,
-            'savepath': savepath,
-            'experimentdata_id': experimentdata_id,
-            'welldata_id': welldata_id,
-            'channeldata_id': channeldata_id,
-            'timepoint': int(timepoint)
-        })
-        
-        # Process batch if it reaches the batch size
-        if len(self.batch_updates) >= self.batch_size:
-            self.process_batch_updates()
+            # Choose your new tiledata column
+            if self.opt.tiletype == 'filename':
+                update_field = 'newimagemontage'
+            elif self.opt.tiletype == 'maskpath':
+                update_field = 'newmaskmontage'
+            else:
+                update_field = 'newtrackedmontage'
 
-    
-    # Update progress
+            # Database update will be handled in batch later
+            logger.warning(
+                f'Prepared {update_field} update for {well} T{timepoint}'
+            )
+
+            # Add to batch updates instead of immediate update
+            self.batch_updates.append({
+                'update_field': update_field,
+                'savepath': savepath,
+                'experimentdata_id': experimentdata_id,
+                'welldata_id': welldata_id,
+                'channeldata_id': channeldata_id,
+                'timepoint': int(timepoint)
+            })
+
+            # Process batch if it reaches the batch size
+            if len(self.batch_updates) >= self.batch_size:
+                self.process_batch_updates()
+
+        # Update progress
         self.processed_montages += 1
         total_montage_time = time() - montage_start_time
-        
+
         print(f'✅ {well} T{timepoint}: {total_montage_time:.2f}s')
         print()  # Add blank line between timepoints
-        
+
         return mont
 
 

@@ -3,7 +3,7 @@
 # Slurm job options
 #SBATCH --job-name=nextflow-run
 #SBATCH --time=08:00:00
-#SBATCH -N 2
+#SBATCH -N 1
 #SBATCH --output=/dev/null
 ##SBATCH --gres=gpu:v100:1
 #SBATCH --distribution=block:block

@@ -44,15 +44,32 @@ class Database:
     def __init__(self) -> None:
         """Initialise the database connection and ensure all tables exist."""
         file_path = self.CREDENTIALS_PATH
-        if os.path.exists(file_path):
-            try:
-                _df = pd.read_csv(file_path)
-            except Exception as e:
-                print(f"An error occurred while reading the file: {e}")
-        else:
-            print(f"File '{file_path}' does not exist.")
-        pw = _df.pw.iloc[0]
-        conn_string = f'postgresql://postgres:{pw}@fb-postgres01.gladstone.internal:5432/galaxy'
+        if not os.path.exists(file_path):
+            raise FileNotFoundError(
+                f"Database credentials file not found: '{file_path}'. "
+                "Cannot connect to the 'galaxy' PostgreSQL database."
+            )
+        try:
+            _df = pd.read_csv(file_path)
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to read database credentials from '{file_path}': {e}"
+            ) from e
+        try:
+            pw = _df.pw.iloc[0]
+        except (AttributeError, IndexError) as e:
+            raise ValueError(
+                f"Credentials file '{file_path}' is malformed: "
+                "expected a 'pw' column with at least one row."
+            ) from e
+        # Connection targets default to the lab cluster but can be overridden
+        # via environment variables (e.g. when running on a standalone VM or
+        # against a least-privilege role instead of the postgres superuser).
+        db_user = os.environ.get('GALAXY_DB_USER', 'postgres')
+        db_host = os.environ.get('GALAXY_DB_HOST', 'fb-postgres01.gladstone.internal')
+        db_port = os.environ.get('GALAXY_DB_PORT', '5432')
+        db_name = os.environ.get('GALAXY_DB_NAME', 'galaxy')
+        conn_string = f'postgresql://{db_user}:{pw}@{db_host}:{db_port}/{db_name}'
 
         self.engine = create_engine(conn_string, poolclass=NullPool)
         self.meta = MetaData()
@@ -368,16 +385,29 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
-    def add_row(self, tablename: str, dct: Union[Dict[str, Any], List[Dict[str, Any]]]) -> None:
+    def add_row(self, tablename: str, dct: Union[Dict[str, Any], List[Dict[str, Any]]],
+                chunk_size: int = 5000) -> None:
         """Insert one or more rows into a table.
+
+        Bulk inserts are chunked so a single very large multi-VALUES statement
+        cannot exceed PostgreSQL's bound-parameter limit or blow up statement
+        memory (celldata/intensitycelldata can be thousands of rows per well).
 
         Args:
             tablename: Name of the target table.
             dct: A single dict (one row) or list of dicts (bulk insert).
+            chunk_size: Max rows per INSERT statement for the bulk-list case.
         """
+        table = self.meta.tables[tablename]
         with self.engine.connect() as connection:
-            ins = self.meta.tables[tablename].insert().values(dct)
-            connection.execute(ins)
+            if isinstance(dct, list):
+                if not dct:
+                    return
+                for start in range(0, len(dct), chunk_size):
+                    chunk = dct[start:start + chunk_size]
+                    connection.execute(table.insert().values(chunk))
+            else:
+                connection.execute(table.insert().values(dct))
             connection.commit()
 
     def update(self, tablename: str, update_dct: Dict[str, Any], kwargs: Dict[str, Any]) -> None:

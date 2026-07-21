@@ -161,18 +161,28 @@ class OverlayBatch:
         
         print(f"[DEBUG] Unique timepoints found: {sorted(unique_timepoints)}")
         
-        # Prepare data for multiprocessing (avoid pickle issues)
-        df_data = self.df.to_dict('records')  # Convert DataFrame to list of dicts
+        # Prepare data for multiprocessing (avoid pickle issues).
+        # Only pass each task the tracking rows for its own well: previously the
+        # ENTIRE multi-well summary DataFrame was embedded into every per-timepoint
+        # task tuple and re-pickled per timepoint. Grouping by well up front means
+        # only the relevant rows are serialized. overlay_single_timepoint still
+        # filters by well/timepoint, so the overlay output is unchanged.
+        exp_df = self.df[self.df['experiment'] == self.experiment_name]
+        df_records_by_well = {
+            str(well): group.to_dict('records')
+            for well, group in exp_df.groupby('well')
+        }
         opt_params = {
             'contrast': self.opt.contrast,
             'shift': self.opt.shift,
             'cell_ids': getattr(self.opt, 'cell_ids', None),
             'cell_ids_by_well_timepoint': getattr(self.opt, 'cell_ids_by_well_timepoint', None)
         }
-        
+
         # Prepare tasks with serializable data
         mp_tasks = []
         for well, timepoint, aligned_path in timepoint_tasks:
+            df_data = df_records_by_well.get(str(well), [])
             mp_tasks.append((well, timepoint, aligned_path, df_data, self.experiment_name, opt_params, self.overlay_root))
         
         # Process timepoints in parallel
@@ -278,7 +288,9 @@ def overlay_single_timepoint(
     try:
         # Recreate pandas DataFrame from the passed data
         df = pd.DataFrame(df_data)
-        
+        if df.empty:
+            return f"{well} timepoint {timepoint} - no cells found"
+
         # Filter tracking data for this specific timepoint
         df_filtered = df[
             (df['experiment'] == experiment_name) &

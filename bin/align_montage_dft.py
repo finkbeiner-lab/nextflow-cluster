@@ -129,7 +129,7 @@ def align_tiles(opt: argparse.Namespace) -> None:
     if 'timepoint' not in df.columns:
         raise KeyError("tiledata must contain 'timepoint' column")
 
-    df = df[df['newimagemontage'].str.endswith('.tif')]
+    df = df[df['newimagemontage'].str.endswith('.tif', na=False)]
 
     db = Database()
     _, analysisdir = ops.get_raw_and_analysis_dir()
@@ -143,26 +143,36 @@ def align_tiles(opt: argparse.Namespace) -> None:
     else:
         other_channels = [c.strip() for c in opt.chosen_channels.split(',')]
 
-    # Step 1: compute morphology shifts
+    # Step 1: compute morphology shifts, once per (well, timepoint).
+    # Every tiledata row for a given well/timepoint/channel shares the SAME
+    # montage file (montage.py sets newimagemontage with a filter that omits
+    # tile), so the previous group-by ['well','tile'] recomputed the identical
+    # DFT shift + warp + write once per original tile and clobbered the same
+    # output path. Here we compute the shift once per well/timepoint and then
+    # update every tiledata row that shares it.
     morph = df[df['channel'] == opt.morphology_channel]
     new_shifts = {}
-    for (well, tile), group in morph.groupby(['well','tile']):
-        group = group.sort_values('timepoint')
-        print("group",group)
+    for well, wgroup in morph.groupby('well'):
+        # One representative montage per timepoint (dedup across tiles).
+        reps = (wgroup.sort_values('timepoint')
+                      .drop_duplicates(subset=['timepoint', 'newimagemontage']))
         prev = None
         running = np.zeros(2)
-        for idx, row in enumerate(group.itertuples()):
+        for row in reps.itertuples():
             img = cv2.imread(row.newimagemontage, cv2.IMREAD_UNCHANGED)
-            if idx == 0:
+            if img is None:
+                print(f'⚠️ cv2.imread returned None for {row.newimagemontage}; '
+                      f'skipping {well} T{row.timepoint}.')
+                continue
+            if prev is None:
                 running = np.zeros(2)
-                prev = img.copy()
             else:
                 shift, method = cross_correlation_dft_combo(prev, img)
                 running += shift
-                prev = img.copy()
-            new_shifts[(well, tile, row.timepoint)] = running.copy()
+            prev = img.copy()
+            new_shifts[(well, row.timepoint)] = running.copy()
 
-            # save morphology aligned image
+            # save morphology aligned image once for this well+timepoint
             out_dir = os.path.join(out_root, well)
             os.makedirs(out_dir, exist_ok=True)
             out_path = os.path.join(out_dir, os.path.basename(row.newimagemontage).replace('.tif','_ALIGNED.tif'))
@@ -170,7 +180,11 @@ def align_tiles(opt: argparse.Namespace) -> None:
             tform = transform.SimilarityTransform(translation=(-running[1], -running[0]))
             aligned = transform.warp(img, tform, preserve_range=True)
             save_image_uint16(out_path, aligned)
-            db.update('tiledata', {'alignedmontagepath': out_path}, {'id': row.tiledata_id})
+
+            # Update every tiledata row for this well/timepoint (morphology).
+            id_matches = wgroup[wgroup['timepoint'] == row.timepoint]['tiledata_id'].tolist()
+            for tdid in id_matches:
+                db.update('tiledata', {'alignedmontagepath': out_path}, {'id': tdid})
 
     print(new_shifts)
     # save new shift dict
@@ -179,24 +193,34 @@ def align_tiles(opt: argparse.Namespace) -> None:
     with open(shift_path,'wb') as f:
         pickle.dump(new_shifts,f)
 
-    # Step 2: apply shifts to other channels if selected
+    # Step 2: apply shifts to other channels, once per (well, timepoint,
+    # channel) montage instead of once per original tile. Shifts depend only
+    # on well+timepoint (derived from morphology), so all tiles of a channel
+    # montage warp identically — dedup and update all sharing tiledata rows.
     others = df[df['channel'] != opt.morphology_channel]
     if other_channels is not None:
         others = others[others['channel'].isin(other_channels)]
 
-    for row in tqdm(others.itertuples(), desc='Applying shifts to other channels'):
-        key = (row.well, row.tile, row.timepoint)
+    grouped = others.groupby(['well', 'timepoint', 'channel', 'newimagemontage'])
+    for (well, timepoint, channel, montage_path), ogroup in tqdm(
+            grouped, desc='Applying shifts to other channels'):
+        key = (well, timepoint)
         if key not in new_shifts:
             continue
         running = new_shifts[key]
-        img = cv2.imread(row.newimagemontage, cv2.IMREAD_UNCHANGED)
+        img = cv2.imread(montage_path, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            print(f'⚠️ cv2.imread returned None for {montage_path}; '
+                  f'skipping {well} T{timepoint} {channel}.')
+            continue
         tform = transform.SimilarityTransform(translation=(-running[1], -running[0]))
         aligned = transform.warp(img, tform, preserve_range=True)
-        out_dir = os.path.join(out_root, row.well)
+        out_dir = os.path.join(out_root, well)
         os.makedirs(out_dir, exist_ok=True)
-        out_path = os.path.join(out_dir, os.path.basename(row.newimagemontage).replace('.tif','_ALIGNED.tif'))
+        out_path = os.path.join(out_dir, os.path.basename(montage_path).replace('.tif','_ALIGNED.tif'))
         save_image_uint16(out_path, aligned)
-        db.update('tiledata', {'alignedmontagepath': out_path}, {'id': row.tiledata_id})
+        for tdid in ogroup['tiledata_id'].tolist():
+            db.update('tiledata', {'alignedmontagepath': out_path}, {'id': tdid})
 
     print('Tile alignment complete.')
 
