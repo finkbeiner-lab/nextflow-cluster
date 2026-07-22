@@ -228,8 +228,12 @@ class Segmentation:
 
         grouped = tiledata_df.groupby(['well', 'timepoint'])
 
-        for (well, timepoint), df in grouped:
-            self.thresh_single_parallel(Db, df, well, timepoint)
+        # Create the thread pool once and reuse across every (well, timepoint)
+        # group in this run_threshold invocation instead of rebuilding it per
+        # iteration.
+        with ThreadPoolExecutor(max_workers=self.thread_lim) as executor:
+            for (well, timepoint), df in grouped:
+                self.thresh_single_parallel(Db, df, well, timepoint, executor=executor)
 
         # One bulk delete at the end is faster than per-tile deletes
         if all_tile_ids:
@@ -241,6 +245,7 @@ class Segmentation:
         df: pd.DataFrame,
         well: str,
         timepoint: str,
+        executor: Optional[ThreadPoolExecutor] = None,
     ) -> None:
         """Segment all tiles for one well/timepoint using a thread pool.
 
@@ -249,6 +254,10 @@ class Segmentation:
             df: Subset of tiledata rows for this well/timepoint.
             well: Well identifier (e.g. ``"A1"``).
             timepoint: Timepoint label (e.g. ``"T0"``).
+            executor: Caller-owned :class:`ThreadPoolExecutor` for tile
+                submission. Required in practice; ``None`` default is kept
+                only for signature compatibility. The caller retains
+                lifecycle ownership (no shutdown here).
         """
         strt = time()
         df = df.sort_values(by='tile').copy()
@@ -261,41 +270,40 @@ class Segmentation:
         # Chunk size balances work granularity vs. thread overhead
         chunk_size = max(1, len(df) // (self.thread_lim * 2))
 
-        with ThreadPoolExecutor(max_workers=self.thread_lim) as executor:
-            futures = []
-            for i in range(0, len(df), chunk_size):
-                chunk = df.iloc[i:i+chunk_size]
-                for _, row in chunk.iterrows():
-                    future = executor.submit(self.process_single_tile, row, well, timepoint)
-                    futures.append((future, row))
+        futures = []
+        for i in range(0, len(df), chunk_size):
+            chunk = df.iloc[i:i+chunk_size]
+            for _, row in chunk.iterrows():
+                future = executor.submit(self.process_single_tile, row, well, timepoint)
+                futures.append((future, row))
 
-            for future, row in futures:
-                try:
-                    result = future.result()
-                    if result:
-                        maskpath, props_df, masks = result
+        for future, row in futures:
+            try:
+                result = future.result()
+                if result:
+                    maskpath, props_df, masks = result
 
-                        batch_updates.append({
-                            'kwargs': dict(
-                                experimentdata_id=row.experimentdata_id,
-                                welldata_id=row.welldata_id,
-                                channeldata_id=row.channeldata_id,
-                                tile=row.tile,
-                                timepoint=row.timepoint,
-                            ),
-                            'data': dict(alignedmontagemaskpath=maskpath),
-                        })
+                    batch_updates.append({
+                        'kwargs': dict(
+                            experimentdata_id=row.experimentdata_id,
+                            welldata_id=row.welldata_id,
+                            channeldata_id=row.channeldata_id,
+                            tile=row.tile,
+                            timepoint=row.timepoint,
+                        ),
+                        'data': dict(alignedmontagemaskpath=maskpath),
+                    })
 
-                        if not props_df.empty:
-                            batch_data.append((row, props_df))
+                    if not props_df.empty:
+                        batch_data.append((row, props_df))
 
-                        self.processed_tiles += 1
-                        progress = (self.processed_tiles / self.total_tiles) * 100
-                        print(f'Progress: {progress:.1f}% ({self.processed_tiles}/{self.total_tiles})')
+                    self.processed_tiles += 1
+                    progress = (self.processed_tiles / self.total_tiles) * 100
+                    print(f'Progress: {progress:.1f}% ({self.processed_tiles}/{self.total_tiles})')
 
-                except Exception as exc:
-                    print(f'Tile {row.tile} generated an exception: {exc}')
-                    continue
+            except Exception as exc:
+                print(f'Tile {row.tile} generated an exception: {exc}')
+                continue
 
         # Flush accumulated database writes
         if batch_updates:
