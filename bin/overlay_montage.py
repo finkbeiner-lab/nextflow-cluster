@@ -233,7 +233,9 @@ class OverlayBatch:
             List of integer timepoint indices.
         """
         if tp_string == "all":
-            return list(range(100))  # upper bound; filtered by available data
+            # Use every timepoint actually present in the tracked-cell summary.
+            # The previous `range(100)` capped experiments at T99 silently.
+            return sorted(self.df['timepoint'].astype(int).unique().tolist())
         elif "-" in tp_string:
             start, end = map(int, tp_string.replace("T", "").split("-"))
             return list(range(start, end + 1))
@@ -289,7 +291,7 @@ def overlay_single_timepoint(
         # Recreate pandas DataFrame from the passed data
         df = pd.DataFrame(df_data)
         if df.empty:
-            return f"{well} timepoint {timepoint} - no cells found"
+            return f"{well} timepoint {timepoint} - skipped: no cells in tracking summary (data missing?)"
 
         # Filter tracking data for this specific timepoint
         df_filtered = df[
@@ -311,7 +313,7 @@ def overlay_single_timepoint(
             df_filtered = df_filtered[df_filtered['tracked_id'].isin(cell_ids)]
 
         if df_filtered.empty:
-            return f"{well} timepoint {timepoint} - no cells found"
+            return f"{well} timepoint {timepoint} - skipped: no stable/selected cells match at this timepoint"
 
         # Load and process image
         aligned_img = imageio.imread(aligned_path)
