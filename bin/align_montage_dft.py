@@ -14,6 +14,7 @@ database table is updated accordingly.
 
 import argparse
 import datetime
+import logging
 import os
 import pickle
 from typing import Tuple
@@ -28,6 +29,19 @@ from tqdm import tqdm
 
 from db_util import Ops
 from sql import Database
+
+# Module-level logger — writes to ./finkbeiner_logs/AlignMontageDFT-log_<ts>.log
+# and (via attach_experiment_log below) to <output_path>/pipeline_debug.log.
+logger = logging.getLogger("AlignMontageDFT")
+_now = datetime.datetime.now()
+_TIMESTAMP = '%d%02d%02d%02d%02d' % (_now.year, _now.month, _now.day, _now.hour, _now.minute)
+_fink_log_dir = './finkbeiner_logs'
+os.makedirs(_fink_log_dir, exist_ok=True)
+logger.addHandler(logging.FileHandler(os.path.join(_fink_log_dir, f'AlignMontageDFT-log_{_TIMESTAMP}.log')))
+# Also mirror this logger to the experiment-scoped debug log
+# (<params.output_path>/pipeline_debug.log) shared across all parallel wells.
+from experiment_logger import attach_experiment_log  # noqa: E402
+attach_experiment_log(logger, os.environ.get('NEXTFLOW_OUTPUT_PATH', ''), 'ALIGN_MONTAGE_DFT')
 
 
 def cross_correlation_dft_combo(

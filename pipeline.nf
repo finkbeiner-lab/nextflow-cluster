@@ -195,6 +195,42 @@ log.info """\
 
 workflow {
 
+    // ------------------------------------------------------------------
+    // Experiment-scoped debug log header. Every Python worker also appends
+    // to this file (see bin/experiment_logger.py — flock'd on NFS). Runs
+    // ONCE at workflow-body evaluation, before any process fires, so the
+    // top of the log has run-level context even if all Python jobs fail
+    // before writing.
+    // ------------------------------------------------------------------
+    def _debug_log = file("${params.output_path}/pipeline_debug.log")
+    try {
+        _debug_log.parent.mkdirs()
+        def _run_ts = new Date().format("yyyy-MM-dd HH:mm:ss")
+        def _enabled_modules = [
+            params.DO_REGISTER_EXPERIMENT      ? 'REGISTER'      : null,
+            params.DO_UPDATEPATHS              ? 'UPDATEPATHS'   : null,
+            params.DO_MONTAGE                  ? 'MONTAGE'       : null,
+            params.DO_ALIGN_MONTAGE_DFT        ? 'ALIGN_MDFT'    : null,
+            params.DO_SEGMENTATION_MONTAGE     ? 'SEG_MONTAGE'   : null,
+            params.DO_TRACKING_MONTAGE         ? 'TRACK_MONTAGE' : null,
+            params.DO_STABLE_CELL_FILTER       ? 'STABLE_FILTER' : null,
+            params.DO_OVERLAY_MONTAGE          ? 'OVERLAY_MONT'  : null,
+            params.DO_STD_WORKFLOW             ? 'STD'           : null,
+            params.DO_STD_WORKFLOW_IXM         ? 'STD_IXM'       : null,
+            params.DO_BUNDLED_STD_WORKFLOW     ? 'BUNDLED_STD'   : null,
+            params.DO_BUNDLED_IXM_STABLE_TRACK ? 'BUNDLED_STK'   : null,
+        ].findAll { it != null }.join(',')
+        def _wells_txt = (params.chosen_wells == 'all') ? 'all' : wells_to_use.join('|')
+        _debug_log.append(
+            "=== RUN START ${_run_ts} runId=${workflow.runName} " +
+            "experiment=${params.experiment} wells=${_wells_txt} " +
+            "channels=${params.chosen_channels} timepoints=${params.chosen_timepoints} " +
+            "modules=[${_enabled_modules}] output_path=${params.output_path} ===\n"
+        )
+    } catch (Exception _e) {
+        log.warn "[pipeline_debug.log] could not write header: ${_e.message}"
+    }
+
     if (params.DO_UPDATEPATHS && !params.DO_REGISTER_EXPERIMENT){
         updatepath_ch = UPDATEPATHS(experiment_ch)
         updatepath_ch.view { it }

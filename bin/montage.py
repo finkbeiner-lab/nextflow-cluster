@@ -35,6 +35,10 @@ logname = os.path.join(fink_log_dir, f'Montage-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 # fh.setLevel(logging.DEBUG)
 logger.addHandler(fh)
+# Also mirror this logger to the experiment-scoped debug log
+# (<params.output_path>/pipeline_debug.log) shared across all parallel wells.
+from experiment_logger import attach_experiment_log  # noqa: E402
+attach_experiment_log(logger, os.environ.get('NEXTFLOW_OUTPUT_PATH', ''), 'MONTAGE')
 logger.warning('Running MONTAGE WITH ENHANCED TIMING from Database.')
 
 

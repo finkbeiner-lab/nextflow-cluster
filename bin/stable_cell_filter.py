@@ -81,6 +81,12 @@ def _setup_logging() -> None:
     logger.setLevel(logging.INFO)
     logger.addHandler(handler)
     logger.addHandler(logging.StreamHandler(sys.stderr))
+    # Also mirror this logger to the experiment-scoped debug log
+    # (<params.output_path>/pipeline_debug.log) shared across all parallel wells.
+    from experiment_logger import attach_experiment_log  # noqa: PLC0415
+    attach_experiment_log(
+        logger, os.environ.get("NEXTFLOW_OUTPUT_PATH", ""), "STABLE_CELL_FILTER"
+    )
 
 
 def _resolve_input_csv(opts: argparse.Namespace) -> str | None:

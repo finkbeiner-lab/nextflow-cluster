@@ -45,6 +45,10 @@ if not os.path.exists(fink_log_dir):
 logname = os.path.join(fink_log_dir, f'Tracking-log_{TIMESTAMP}.log')
 fh = logging.FileHandler(logname)
 logger.addHandler(fh)
+# Also mirror this logger to the experiment-scoped debug log
+# (<params.output_path>/pipeline_debug.log) shared across all parallel wells.
+from experiment_logger import attach_experiment_log  # noqa: E402
+attach_experiment_log(logger, os.environ.get('NEXTFLOW_OUTPUT_PATH', ''), 'TRACK_MONTAGE')
 logger.warning('Running OPTIMIZED Tracking from Database.')
 
 def read_tiff_safe(file_path: str) -> Optional[np.ndarray]:

@@ -10,6 +10,7 @@ well/timepoint filtering.
 """
 
 import imageio
+import logging
 import os
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -21,6 +22,19 @@ from sql import Database
 import datetime
 from time import time
 from multiprocessing import Pool, cpu_count
+
+# Module-level logger — writes to ./finkbeiner_logs/OverlayMontage-log_<ts>.log
+# and (via attach_experiment_log below) to <output_path>/pipeline_debug.log.
+logger = logging.getLogger("OverlayMontage")
+_now = datetime.datetime.now()
+_TIMESTAMP = '%d%02d%02d%02d%02d' % (_now.year, _now.month, _now.day, _now.hour, _now.minute)
+_fink_log_dir = './finkbeiner_logs'
+os.makedirs(_fink_log_dir, exist_ok=True)
+logger.addHandler(logging.FileHandler(os.path.join(_fink_log_dir, f'OverlayMontage-log_{_TIMESTAMP}.log')))
+# Also mirror this logger to the experiment-scoped debug log
+# (<params.output_path>/pipeline_debug.log) shared across all parallel wells.
+from experiment_logger import attach_experiment_log  # noqa: E402
+attach_experiment_log(logger, os.environ.get('NEXTFLOW_OUTPUT_PATH', ''), 'OVERLAY_MONTAGE')
 
 
 class OverlayBatch:
