@@ -14,6 +14,7 @@ import logging
 import argparse
 import os
 import fcntl
+import signal
 from typing import Any, Dict, List, Optional, Tuple
 
 from db_util import Ops
@@ -24,6 +25,7 @@ import tifffile
 import datetime
 from time import time
 from multiprocessing import Pool, cpu_count
+from multiprocessing import shared_memory
 from scipy.optimize import linear_sum_assignment
 
 logger = logging.getLogger("TrackingDB")
@@ -86,67 +88,60 @@ def process_label_contour(args: Tuple[np.ndarray, int]) -> Optional["Cell"]:
     except Exception:
         return None
 
-# Per-worker copy of the montage mask, set once by the Pool initializer so it
-# is not re-pickled and shipped with every label (which copies the whole array
-# hundreds/thousands of times per timepoint and can OOM compute nodes).
-_WORKER_MASK: Optional[np.ndarray] = None
+# Per-worker cache of attached SharedMemory blocks by name. The parent writes
+# each timepoint's mask into a reusable shared block; workers attach lazily on
+# first sight of a new name and reuse the numpy view across every subsequent
+# label task. This lets a single Pool (created once per tracker.run()) service
+# every timepoint without re-pickling the mask (previously the mask was pinned
+# via a Pool initializer, but that forced a fresh Pool per timepoint).
+_WORKER_SHM_CACHE: Dict[str, Tuple["shared_memory.SharedMemory", np.ndarray]] = {}
 
 
-def _init_label_worker(mask: np.ndarray) -> None:
-    """Pool initializer: stash the montage mask once per worker process."""
-    global _WORKER_MASK
-    _WORKER_MASK = mask
+def _init_label_worker() -> None:
+    """Pool initializer.
+
+    No-op today (shared memory is attached lazily inside the worker on the
+    first task that references a given block name), but kept as an explicit
+    hook so future setup — e.g. limiting OpenCV thread counts per worker —
+    has an obvious place to live.
+    """
+    return None
 
 
-def _process_label_from_global(label: int) -> Optional["Cell"]:
-    """Pool worker: extract the contour for one label using the shared mask."""
-    return process_label_contour((_WORKER_MASK, label))
+def _process_label_shm(
+    args: Tuple[str, Tuple[int, ...], str, int],
+) -> Optional["Cell"]:
+    """Pool worker: attach shared mask by name (once), extract contour for label.
 
-
-def process_contours_parallel(
-    mask: np.ndarray,
-    labels: np.ndarray,
-    num_processes: Optional[int] = None,
-) -> List["Cell"]:
-    """Find cell contours for all labels, optionally in parallel.
-
-    For small label counts (< 50) processing is sequential to avoid the
-    overhead of spawning worker processes.
+    The parent broadcasts ``(shm_name, shape, dtype_str, label)`` per label.
+    The first call for a new ``shm_name`` attaches to the block; every
+    subsequent call reuses the cached numpy view.  When the parent
+    reallocates (new block name — e.g. the mask grew), the worker evicts and
+    closes its old cache entry so at most one shared block is held.
 
     Args:
-        mask: Label image where each pixel value is a cell label.
-        labels: Array of unique label values to process (excluding 0).
-        num_processes: Number of worker processes.  Defaults to 75 % of
-            available CPU cores.
+        args: ``(shm_name, shape, dtype_str, label)``.
 
     Returns:
-        List of ``Cell`` objects with valid contours.
+        A ``Cell`` for ``label`` or ``None`` if no contour was found.
     """
-    if num_processes is None:
-        # Use 75% of available cores, similar to segmentation script approach
-        available_cores = cpu_count()
-        num_processes = max(1, int(available_cores * 0.75))
-        print(f'    Using {num_processes} cores out of {available_cores} available (75%)')
-    
-    if len(labels) < 50:  # Don't parallelize for small numbers
-        # Process sequentially for small label counts
-        results = []
-        for label in labels:
-            cell = process_label_contour((mask, label))
-            if cell:
-                results.append(cell)
-        return results
-    
-    # Process in parallel for large label counts. The mask is passed ONCE per
-    # worker via the pool initializer instead of being re-pickled and shipped
-    # with every label.
-    with Pool(processes=num_processes,
-              initializer=_init_label_worker,
-              initargs=(mask,)) as pool:
-        results = pool.map(_process_label_from_global, labels)
-
-    # Filter out None results
-    return [cell for cell in results if cell is not None]
+    shm_name, shape, dtype_str, label = args
+    cache = _WORKER_SHM_CACHE.get(shm_name)
+    if cache is None:
+        # A new block name means the parent replaced the shared buffer.
+        # Release any old attachments so we don't accumulate them.
+        for old_name in list(_WORKER_SHM_CACHE.keys()):
+            old_shm, _ = _WORKER_SHM_CACHE.pop(old_name)
+            try:
+                old_shm.close()
+            except Exception:
+                pass
+        shm = shared_memory.SharedMemory(name=shm_name)
+        arr = np.ndarray(shape, dtype=np.dtype(dtype_str), buffer=shm.buf)
+        _WORKER_SHM_CACHE[shm_name] = (shm, arr)
+        cache = _WORKER_SHM_CACHE[shm_name]
+    _, mask = cache
+    return process_label_contour((mask, label))
 
 class MotionTracker:
     """Linear motion tracker that predicts cell positions across frames.
@@ -562,11 +557,133 @@ class MontageDBTracker:
         # Dynamic core allocation for parallel processing
         available_cores = cpu_count()
         self.max_cores = max(1, int(available_cores * 0.75))  # Use 75% of available cores
-        
+
+        # Persistent worker pool + shared-memory block. Both are created lazily
+        # on the first contour extraction and reused across every timepoint /
+        # well processed by this tracker instance. They are torn down in the
+        # ``finally`` block of ``run()``.
+        self._pool: Optional[Pool] = None
+        self._shm: Optional[shared_memory.SharedMemory] = None
+        self._shm_capacity: int = 0
+
         logger.info(f"Initialized MontageDBTracker for experiment {experiment}")
         logger.info(f"Using {self.max_cores} cores out of {available_cores} available (75%)")
         if self.motion:
             logger.info("Motion tracking with linear prediction and Hungarian algorithm enabled")
+
+    def _ensure_pool(self) -> Pool:
+        """Create the worker pool on first use; return the cached instance thereafter.
+
+        The pool is shared across every timepoint / well handled by this
+        tracker run, so the fork + ``import numpy/cv2`` cost is paid once.
+        """
+        if self._pool is None:
+            self._pool = Pool(
+                processes=self.max_cores,
+                initializer=_init_label_worker,
+            )
+            logger.info(f"Started tracking worker pool with {self.max_cores} processes")
+        return self._pool
+
+    def _prepare_shm_for_mask(
+        self,
+        mask: np.ndarray,
+    ) -> Tuple[str, Tuple[int, ...], str]:
+        """Publish ``mask`` into a reusable shared-memory buffer.
+
+        Reuses the existing block when it has enough capacity (grow-only);
+        otherwise closes+unlinks the old block and allocates a new one — in
+        which case workers detect the name change on their next task and
+        re-attach.
+
+        Args:
+            mask: 2-D label image to make visible to worker processes.
+
+        Returns:
+            ``(shm_name, shape, dtype_str)`` — the values workers need to
+            attach and interpret the buffer.
+        """
+        # numpy views need contiguous memory; readers usually give us that,
+        # but guard against a stray view slipping through.
+        if not mask.flags['C_CONTIGUOUS']:
+            mask = np.ascontiguousarray(mask)
+        nbytes = mask.nbytes
+        if self._shm is None or self._shm_capacity < nbytes:
+            if self._shm is not None:
+                try:
+                    self._shm.close()
+                    self._shm.unlink()
+                except Exception:
+                    pass
+            self._shm = shared_memory.SharedMemory(create=True, size=nbytes)
+            self._shm_capacity = nbytes
+        view = np.ndarray(mask.shape, dtype=mask.dtype, buffer=self._shm.buf)
+        view[:] = mask
+        return self._shm.name, tuple(mask.shape), mask.dtype.str
+
+    def _process_contours_pooled(
+        self,
+        mask: np.ndarray,
+        labels: np.ndarray,
+    ) -> List["Cell"]:
+        """Extract contours for every label in ``mask`` using the persistent pool.
+
+        Falls back to sequential processing for tiny label counts to avoid
+        IPC overhead. For larger counts the mask is published once via
+        shared memory and each worker task carries only the integer label
+        plus the (small) shm descriptor.
+
+        Args:
+            mask: Encoded segmentation mask.
+            labels: Non-zero label values to extract.
+
+        Returns:
+            List of ``Cell`` objects (only successful contour extractions).
+        """
+        if len(labels) < 50:
+            results: List["Cell"] = []
+            for lb in labels:
+                cell = process_label_contour((mask, int(lb)))
+                if cell:
+                    results.append(cell)
+            return results
+
+        pool = self._ensure_pool()
+        shm_name, shape, dtype_str = self._prepare_shm_for_mask(mask)
+        task_args = [(shm_name, shape, dtype_str, int(lb)) for lb in labels]
+        results = pool.map(_process_label_shm, task_args)
+        return [c for c in results if c is not None]
+
+    def _cleanup_pool(self) -> None:
+        """Tear down the worker pool and release the shared-memory buffer.
+
+        Safe to call multiple times. Invoked from ``run()``'s ``finally`` so
+        the resources are released whether the run completed normally, hit
+        an exception, or was interrupted by SIGINT / SIGTERM (Slurm kill).
+        """
+        pool = self._pool
+        if pool is not None:
+            try:
+                pool.close()
+                pool.join()
+            except Exception:
+                try:
+                    pool.terminate()
+                    pool.join()
+                except Exception:
+                    pass
+            self._pool = None
+        if self._shm is not None:
+            try:
+                self._shm.close()
+            except Exception:
+                pass
+            try:
+                self._shm.unlink()
+            except Exception:
+                pass
+            self._shm = None
+            self._shm_capacity = 0
     
     def _get_channel_path(self, mask_path: str, channel: str) -> str:
         """Derive the aligned/montaged image path for a given channel.
@@ -738,8 +855,9 @@ class MontageDBTracker:
                         print(f'    Processing {len(labels)} labels for contours in parallel...')
                         contour_start_time = time()
                         
-                        # Use parallel processing for contour finding
-                        cells = process_contours_parallel(mask, labels, num_processes=self.max_cores)
+                        # Use the persistent, per-tracker worker pool +
+                        # shared-memory buffer (created lazily on first call).
+                        cells = self._process_contours_pooled(mask, labels)
                         
                         # Add cells to entries
                         for cell in cells:
@@ -1138,14 +1256,45 @@ class MontageDBTracker:
         mask TIFFs, computes per-cell intensity measurements, and saves a
         summary CSV and tracking-statistics CSV.
 
+        The worker pool and shared-memory buffer created for parallel
+        contour extraction are torn down in a ``finally`` block so an
+        exception, KeyboardInterrupt, or Slurm SIGTERM does not leak
+        workers or an unlinked ``/dev/shm`` block.
+
         Args:
             wells: List of well identifiers to process.
         """
         self.start_time = time()
         self.total_wells = len(wells)
-        
+
         logger.info(f"Starting tracking for wells: {wells}")
-        
+
+        # Make SIGTERM (Slurm's polite kill) raise SystemExit so the
+        # ``finally`` below runs and releases the pool + shared memory.
+        prev_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def _sigterm_handler(signum, frame):
+            logger.warning("Received SIGTERM; cleaning up tracker resources")
+            raise SystemExit(f"terminated by signal {signum}")
+
+        try:
+            signal.signal(signal.SIGTERM, _sigterm_handler)
+        except (ValueError, OSError):
+            # Not on the main thread — best-effort; skip installation.
+            prev_sigterm = None
+
+        try:
+            self._run_body(wells)
+        finally:
+            self._cleanup_pool()
+            if prev_sigterm is not None:
+                try:
+                    signal.signal(signal.SIGTERM, prev_sigterm)
+                except (ValueError, OSError):
+                    pass
+
+    def _run_body(self, wells: List[str]) -> None:
+        """Internal: the actual tracking work, wrapped by ``run()`` for cleanup."""
         exp_id = self.Db.get_table_uuid('experimentdata', {'experiment': self.experiment})
         all_wells, df, tiledata_df = self.gather_encoded_from_db(wells)
 
