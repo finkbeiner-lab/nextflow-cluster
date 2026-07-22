@@ -784,6 +784,11 @@ class MontageDBTracker:
         intensities = {}
         for chan, img in image_stack.items():
             intensities[chan] = float(np.mean(img[bin_mask > 0]))
+        # Sentinel: if no channel image was available, still emit ONE row per
+        # cell so downstream tools see the track (mask was saved) even when
+        # intensity could not be measured. Prevents silent CSV drop-outs.
+        if not intensities:
+            intensities = {'<missing>': float('nan')}
 
         return cx, cy, area, intensities
 
@@ -1145,6 +1150,7 @@ class MontageDBTracker:
         all_wells, df, tiledata_df = self.gather_encoded_from_db(wells)
 
         out_records = []
+        n_missing_channel = 0  # counts (well, tp, channel) triples with no image
 
         for well, time_dict in all_wells.items():
             welldata_id = self.Db.get_table_uuid('welldata', {'experimentdata_id': exp_id, 'well': well})
@@ -1234,9 +1240,11 @@ class MontageDBTracker:
                         if img is not None:
                             channel_imgs[ch] = img
                         else:
-                            logger.warning(f"[WARN] Could not read aligned image for {ch} at: {img_path}")
+                            logger.error(f"[MISSING-CHANNEL] Could not read aligned image for well={well} tp={tp} ch={ch} path={img_path}")
+                            n_missing_channel += 1
                     else:
-                        logger.warning(f"[WARN] Missing aligned image for {ch} at: {img_path}")
+                        logger.error(f"[MISSING-CHANNEL] Missing aligned image for well={well} tp={tp} ch={ch} path={img_path}")
+                        n_missing_channel += 1
 
                 ## KS edit for Galaxy csv format
                 for new_id, cell in recs:
@@ -1300,6 +1308,8 @@ class MontageDBTracker:
             print(f'   Motion tracking enabled: {self.tracking_stats["overall_stats"]["motion_enabled"]}')
         
         # Final completion logging
+        if n_missing_channel:
+            logger.error(f"missing-channel image events: {n_missing_channel} (see [MISSING-CHANNEL] lines above)")
         total_time = time() - self.start_time
         logger.warning(f'TRACKING COMPLETED in {total_time:.2f}s ({total_time/60:.2f} min)')
         print(f'✅ TRACKING COMPLETED in {total_time:.2f}s ({total_time/60:.2f} min)')
