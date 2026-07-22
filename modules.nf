@@ -687,6 +687,11 @@ process OVERLAY_MONTAGE {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     tag "$well"
 
+    maxForks 21
+    memory { 20.GB * task.attempt }
+    errorStrategy { task.attempt <= 2 ? 'retry' : 'ignore' }
+    maxRetries 2
+
     input:
     tuple val(ready),
       val(exp),

@@ -90,8 +90,17 @@ class OverlayBatch:
         if not os.path.exists(summary_path):
             raise FileNotFoundError(f"Tracking CSV not found: {summary_path}")
         self.df = pd.read_csv(summary_path)
-        self.df['timepoint'] = self.df['timepoint'].astype(int)
-        print(f"[INFO] Loaded tracking summary: {summary_path}")
+        n_before = len(self.df)
+        self.df['tracked_id'] = pd.to_numeric(self.df['tracked_id'], errors='coerce')
+        self.df['timepoint']  = pd.to_numeric(self.df['timepoint'],  errors='coerce')
+        self.df = self.df.dropna(subset=['tracked_id', 'timepoint']).copy()
+        self.df['tracked_id'] = self.df['tracked_id'].astype(int)
+        self.df['timepoint']  = self.df['timepoint'].astype(int)
+        n_dropped = n_before - len(self.df)
+        if n_dropped:
+            print(f"[WARN] Dropped {n_dropped} malformed row(s) from tracking summary "
+                  f"(non-numeric tracked_id/timepoint) — likely column-shift corruption")
+        print(f"[INFO] Loaded tracking summary: {summary_path} ({len(self.df)} rows)")
         
         # Dynamic core allocation (75% of available cores)
         self.max_cores = max(1, int(cpu_count() * 0.75))
@@ -292,6 +301,12 @@ def overlay_single_timepoint(
         df = pd.DataFrame(df_data)
         if df.empty:
             return f"{well} timepoint {timepoint} - skipped: no cells in tracking summary (data missing?)"
+        # Belt-and-suspenders: enforce int dtype so .isin() against int stable-id set matches.
+        # Pool serialization can widen dtypes; a single stray string in an upstream write
+        # would otherwise cause a silent zero-match filter here.
+        df['tracked_id'] = pd.to_numeric(df['tracked_id'], errors='coerce').astype('Int64')
+        df = df.dropna(subset=['tracked_id']).copy()
+        df['tracked_id'] = df['tracked_id'].astype(int)
 
         # Filter tracking data for this specific timepoint
         df_filtered = df[
