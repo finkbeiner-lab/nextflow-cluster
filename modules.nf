@@ -1099,12 +1099,18 @@ process STABLE_CELL_FILTER {
 process BUNDLED_IXM_STABLE_TRACK {
     tag "BUNDLED_IXM_STABLE_TRACK-${exp}_${well}"
 
-    // Python inside tracking_montage.py uses cpu_count() * 0.75 ≈ 21 workers on
-    // 28-core nodes. With cpus=4 the cgroup throttled those 21 workers to 4
-    // cores' worth of CPU time and each timepoint took ~40s. Aligning the
-    // Slurm allocation to 20 lets the worker pool actually run in parallel.
-    cpus 20
-    memory 20.GB
+    // Fit ~3 BUNDLED tasks per 28-core node so a full plate parallelizes
+    // across ~18 concurrent wells on the 6-node galaxy queue (vs. 6 wells
+    // when cpus was 20). Slurm bin-packs: 28 cpus / 9 = 3 tasks/node,
+    // and 386 GB RAM / 15 GB = 25 tasks/node from memory (RAM is not the
+    // limit here).
+    //
+    // The Python worker pool inside tracking_montage.py is capped via
+    // --max_workers below so it matches this cpus allocation exactly —
+    // otherwise cgroup would throttle a 21-process pool into 9 cores'
+    // worth of CPU time and thrash.
+    cpus 9
+    memory 15.GB
     time '7d'
 
     input:
@@ -1162,7 +1168,7 @@ process BUNDLED_IXM_STABLE_TRACK {
 
     echo "🎯 Step 3/3: TRACKING_MONTAGE ${well}"
     tracking_montage.py --experiment ${exp} --track_type ${track_type} --max_dist ${distance_threshold} \\
-    --wells ${well} --target_channel ${target_channel} ${motion ? '--motion' : ''}
+    --wells ${well} --target_channel ${target_channel} --max_workers 9 ${motion ? '--motion' : ''}
     if [ \$? -ne 0 ]; then echo "❌ TRACKING_MONTAGE failed for well ${well}"; exit 1; fi
     echo "✅ TRACKING_MONTAGE done for well ${well}"
 

@@ -530,6 +530,7 @@ class MontageDBTracker:
         max_dist: int,
         target_channel: str,
         motion: bool = False,
+        max_workers: Optional[int] = None,
     ) -> None:
         self.Db = Database()
         self.experiment = experiment
@@ -558,9 +559,23 @@ class MontageDBTracker:
             }
         }
         
-        # Dynamic core allocation for parallel processing
+        # Worker-pool sizing.
+        #
+        # cpu_count() reflects the physical node's cores, NOT the Slurm
+        # cgroup cpu allocation for this task. When multiple BUNDLED
+        # tasks share a node (see modules.nf cpus setting + fitment math
+        # in commit history), a 21-worker pool sized off cpu_count()
+        # gets cgroup-throttled and slows each timepoint down while
+        # thrashing.
+        #
+        # --max_workers (passed by modules.nf) matches the Slurm cpus
+        # allocation, so the pool size == the cores the task actually
+        # has. Falls back to 0.75 * cpu_count() when unset (CLI runs).
         available_cores = cpu_count()
-        self.max_cores = max(1, int(available_cores * 0.75))  # Use 75% of available cores
+        if max_workers is not None and max_workers > 0:
+            self.max_cores = max(1, min(max_workers, available_cores))
+        else:
+            self.max_cores = max(1, int(available_cores * 0.75))
 
         # Persistent worker pool + shared-memory block. Both are created lazily
         # on the first contour extraction and reused across every timepoint /
@@ -571,7 +586,8 @@ class MontageDBTracker:
         self._shm_capacity: int = 0
 
         logger.info(f"Initialized MontageDBTracker for experiment {experiment}")
-        logger.info(f"Using {self.max_cores} cores out of {available_cores} available (75%)")
+        logger.info(f"Using {self.max_cores} cores out of {available_cores} available "
+                    f"({'via --max_workers' if max_workers else '75% of cpu_count()'})")
         if self.motion:
             logger.info("Motion tracking with linear prediction and Hungarian algorithm enabled")
 
@@ -1486,11 +1502,18 @@ if __name__ == '__main__':
     parser.add_argument("--target_channel",  type=str, default='Cy5',
                         dest="target_channel",
                         help="Get intensity of this channel.")
-    parser.add_argument('--motion', action='store_true', 
+    parser.add_argument('--motion', action='store_true',
                         help='Enable motion tracking with linear prediction and Hungarian algorithm')
+    parser.add_argument('--max_workers', type=int, default=None,
+                        help='Cap the tracking worker pool to N processes. '
+                             'Should match the Slurm cpus allocation when multiple '
+                             'BUNDLED tasks share a node. Omit to use 0.75 * cpu_count() '
+                             '(the historical default for CLI runs).')
     args = parser.parse_args()
 
     wells = [w.strip() for w in args.wells.split(',')]
-    tracker = MontageDBTracker(args.experiment, args.track_type, args.max_dist, args.target_channel, args.motion)
+    tracker = MontageDBTracker(args.experiment, args.track_type, args.max_dist,
+                               args.target_channel, args.motion,
+                               max_workers=args.max_workers)
     tracker.run(wells)
 
