@@ -731,7 +731,7 @@ process BUNDLED_WORKFLOW_IXM {
     // MONTAGE ~2 CPU, SEGMENTATION ~4 CPU, TRACKING ~2 CPU, OVERLAY ~1 CPU → 4 cpus
     cpus 4
     memory 20.GB
-    time '8h'
+    time '7d'
 
     input:
     tuple val(exp),
@@ -872,7 +872,7 @@ process BUNDLED_STD_WORKFLOW {
     // These can be adjusted based on your cluster capacity
     cpus 17
     memory 20.GB
-    time '8h'
+    time '7d'
 
     // Process-specific resource hints (for monitoring)
     // MONTAGE: ~2 CPU, ~8GB RAM
@@ -1095,7 +1095,7 @@ process BUNDLED_IXM_STABLE_TRACK {
     // Slurm allocation to 20 lets the worker pool actually run in parallel.
     cpus 20
     memory 20.GB
-    time '8h'
+    time '7d'
 
     input:
     tuple val(exp),
