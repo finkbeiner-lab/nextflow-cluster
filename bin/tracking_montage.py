@@ -716,10 +716,20 @@ class MontageDBTracker:
         dirname = os.path.dirname(aligned_path)
         
         # Replace channel name in filename
+        # Keep this in sync with bin/register_experiment.py's channel scan
+        # list — any channel that can appear in a registered filename must
+        # have a matching prefix here, or the substitution silently no-ops
+        # and intensity gets read from the WRONG image (see warning below).
         parts = filename.split('_')
         matched = False
         for i, part in enumerate(parts):
-            if any(part.startswith(prefix) for prefix in ['Epi-', 'DAPI', 'Cy', 'FITC', 'RFP', 'Confocal-']):
+            if any(part.startswith(prefix) for prefix in [
+                'Epi-', 'Confocal-',                          # legacy prefixes
+                'DAPI', 'FITC', 'RFP',                        # standard shorts
+                'Cy', 'TL', 'Hyper',                          # families (Cy3/5, TL10/25/50/100/Off, Hyper400/500)
+                'Clover', 'MitoKeima', 'TexasRed',            # named fluorophores
+                'mApple', 'mK',                               # low-emission reds
+            ]):
                 parts[i] = channel
                 matched = True
                 break
