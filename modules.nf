@@ -201,7 +201,7 @@ process TRACKING {
 
 process INTENSITY {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
-    cpus 4
+    cpus 20
     input:
     val ready
     val exp
@@ -255,7 +255,7 @@ process COPY_MASK_TO_TRACKED {
 process CROP {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     memory '2 GB'
-    cpus 4
+    cpus 20
     input:
     val ready
     val exp
@@ -281,7 +281,7 @@ process CROP {
 process CROP_MASK {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     memory '2 GB'
-    cpus 4
+    cpus 20
     input:
     val ready
     val exp
@@ -687,7 +687,7 @@ process OVERLAY_MONTAGE {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     tag "$well"
 
-    cpus 6
+    cpus 20
     maxForks 21
     memory { 20.GB * task.attempt }
     errorStrategy { task.attempt <= 2 ? 'retry' : 'finish' }
@@ -729,7 +729,7 @@ process BUNDLED_WORKFLOW_IXM {
     // Galaxy CPU nodes: 28 cores, ~377 GB RAM (fb-docker-compute*, fb-galaxy-cpu*)
     // Per well: 4 cpus → 7 wells/node (28 cpus); with QOSMaxNodePerUserLimit=2 → 14 wells concurrent
     // MONTAGE ~2 CPU, SEGMENTATION ~4 CPU, TRACKING ~2 CPU, OVERLAY ~1 CPU → 4 cpus
-    cpus 4
+    cpus 20
     memory 20.GB
     time '7d'
 
@@ -870,7 +870,7 @@ process BUNDLED_STD_WORKFLOW {
 
     // Resource requirements for the bundled process
     // These can be adjusted based on your cluster capacity
-    cpus 17
+    cpus 20
     memory 20.GB
     time '7d'
 
@@ -1052,7 +1052,7 @@ process STABLE_CELL_FILTER {
     // alone is several GB and pandas' in-memory representation is
     // multiples of that. The 15 GB default from nextflow.config would
     // MemoryError on large plates.
-    cpus 4
+    cpus 20
     memory 60.GB
 
     input:
