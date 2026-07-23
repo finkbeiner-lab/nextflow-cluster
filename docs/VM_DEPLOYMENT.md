@@ -59,7 +59,7 @@ curl -s https://get.nextflow.io | bash && sudo mv nextflow /usr/local/bin/
 
 > Security note: the container def and `install.sh` install Nextflow via
 > `curl ... | bash` with no integrity check. The Visual Editor's def
-> (`deepcell/deploy/visual-editor.def`) already pins a version + SHA-256 — do
+> (`deepcell/deploy/deepcell.def`) already pins a version + SHA-256 — do
 > the same here for a hardened build.
 
 ---
