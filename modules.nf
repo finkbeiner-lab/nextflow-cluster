@@ -687,7 +687,7 @@ process OVERLAY_MONTAGE {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     tag "$well"
 
-    cpus 4
+    cpus 6
     maxForks 21
     memory { 20.GB * task.attempt }
     errorStrategy { task.attempt <= 2 ? 'retry' : 'finish' }
@@ -717,7 +717,7 @@ process OVERLAY_MONTAGE {
     --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
     --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \
-    --max_workers 4 \$CELL_IDS_OPT
+    --max_workers 6 \$CELL_IDS_OPT
     """
 }
 
