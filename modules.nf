@@ -1089,7 +1089,11 @@ process STABLE_CELL_FILTER {
 process BUNDLED_IXM_STABLE_TRACK {
     tag "BUNDLED_IXM_STABLE_TRACK-${exp}_${well}"
 
-    cpus 4
+    // Python inside tracking_montage.py uses cpu_count() * 0.75 ≈ 21 workers on
+    // 28-core nodes. With cpus=4 the cgroup throttled those 21 workers to 4
+    // cores' worth of CPU time and each timepoint took ~40s. Aligning the
+    // Slurm allocation to 20 lets the worker pool actually run in parallel.
+    cpus 20
     memory 20.GB
     time '8h'
 
