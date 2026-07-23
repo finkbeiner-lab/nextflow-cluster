@@ -116,9 +116,15 @@ class OverlayBatch:
                   f"(non-numeric tracked_id/timepoint) — likely column-shift corruption")
         print(f"[INFO] Loaded tracking summary: {summary_path} ({len(self.df)} rows)")
         
-        # Dynamic core allocation (75% of available cores)
-        self.max_cores = max(1, int(cpu_count() * 0.75))
-        print(f"[INFO] Using {self.max_cores} cores for parallel processing")
+        # Bounded worker count: each ForkPool child duplicates the full-well
+        # montage (~75 MB) + DataFrame + PIL draw buffers. At cpu_count()*0.75
+        # on a 32-core node this used to hit MemoryError (see modules.nf
+        # OVERLAY_MONTAGE memory ramp). Cap via --max_workers to keep memory
+        # predictable; Nextflow's maxForks provides across-well parallelism.
+        requested = getattr(self.opt, 'max_workers', 4) or 4
+        self.max_cores = max(1, min(requested, cpu_count()))
+        print(f"[INFO] Using {self.max_cores} worker(s) for parallel timepoints "
+              f"(--max_workers={requested}, cpu_count={cpu_count()})")
         
         # Performance monitoring
         self.start_time = None
@@ -404,6 +410,13 @@ if __name__ == '__main__':
         '--cell_ids',
         default=None,
         help="Path to stable CSV (columns: well, tracked_id, timepoint) OR comma-separated cell IDs. Omit or 'all' = show all."
+    )
+    parser.add_argument(
+        '--max_workers',
+        default=min(4, cpu_count()),
+        type=int,
+        help="Max intra-well parallel timepoint workers (default: min(4, cpu_count)). "
+             "Lower = less memory per Slurm task; across-well parallelism comes from Nextflow's maxForks."
     )
     args = parser.parse_args()
 

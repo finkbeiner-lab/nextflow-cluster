@@ -687,9 +687,10 @@ process OVERLAY_MONTAGE {
     //containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     tag "$well"
 
+    cpus 4
     maxForks 21
     memory { 20.GB * task.attempt }
-    errorStrategy { task.attempt <= 2 ? 'retry' : 'ignore' }
+    errorStrategy { task.attempt <= 2 ? 'retry' : 'finish' }
     maxRetries 2
 
     input:
@@ -715,7 +716,8 @@ process OVERLAY_MONTAGE {
     overlay_montage.py --experiment_name ${exp} --target_channel ${morphology_channel} \
     --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
-    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \$CELL_IDS_OPT
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \
+    --max_workers 4 \$CELL_IDS_OPT
     """
 }
 
