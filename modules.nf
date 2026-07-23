@@ -1045,6 +1045,16 @@ process BUNDLED_STD_WORKFLOW {
 // tracked-cell summary).
 process STABLE_CELL_FILTER {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+
+    // Single-task, plate-wide aggregator: loads the entire
+    // <exp>_tracked_montage_summary.csv into pandas at once. At 384 wells
+    // × ~500 cells × ~100 timepoints × 2 channels ≈ 38M rows, the CSV
+    // alone is several GB and pandas' in-memory representation is
+    // multiples of that. The 15 GB default from nextflow.config would
+    // MemoryError on large plates.
+    cpus 4
+    memory 60.GB
+
     input:
     val ready
     val exp
