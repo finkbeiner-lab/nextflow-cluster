@@ -8,6 +8,16 @@ From: ubuntu:22.04
     Description="A container for data study with PyTorch, OpenCV, R, Nextflow, and additional tools."
     Maintainer="Vivek Gopal Ramaswamy <vivek.gopalramaswamy@gladstone.ucsf.edu>"
 
+%files
+    # Bake the pipeline code INSIDE the SIF so the container is
+    # self-contained per IT policy. Runtime can still shadow this with a
+    # bind-mount when DEEPCELL_DEV=1 is set — see nextflow.config's
+    # env-gated containerOptions block. Any change to these files
+    # requires a rebuild (`bash build.sh` at the repo root) to ship.
+    bin        /app
+    modules.nf /workflow/modules.nf
+    pipeline.nf /workflow/pipeline.nf
+
 %post
     # Enable noninteractive install
     export DEBIAN_FRONTEND=noninteractive
