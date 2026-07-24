@@ -89,7 +89,7 @@ class OverlayBatch:
             print(f"[INFO] Using MontagedImages directory: {montaged_path}")
 
         # When filtering by cell IDs (set or CSV), write to Overlay_Montages_selected_ids so we don't overwrite the full overlay
-        if getattr(self.opt, 'cell_ids', None) or getattr(self.opt, 'cell_ids_by_well_timepoint', None) is not None:
+        if getattr(self.opt, 'cell_ids', None) or getattr(self.opt, 'cell_ids_by_well', None) is not None:
             self.overlay_root = os.path.join(self.experiment_root, "Overlay_Montages_selected_ids")
             print(f"[INFO] Selected cell IDs (or stable CSV) provided → output: {self.overlay_root}")
         else:
@@ -205,7 +205,7 @@ class OverlayBatch:
             'contrast': self.opt.contrast,
             'shift': self.opt.shift,
             'cell_ids': getattr(self.opt, 'cell_ids', None),
-            'cell_ids_by_well_timepoint': getattr(self.opt, 'cell_ids_by_well_timepoint', None)
+            'cell_ids_by_well': getattr(self.opt, 'cell_ids_by_well', None)
         }
 
         # Prepare tasks with serializable data
@@ -271,30 +271,36 @@ class OverlayBatch:
         else:
             return [int(tp_string.replace("T", ""))]
 
-def load_stable_csv(csv_path: str) -> Dict[Tuple[str, int], Set[int]]:
-    """Load a stable-cell CSV and group tracked IDs by (well, timepoint).
+def load_stable_csv(csv_path: str) -> Dict[str, Set[int]]:
+    """Load a stable-cell CSV and group tracked IDs by well.
 
-    The CSV must contain the columns ``well``, ``tracked_id``, and
-    ``timepoint``.
+    A stable cell is present at every timepoint by definition, so the
+    CSV only needs to name the (well, tracked_id) pairs once. The
+    current writer (bin/stable_cell_filter.py) emits that 2-column
+    shape; the loader also accepts the legacy 3-column shape
+    (well, tracked_id, timepoint) for backward compat and just dedupes
+    across timepoints.
 
     Args:
         csv_path: Path to the CSV file.
 
     Returns:
-        Mapping of ``(well, timepoint)`` to the set of tracked cell IDs
-        present in that combination.
+        Mapping of ``well`` -> set of stable tracked cell IDs.
 
     Raises:
         ValueError: If required columns are missing.
     """
     df = pd.read_csv(csv_path)
-    required = {'well', 'tracked_id', 'timepoint'}
+    required = {'well', 'tracked_id'}
     if not required.issubset(df.columns):
-        raise ValueError(f"Stable CSV must have columns {required}; got {list(df.columns)}")
-    df['timepoint'] = df['timepoint'].astype(int)
-    out = {}
-    for (well, tp), g in df.groupby(['well', 'timepoint']):
-        out[(str(well).strip(), int(tp))] = set(g['tracked_id'].astype(int))
+        raise ValueError(
+            f"Stable CSV must have columns {required}; got {list(df.columns)}"
+        )
+    df['tracked_id'] = pd.to_numeric(df['tracked_id'], errors='coerce')
+    df = df.dropna(subset=['tracked_id'])
+    out: Dict[str, Set[int]] = {}
+    for well, g in df.groupby('well'):
+        out[str(well).strip()] = set(g['tracked_id'].astype(int))
     return out
 
 
@@ -335,15 +341,19 @@ def overlay_single_timepoint(
             (df['timepoint'] == timepoint)
         ]
 
-        # Optionally restrict overlay: stable CSV (well, timepoint) -> ids, or global set of ids
-        cell_ids_by_well_timepoint = opt_params.get('cell_ids_by_well_timepoint')
+        # Optionally restrict overlay:
+        #   * stable CSV -> per-well set of stable IDs (same set applies to
+        #     every timepoint for that well, since a stable cell is present
+        #     at every tp by definition), or
+        #   * a global set of IDs passed via --cell_ids.
+        cell_ids_by_well = opt_params.get('cell_ids_by_well')
         cell_ids = opt_params.get('cell_ids')
-        if cell_ids_by_well_timepoint is not None:
-            ids_for_this = cell_ids_by_well_timepoint.get((well, timepoint))
-            if ids_for_this is not None:
+        if cell_ids_by_well is not None:
+            ids_for_this = cell_ids_by_well.get(str(well).strip())
+            if ids_for_this:
                 df_filtered = df_filtered[df_filtered['tracked_id'].isin(ids_for_this)]
             else:
-                df_filtered = df_filtered.iloc[0:0]  # empty: no rows for this (well, timepoint) in CSV
+                df_filtered = df_filtered.iloc[0:0]  # empty: no stable cells for this well
         elif cell_ids is not None:
             df_filtered = df_filtered[df_filtered['tracked_id'].isin(cell_ids)]
 
@@ -422,16 +432,16 @@ if __name__ == '__main__':
 
     # Resolve cell_ids: stable CSV path -> (well, timepoint) -> set(ids); else comma-separated IDs -> set(ids)
     raw = (args.cell_ids or '').strip().strip("'\"")
-    args.cell_ids_by_well_timepoint = None
+    args.cell_ids_by_well = None
     if not raw or raw.lower() == 'all':
         args.cell_ids = None
     elif os.path.isfile(raw) or raw.endswith('.csv'):
         path = raw if os.path.isfile(raw) else raw
         if not os.path.isfile(path):
             raise FileNotFoundError(f"Cell IDs CSV not found: {path}")
-        args.cell_ids_by_well_timepoint = load_stable_csv(path)
+        args.cell_ids_by_well = load_stable_csv(path)
         args.cell_ids = None
-        print(f"[INFO] Loaded stable CSV: {path} → {len(args.cell_ids_by_well_timepoint)} (well, timepoint) groups")
+        print(f"[INFO] Loaded stable CSV: {path} → {len(args.cell_ids_by_well)} wells")
     else:
         ids = set()
         for x in raw.split(','):
@@ -439,7 +449,7 @@ if __name__ == '__main__':
             if s:
                 ids.add(int(s))
         args.cell_ids = ids
-        args.cell_ids_by_well_timepoint = None
+        args.cell_ids_by_well = None
 
     Ovr = OverlayBatch(args)
     Ovr.run()

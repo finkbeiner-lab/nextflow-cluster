@@ -26,7 +26,11 @@ reporter trajectory (decay curve over timepoints).
 Outputs (the input CSV is never modified)
 -----------------------------------------
 * ``<input>_annotated.csv``             — morphology rows + stability flags
-* ``<input>_stable_ids.csv``            — stable cell rows (well, tracked_id, timepoint)
+* ``<input>_stable_ids.csv``            — one row per stable cell (well, tracked_id).
+                                          A "stable" cell is present at EVERY timepoint by
+                                          definition, so we no longer duplicate the row per
+                                          timepoint — the old shape (well, tracked_id, timepoint)
+                                          bloated the file 20-100x for no gain.
 * ``<input>_reporter_trajectories.csv`` — reporter rows for the stable cells
 
 CLI
@@ -427,15 +431,19 @@ def run(opts: argparse.Namespace) -> int:
     dt.to_csv(annotated_csv, index=False)
     logger.info("wrote annotated CSV (%d rows) to %s", len(dt), annotated_csv)
 
-    stable_rows = dt.loc[
-        dt["stably_tracked"] == True,  # noqa: E712
-        ["well", "tracked_id", "timepoint"],
-    ]
+    # A stable cell exists at every timepoint by definition, so emit one
+    # row per (well, tracked_id). The old 3-column shape stored the same
+    # tracked_id N times (once per timepoint) which bloated the CSV and
+    # made downstream .isin() checks slower with no additional info.
+    stable_rows = (
+        dt.loc[dt["stably_tracked"] == True, ["well", "tracked_id"]]  # noqa: E712
+        .drop_duplicates()
+        .sort_values(["well", "tracked_id"])
+    )
     stable_rows.to_csv(stable_ids_csv, index=False)
     logger.info(
-        "wrote stable IDs (%d rows, %d cells) to %s",
+        "wrote stable IDs (%d cells) to %s",
         len(stable_rows),
-        len(stable_rows[["well", "tracked_id"]].drop_duplicates()),
         stable_ids_csv,
     )
 
