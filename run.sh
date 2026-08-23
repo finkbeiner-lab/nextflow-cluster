@@ -99,6 +99,93 @@ if [ ! -f "${CONTAINER}" ]; then
     exit 1
 fi
 
+# ---------------------------------------------------------------------------
+# Resolve the Nextflow launcher.
+#
+# This script runs under a plain `#!/bin/bash` shebang -- non-login and
+# non-interactive -- so bash sources neither ~/.bash_profile nor ~/.bashrc.
+# The editor's RunController additionally submits with `sbatch --export=NONE`
+# (see runs/controller.py), which drops the submitter's PATH. The job
+# therefore starts with Slurm's minimal default PATH, and a per-user install
+# at ~/nextflow/nextflow is invisible: the run dies with
+# "nextflow: command not found" (exit 127) before a single task is scheduled.
+#
+# Candidates are tested for BOTH read and execute permission. The nextflow
+# launcher is a bash script, so bash must be able to read it -- some nodes
+# ship /usr/local/bin/nextflow as mode --x--x, which passes `-x` but then
+# fails at exec time with "Permission denied" (exit 126).
+#
+# Set NEXTFLOW_BIN=/path/to/nextflow to override the search entirely.
+# ---------------------------------------------------------------------------
+USER_HOME="${HOME:-$(getent passwd "$(whoami)" 2>/dev/null | cut -d: -f6)}"
+
+NEXTFLOW=""
+for candidate in \
+    "${NEXTFLOW_BIN:-}" \
+    "$(command -v nextflow 2>/dev/null)" \
+    "${USER_HOME}/nextflow/nextflow" \
+    "${USER_HOME}/bin/nextflow" \
+    "${INSTALL_DIR}/nextflow" \
+    "/usr/local/bin/nextflow" \
+    "/opt/nextflow/nextflow"
+do
+    if [ -n "${candidate}" ] && [ -r "${candidate}" ] && [ -x "${candidate}" ]; then
+        NEXTFLOW="${candidate}"
+        break
+    fi
+done
+
+if [ -z "${NEXTFLOW}" ]; then
+    echo "ERROR: Nextflow launcher not found."
+    echo "  Searched: \$NEXTFLOW_BIN, \$PATH, ${USER_HOME}/nextflow/nextflow,"
+    echo "            ${USER_HOME}/bin/nextflow, ${INSTALL_DIR}/nextflow,"
+    echo "            /usr/local/bin/nextflow, /opt/nextflow/nextflow"
+    echo "  PATH was: ${PATH}"
+    echo ""
+    echo "Install it, or point this run at an existing launcher:"
+    echo "  sbatch --export=NEXTFLOW_BIN=/path/to/nextflow ${INSTALL_DIR}/run.sh -c <config>"
+    exit 127
+fi
+echo "Nextflow launcher: ${NEXTFLOW}"
+
+# ---------------------------------------------------------------------------
+# Pin the Nextflow release the pipeline is developed and tested against.
+#
+# The launcher script selects (and downloads) whatever version NXF_VER names.
+# Operators normally set it in ~/.bashrc, but `sbatch --export=NONE` strips
+# it, so an unpinned job silently picks the NEWEST release instead. Nextflow
+# >= 25 parses configs with the strict "v2" parser, which rejects
+# nextflow.config's `def DEEPCELL_DEV = ...` with "Variable declarations
+# cannot be mixed with config statements" -- the run dies before the workflow
+# is even read. Pin here so UI runs and shell runs use the same engine.
+#
+# Export NXF_VER=<x.y.z> before sbatch to deliberately use another release.
+# ---------------------------------------------------------------------------
+export NXF_VER="${NXF_VER:-24.04.4}"
+echo "Nextflow version:  ${NXF_VER}"
+
+# ---------------------------------------------------------------------------
+# Give Nextflow a cache directory that is guaranteed to exist and be writable
+# from a compute node.
+#
+# Unset, Nextflow uses $HOME/.nextflow. That is fine for a human whose home is
+# on the NAS, but the editor submits every job as the `finkbeiner-svc` service
+# account whose home is VM-local (/var/lib/deepcell) and therefore absent on
+# the compute nodes -- the run dies with
+# "mkdir: cannot create directory '/var/lib/deepcell': Permission denied".
+# `sbatch --export=NONE` also strips the NXF_HOME the apptainer instance sets.
+#
+# Per-user subdirectory under a shared parent: always on the NAS, and no
+# cross-user permission collisions on the framework/plugin cache.
+# ---------------------------------------------------------------------------
+export NXF_HOME="${NXF_HOME:-${INSTALL_DIR}/nxf/$(whoami)}"
+if ! mkdir -p "${NXF_HOME}" 2>/dev/null; then
+    echo "ERROR: cannot create NXF_HOME at ${NXF_HOME}"
+    echo "  Set NXF_HOME to a directory writable from the compute nodes."
+    exit 1
+fi
+echo "Nextflow home:     ${NXF_HOME}"
+
 # Validate config
 if python3 "${VALIDATE_SCRIPT}" "${CONFIG_FILE}"; then
     echo "Config validation passed"
@@ -114,7 +201,7 @@ else
 fi
 
 # Run Nextflow — pipeline.nf is in INSTALL_DIR, config + all output in USER_DIR
-nextflow run "${INSTALL_DIR}/pipeline.nf" \
+"${NEXTFLOW}" run "${INSTALL_DIR}/pipeline.nf" \
   -with-apptainer "${CONTAINER}" \
   -c "${CONFIG_FILE}" \
   -work-dir "${USER_DIR}/work_${SLURM_JOB_ID:-$$}" \
