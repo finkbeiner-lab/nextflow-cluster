@@ -225,6 +225,46 @@ process INTENSITY {
     """
 }
 
+process NEURITE {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    cpus 20
+    // Input order MUST match the cli_flags order in
+    // backend/catalog/neurite.json (Deep Cell renders the call positionally as
+    // NEURITE(ready, experiment, morphology_channel, ...)).
+    input:
+    val ready
+    val exp
+    val morphology_channel
+    val vesselness_sigma_min
+    val vesselness_sigma_max
+    val vesselness_sigma_steps
+    val neurite_threshold
+    val min_branch_length
+    val max_soma_distance
+    val soma_dilation
+    val img_norm_name
+    val chosen_wells
+    val chosen_timepoints
+    val wells_toggle
+    val timepoints_toggle
+    val tile
+
+    output:
+    val true
+
+    script:
+    """
+    neurite.py --experiment ${exp} --morphology_channel ${morphology_channel} \
+    --vesselness_sigma_min ${vesselness_sigma_min} --vesselness_sigma_max ${vesselness_sigma_max} \
+    --vesselness_sigma_steps ${vesselness_sigma_steps} --neurite_threshold ${neurite_threshold} \
+    --min_branch_length ${min_branch_length} --max_soma_distance ${max_soma_distance} \
+    --soma_dilation ${soma_dilation} --img_norm_name ${img_norm_name} \
+    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --tile ${tile}
+    """
+}
+
 process COPY_MASK_TO_TRACKED {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     

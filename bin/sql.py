@@ -94,6 +94,8 @@ class Database:
                 self.create_punctadata_table()
             if not self.engine.dialect.has_table(connection, 'intensitypunctadata'):
                 self.create_intensitypunctadata_table()
+            if not self.engine.dialect.has_table(connection, 'neuritecelldata'):
+                self.create_neuritecelldata_table()
             if not self.engine.dialect.has_table(connection, 'organelledata'):
                 self.create_organelledata_table()
             if not self.engine.dialect.has_table(connection, 'cropdata'):
@@ -322,7 +324,37 @@ class Database:
             Column('intensity_std', Float),
         )
         self.meta.create_all(self.engine)
-    
+
+    def create_neuritecelldata_table(self) -> None:
+        """Create the per-cell neurite length & arborization table.
+
+        Written by ``bin/neurite.py`` (the NEURITE module). One row per cell,
+        keyed the same way as intensitycelldata so it joins cleanly with the
+        other per-cell tables. ``channeldata_id`` is the morphology channel the
+        neurites were traced on.
+        """
+        neuritecelldata = Table(
+            'neuritecelldata', self.meta,
+            Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
+            Column("experimentdata_id", UUID(as_uuid=True), ForeignKey("experimentdata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("welldata_id", UUID(as_uuid=True), ForeignKey("welldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("tiledata_id", UUID(as_uuid=True), ForeignKey("tiledata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("celldata_id", UUID(as_uuid=True), ForeignKey("celldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("channeldata_id", UUID(as_uuid=True), ForeignKey("channeldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column('total_neurite_length', Float),
+            Column('n_branch_points', Integer),
+            Column('n_end_points', Integer),
+            Column('n_primary_neurites', Integer),
+            Column('max_branch_length', Float),
+            Column('n_skeleton_px', Integer),
+        )
+        self.meta.create_all(self.engine)
+
     def create_dosagedata_table(self) -> None:
         """Create the dosage/treatment data table."""
         dosagedata = Table(
