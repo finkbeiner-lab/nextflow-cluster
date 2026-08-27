@@ -1,8 +1,8 @@
-#!/opt/conda/bin/python
+#!/usr/bin/env python
 
 import argparse
 import os
-# import numpy as np #KS edit
+import numpy as np
 from cellpose import models
 # import matplotlib.pyplot as plt #KS edit
 from skimage import (
@@ -52,10 +52,11 @@ class CellposeSegmentation:
         """
         https://cellpose.readthedocs.io/en/latest/notebook.html
         """
-        # model_type='cyto' or 'nuclei' or 'cyto2'
+        # Cellpose-SAM (v4): a single generalist model -- no model_type, and
+        # eval returns (masks, flows, styles) with no `channels` argument.
         Db = Database()
-        logger.warning(f'running cellpose {self.opt.model_type}')
-        model = models.Cellpose(gpu=True, model_type=self.opt.model_type)
+        logger.warning('running Cellpose-SAM (v4)')
+        model = models.CellposeModel(gpu=True)
 
         # define CHANNELS to run segementation on
         # grayscale=0, R=1, G=2, B=3
@@ -101,10 +102,40 @@ class CellposeSegmentation:
             #     plt.show()
         return
 
+    @staticmethod
+    def _clean_masks(img, masks, k):
+        """Drop Cellpose cells that are background-level (dim false positives).
+
+        Keeps only cells whose median intensity exceeds background median +
+        k * robust-SD (MAD-based). Tuned k=3 removes the background junk that
+        Cellpose over-detects while retaining real cells.
+        """
+        bg = img[masks == 0]
+        if bg.size == 0 or masks.max() == 0:
+            return masks
+        bg_med = np.median(bg)
+        bg_mad = 1.4826 * np.median(np.abs(bg - bg_med))
+        thr = bg_med + k * bg_mad
+        out = np.zeros_like(masks)
+        for lab in range(1, int(masks.max()) + 1):
+            m = masks == lab
+            if m.any() and np.median(img[m]) >= thr:
+                out[m] = lab
+        return out
+
     def cellpose_single_image(self, model, chan, img):
-        masks, flows, styles, diams = model.eval(img, batch_size=self.opt.batch_size, diameter=self.opt.cell_diameter, channels=chan,
-                                                 flow_threshold=self.opt.flow_threshold, cellprob_threshold=self.opt.cell_probability)
- 
+        # Contrast-normalize (percentile clip) so dim cells aren't lost to a few
+        # bright outliers, then run Cellpose-SAM (v4 eval: 3-value return, no
+        # `channels` arg).
+        raw = img.astype(np.float32)
+        lo, hi = np.percentile(raw, 1), np.percentile(raw, 99.5)
+        norm = np.clip((raw - lo) / (hi - lo + 1e-9), 0, 1) * 255.0 if hi > lo else np.zeros_like(raw)
+        masks = model.eval(norm, batch_size=self.opt.batch_size, diameter=self.opt.cell_diameter,
+                           flow_threshold=self.opt.flow_threshold,
+                           cellprob_threshold=self.opt.cell_probability)[0]
+        # Intensity cleanup on the RAW image (measures true brightness).
+        masks = self._clean_masks(raw, masks, self.opt.cleanup_k)
+
         # Convert the grayscale masks to a heatmap using a colormap (e.g., 'hot' or 'viridis')
     #     cmap = plt.get_cmap('hot')  # You can also use 'viridis', 'plasma', etc.
     
@@ -131,6 +162,10 @@ class CellposeSegmentation:
                                                       )
                                           )
         props_df = pd.DataFrame(props)
+        # numpy 2.0 scalars stringify as "np.float64(...)", which the celldata
+        # SQL build then emits as a literal (-> "schema np does not exist").
+        # Cast every value to a native Python type before the DB write.
+        props_df = props_df.map(lambda v: v.item() if hasattr(v, "item") else v)
         return masks, props_df
         # return masks_heatmap, props_df
 
@@ -167,10 +202,13 @@ if __name__ == '__main__':
     )
     parser.add_argument('--experiment', default='20230928-MsNeu-RGEDItau1', type=str)
     parser.add_argument('--batch_size',default=1, type=int)
-    parser.add_argument('--cell_diameter', default=50, type=int)
-    parser.add_argument('--flow_threshold', default=.4, type=float)
-    parser.add_argument('--cell_probability',default=0.,  type=float)
-    parser.add_argument('--model_type',default='cyto2', type=str)
+    parser.add_argument('--cell_diameter', default=25, type=int)
+    parser.add_argument('--flow_threshold', default=.6, type=float)
+    parser.add_argument('--cell_probability', default=-1.5, type=float)
+    parser.add_argument('--cleanup_k', default=3.0, type=float,
+                        help="Drop cells dimmer than background median + k*MAD (0 disables).")
+    parser.add_argument('--model_type', default='cyto2', type=str,
+                        help="Unused with Cellpose-SAM v4; kept for config compatibility.")
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle", default='include',
