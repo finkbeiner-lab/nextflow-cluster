@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 from sqlalchemy import (
     Column, Float, Integer, MetaData, String, Table, UniqueConstraint,
-    ForeignKey, and_, create_engine, delete, func, select, update,
+    ForeignKey, and_, create_engine, delete, func, select, text, update,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Session
@@ -335,7 +335,13 @@ class Database:
         """
         neuritecelldata = Table(
             'neuritecelldata', self.meta,
-            Column('id', UUID(as_uuid=True), default=uuid.uuid4, primary_key=True),
+            # server_default so the id is populated even when this table is
+            # reflected (not created) in a later session -- matches
+            # intensitycelldata. Without it, add_row on a reflected table
+            # inserts a null id and violates the PK. uuid.uuid4 covers the
+            # in-session create path; uuid_generate_v4() covers reflection.
+            Column('id', UUID(as_uuid=True), default=uuid.uuid4,
+                   server_default=text('uuid_generate_v4()'), primary_key=True),
             Column("experimentdata_id", UUID(as_uuid=True), ForeignKey("experimentdata.id", ondelete="CASCADE"),
                    index=True, nullable=False),
             Column("welldata_id", UUID(as_uuid=True), ForeignKey("welldata.id", ondelete="CASCADE"),

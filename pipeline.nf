@@ -6,6 +6,7 @@ if (!params.containsKey('overlay_montage_cell_ids')) { params.overlay_montage_ce
 if (!params.containsKey('DO_BUNDLED_STD_WORKFLOW'))  { params.DO_BUNDLED_STD_WORKFLOW = false }
 if (!params.containsKey('DO_BUNDLED_IXM_STABLE_TRACK')) { params.DO_BUNDLED_IXM_STABLE_TRACK = false }
 if (!params.containsKey('DO_STABLE_CELL_FILTER'))    { params.DO_STABLE_CELL_FILTER = false }
+if (!params.containsKey('DO_NEURITE'))               { params.DO_NEURITE = false }
 if (!params.containsKey('stable_cell_filter_input_csv')) { params.stable_cell_filter_input_csv = '' }
 if (!params.containsKey('stable_cell_filter_morphology_channel')) { params.stable_cell_filter_morphology_channel = 'FITC' }
 if (!params.containsKey('stable_cell_filter_reporter_channel')) { params.stable_cell_filter_reporter_channel = 'RFP' }
@@ -153,7 +154,7 @@ optimizer_ch = Channel.of(params.optimizer)
 
 include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;SEGMENTATION_MONTAGE;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY;
-    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; STABLE_CELL_FILTER; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW; BUNDLED_IXM_STABLE_TRACK} from './modules.nf'
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; STABLE_CELL_FILTER; NEURITE; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW; BUNDLED_IXM_STABLE_TRACK} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -185,6 +186,7 @@ log.info """\
     Get CSVS: ${params.DO_GET_CSVS}
     Overlay: ${params.DO_OVERLAY}
     Overlay Montage: ${params.DO_OVERLAY_MONTAGE}
+    Neurite: ${params.DO_NEURITE}
     Standard Workflow: ${params.DO_STD_WORKFLOW}
     Standard IXM Workflow: ${params.DO_STD_WORKFLOW_IXM}
     Bundled Standard Workflow: ${params.DO_BUNDLED_STD_WORKFLOW}
@@ -215,6 +217,7 @@ workflow {
             params.DO_TRACKING_MONTAGE         ? 'TRACK_MONTAGE' : null,
             params.DO_STABLE_CELL_FILTER       ? 'STABLE_FILTER' : null,
             params.DO_OVERLAY_MONTAGE          ? 'OVERLAY_MONT'  : null,
+            params.DO_NEURITE                  ? 'NEURITE'       : null,
             params.DO_STD_WORKFLOW             ? 'STD'           : null,
             params.DO_STD_WORKFLOW_IXM         ? 'STD_IXM'       : null,
             params.DO_BUNDLED_STD_WORKFLOW     ? 'BUNDLED_STD'   : null,
@@ -437,6 +440,36 @@ else {
     intensity_result = Channel.of(true)
 }
    
+if (params.DO_NEURITE) {
+    // Leaf analysis: traces neurites on the morphology channel using soma masks
+    // (from SEGMENTATION/CELLPOSE) already in the DB. Gate on segmentation
+    // readiness; when seg is off, seg_result/cellpose_result are Channel.of(true)
+    // so this fires immediately against the existing DB masks.
+    neurite_flag = seg_result.mix(cellpose_result).collect()
+    vesselness_sigma_min_ch   = Channel.of(params.vesselness_sigma_min)
+    vesselness_sigma_max_ch   = Channel.of(params.vesselness_sigma_max)
+    vesselness_sigma_steps_ch = Channel.of(params.vesselness_sigma_steps)
+    neurite_threshold_ch      = Channel.of(params.neurite_threshold)
+    min_branch_length_ch      = Channel.of(params.min_branch_length)
+    max_soma_distance_ch      = Channel.of(params.max_soma_distance)
+    soma_dilation_ch          = Channel.of(params.soma_dilation)
+    // Pass the full chosen_wells string as ONE value (not the per-well split
+    // well_ch): neurite.py iterates wells internally via its --chosen_wells /
+    // --wells_toggle args, so a single task covers all requested wells. Using
+    // the split well_ch here would run only the first well, because the other
+    // inputs are single-emission channels.
+    neurite_wells_ch = Channel.of(params.chosen_wells)
+    neurite_ch = NEURITE(neurite_flag, experiment_ch, morphology_ch,
+        vesselness_sigma_min_ch, vesselness_sigma_max_ch, vesselness_sigma_steps_ch,
+        neurite_threshold_ch, min_branch_length_ch, max_soma_distance_ch, soma_dilation_ch,
+        norm_ch, neurite_wells_ch, tp_ch, well_toggle_ch, tp_toggle_ch, tile_ch)
+    neurite_ch.view { it }
+    neurite_result = NEURITE.out
+}
+else {
+    neurite_result = Channel.of(true)
+}
+
 if (params.DO_CROP) {
     crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, crop_size_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
     crop_ch.view { it }

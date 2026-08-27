@@ -1,4 +1,4 @@
-#!/opt/conda/bin/python
+#!/usr/bin/env python
 """NEURITE — per-cell neurite length and arborization for the Finkbeiner pipeline.
 
 This is the ``bin/`` script backing the ``NEURITE`` catalog module
@@ -128,12 +128,24 @@ def enhance_vesselness(
     from skimage.filters import frangi
 
     img = img.astype(np.float32)
-    if img.max() > img.min():
-        img = (img - img.min()) / (img.max() - img.min())
+    # Robust contrast normalization. Min-max normalization let a few bright
+    # outliers (bright somata, debris, saturated pixels) set the top of the
+    # range and compress the faint neurite signal into a sliver, so the fixed
+    # threshold caught almost nothing. Clip to [p1, p99.5] instead. Negatives
+    # (from background subtraction) are floored at 0 first.
+    img = np.clip(img, 0.0, None)
+    lo, hi = np.percentile(img, 1.0), np.percentile(img, 99.5)
+    if hi > lo:
+        img = np.clip((img - lo) / (hi - lo), 0.0, 1.0)
+    else:
+        img = np.zeros_like(img)
     sigmas = np.linspace(sigma_min, sigma_max, max(1, steps))
     resp = frangi(img, sigmas=sigmas, black_ridges=False)
-    if resp.max() > 0:
-        resp = resp / resp.max()
+    # Normalize by a high percentile, not the max: a single very strong ridge
+    # response would otherwise scale every real neurite below the threshold.
+    p = float(np.percentile(resp, 99.9))
+    if p > 0:
+        resp = np.clip(resp / p, 0.0, 1.0)
     return resp
 
 
@@ -172,7 +184,8 @@ def measure_cell_neurites(
         holds the soma label (``randomcellid``).
     """
     from scipy import ndimage as ndi
-    from skimage.morphology import skeletonize, binary_dilation, disk
+    from skimage.morphology import (
+        skeletonize, binary_dilation, binary_closing, disk, remove_small_objects)
 
     # 1. Enhance + threshold to a neurite foreground mask.
     vness = enhance_vesselness(
@@ -181,7 +194,16 @@ def measure_cell_neurites(
         args.vesselness_sigma_max,
         args.vesselness_sigma_steps,
     )
-    neurite_mask = vness >= args.neurite_threshold
+    neurite_mask = vness >= float(args.neurite_threshold)
+    # Clean the neurite mask before skeletonizing. The robust vesselness comes
+    # through fragmented (real thin processes break into sub-10px pieces), so a
+    # bare small-object filter would delete real-but-broken neurites along with
+    # texture. Close first (bridge the gaps) so genuine neurites become large
+    # connected components, THEN drop isolated speckle by size -- background
+    # texture blobs go, real processes stay. Spur-pruning later only trims ends.
+    neurite_mask = binary_closing(neurite_mask, disk(2))
+    neurite_mask = remove_small_objects(
+        neurite_mask, min_size=max(20, 4 * int(args.min_branch_length)))
 
     # 2. Union somas into the mask so skeletons connect to their cell body.
     somas_bin = soma_labels > 0
@@ -365,7 +387,22 @@ class Neurite:
             for _, row in df.iterrows():
                 if row.maskpath is None:
                     continue
-                labelled_mask = imageio.v3.imread(row.maskpath)  # labels == randomcellid
+                try:
+                    labelled_mask = imageio.v3.imread(row.maskpath)  # labels == randomcellid
+                except Exception as e:  # noqa: BLE001 - a corrupt tile must not kill the run
+                    logger.warning('well=%s tp=%s tile=%s: cannot read mask %s: %s; '
+                                   'skipping tile', well, timepoint,
+                                   getattr(row, 'tile', '?'), row.maskpath, e)
+                    continue
+                # A soma mask must be a non-empty 2D label image. Some tiles have
+                # a corrupt/empty mask (e.g. a TIFF with no pages -> shape (0,)),
+                # which would otherwise crash downstream morphology ops.
+                if getattr(labelled_mask, 'ndim', 0) != 2 or labelled_mask.size == 0:
+                    logger.warning('well=%s tp=%s tile=%s: mask is not a non-empty 2D '
+                                   'label image (shape=%s from %s); skipping tile',
+                                   well, timepoint, getattr(row, 'tile', '?'),
+                                   getattr(labelled_mask, 'shape', None), row.maskpath)
+                    continue
 
                 aligned = getattr(row, 'alignedtilepath', None)
                 img_path = aligned if pd.notna(aligned) else row.filename
