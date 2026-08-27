@@ -162,10 +162,6 @@ class CellposeSegmentation:
                                                       )
                                           )
         props_df = pd.DataFrame(props)
-        # numpy 2.0 scalars stringify as "np.float64(...)", which the celldata
-        # SQL build then emits as a literal (-> "schema np does not exist").
-        # Cast every value to a native Python type before the DB write.
-        props_df = props_df.map(lambda v: v.item() if hasattr(v, "item") else v)
         return masks, props_df
         # return masks_heatmap, props_df
 

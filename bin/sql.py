@@ -436,16 +436,23 @@ class Database:
             dct: A single dict (one row) or list of dicts (bulk insert).
             chunk_size: Max rows per INSERT statement for the bulk-list case.
         """
+        def _native(d: Dict[str, Any]) -> Dict[str, Any]:
+            # numpy scalars (e.g. regionprops output) stringify as
+            # "np.float64(...)" under numpy 2.0, which the SQL build then emits
+            # as a literal -> "schema np does not exist". Cast to native Python.
+            return {k: (v.item() if hasattr(v, 'item') else v) for k, v in d.items()}
+
         table = self.meta.tables[tablename]
         with self.engine.connect() as connection:
             if isinstance(dct, list):
                 if not dct:
                     return
-                for start in range(0, len(dct), chunk_size):
-                    chunk = dct[start:start + chunk_size]
+                rows = [_native(d) for d in dct]
+                for start in range(0, len(rows), chunk_size):
+                    chunk = rows[start:start + chunk_size]
                     connection.execute(table.insert().values(chunk))
             else:
-                connection.execute(table.insert().values(dct))
+                connection.execute(table.insert().values(_native(dct)))
             connection.commit()
 
     def update(self, tablename: str, update_dct: Dict[str, Any], kwargs: Dict[str, Any]) -> None:
