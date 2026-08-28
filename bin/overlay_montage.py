@@ -12,6 +12,7 @@ well/timepoint filtering.
 import imageio
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from PIL import Image, ImageFont, ImageDraw
@@ -304,6 +305,75 @@ def load_stable_csv(csv_path: str) -> Dict[str, Set[int]]:
     return out
 
 
+# Values that mean "no filtering" — includes the strings Nextflow/Groovy
+# produce for an unset channel value.
+_CELL_IDS_ALL = {'', 'all', 'none', 'null', 'nan'}
+
+
+def resolve_cell_ids(
+    raw: Optional[str],
+) -> Tuple[Optional[Set[int]], Optional[Dict[str, Set[int]]]]:
+    """Resolve the ``--cell_ids`` argument into an ID filter.
+
+    Accepts three shapes:
+      * empty / 'all' / 'none' / 'null'  -> no filtering
+      * a path to a stable-cell CSV      -> per-well ID sets
+      * a comma- or space-separated list -> explicit ID set
+
+    The value often arrives from Nextflow as captured stdout, so it may
+    carry extra lines (e.g. container bind-mount warnings) or stray
+    quotes; only the first CSV-looking line is considered and quotes are
+    stripped.  Non-numeric tokens raise a message naming the offending
+    token instead of a bare ``int()`` ValueError.
+
+    Args:
+        raw: The raw ``--cell_ids`` string (may be None).
+
+    Returns:
+        ``(explicit_ids, ids_by_well)`` — at most one is non-None.
+
+    Raises:
+        FileNotFoundError: If the value looks like a CSV path but no such file exists.
+        ValueError: If the value is neither a path nor a list of integers.
+    """
+    text = (raw or '').strip().strip("'\"").strip()
+    if text.lower() in _CELL_IDS_ALL:
+        return None, None
+
+    # Keep the first meaningful line: a stdout-captured path can be
+    # preceded or followed by warning lines from the container runtime.
+    lines = [ln.strip().strip("'\"") for ln in text.splitlines()]
+    lines = [ln for ln in lines if ln]
+    candidates = [ln for ln in lines if ln.lower().endswith('.csv')] or lines
+    text = candidates[0]
+
+    looks_like_path = text.lower().endswith('.csv') or os.sep in text
+    if looks_like_path or os.path.isfile(text):
+        if not os.path.isfile(text):
+            raise FileNotFoundError(
+                "Cell IDs CSV not found: {!r} (parsed from {!r})".format(text, raw)
+            )
+        return None, load_stable_csv(text)
+
+    ids: Set[int] = set()
+    bad: List[str] = []
+    for token in re.split(r'[,\s]+', text):
+        token = token.strip().strip("'\"")
+        if not token:
+            continue
+        try:
+            ids.add(int(float(token)))
+        except ValueError:
+            bad.append(token)
+    if bad:
+        raise ValueError(
+            "--cell_ids must be 'all', a path to a stable-cell CSV, or a "
+            "comma-separated list of integer tracked IDs; could not parse "
+            "{} out of {!r}".format(bad, raw)
+        )
+    return (ids or None), None
+
+
 def overlay_single_timepoint(
     args: Tuple[str, int, str, List[Dict], str, Dict[str, Any], str],
 ) -> str:
@@ -430,26 +500,17 @@ if __name__ == '__main__':
     )
     args = parser.parse_args()
 
-    # Resolve cell_ids: stable CSV path -> (well, timepoint) -> set(ids); else comma-separated IDs -> set(ids)
-    raw = (args.cell_ids or '').strip().strip("'\"")
-    args.cell_ids_by_well = None
-    if not raw or raw.lower() == 'all':
-        args.cell_ids = None
-    elif os.path.isfile(raw) or raw.endswith('.csv'):
-        path = raw if os.path.isfile(raw) else raw
-        if not os.path.isfile(path):
-            raise FileNotFoundError(f"Cell IDs CSV not found: {path}")
-        args.cell_ids_by_well = load_stable_csv(path)
-        args.cell_ids = None
-        print(f"[INFO] Loaded stable CSV: {path} → {len(args.cell_ids_by_well)} wells")
-    else:
-        ids = set()
-        for x in raw.split(','):
-            s = x.strip().strip("'\"")
-            if s:
-                ids.add(int(s))
-        args.cell_ids = ids
-        args.cell_ids_by_well = None
+    # Resolve cell_ids: stable CSV path -> per-well set(ids); else
+    # comma-separated IDs -> set(ids); else None (overlay every cell).
+    try:
+        args.cell_ids, args.cell_ids_by_well = resolve_cell_ids(args.cell_ids)
+        print( args.cell_ids, args.cell_ids_by_well)
+    except (ValueError, FileNotFoundError) as e:
+        parser.error(str(e))
+    if args.cell_ids_by_well:
+        print(f"[INFO] Loaded stable CSV → {len(args.cell_ids_by_well)} wells")
+    elif args.cell_ids:
+        print(f"[INFO] Restricting overlay to {len(args.cell_ids)} cell IDs")
 
     Ovr = OverlayBatch(args)
     Ovr.run()

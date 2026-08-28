@@ -593,7 +593,14 @@ if (params.DO_STABLE_CELL_FILTER) {
     // go to stderr). Nextflow captures stdout into the `stable_ids_file_text`
     // value channel; we trim the trailing newline and forward it as the
     // overlay-cell-ids channel for OVERLAY_MONTAGE.
-    stable_ids_path_ch = STABLE_CELL_FILTER.out.stable_ids_file_text.map { it.trim() }
+    // Guard against non-path noise in the captured stdout (container
+    // bind-mount warnings, stray prints): keep the last line that looks
+    // like a CSV path, else fall back to the trimmed text.
+    stable_ids_path_ch = STABLE_CELL_FILTER.out.stable_ids_file_text.map { txt ->
+        def lines = (txt ?: '').readLines().collect { it.trim() }.findAll { it }
+        def csvLines = lines.findAll { it.toLowerCase().endsWith('.csv') }
+        csvLines ? csvLines[-1] : (txt ?: '').trim()
+    }
     stable_ids_path_ch.view { p -> "[STABLE_CELL_FILTER] stable_ids CSV: ${p}" }
     stable_filter_result = STABLE_CELL_FILTER.out.stable_ids_file_text
 }

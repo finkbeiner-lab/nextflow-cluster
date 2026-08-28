@@ -711,13 +711,14 @@ process OVERLAY_MONTAGE {
 
     script:
     """
-    CELL_IDS_OPT=""
-    [ -n "${cell_ids}" ] && CELL_IDS_OPT="--cell_ids ${cell_ids}"
+    # Quote the value: it may be a path captured from another process's
+    # stdout and can contain spaces or extra lines. overlay_montage.py
+    # treats an empty value as "overlay every cell".
     overlay_montage.py --experiment_name ${exp} --target_channel ${morphology_channel} \
     --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
     --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \
-    --max_workers 6 \$CELL_IDS_OPT
+    --max_workers 6 --cell_ids "${cell_ids}"
     """
 }
 
@@ -837,12 +838,13 @@ process BUNDLED_WORKFLOW_IXM {
     
     # Step 4: OVERLAY (Parallel Processing)
     echo "🎨 Step 4/4: Creating overlay for well ${well} (parallel processing)"
-    CELL_IDS_OPT=""
-    [ -n "${cell_ids}" ] && CELL_IDS_OPT="--cell_ids ${cell_ids}"
+    # Quote the value: it may be a path captured from another process's
+    # stdout and can contain spaces or extra lines. overlay_montage.py
+    # treats an empty value as "overlay every cell".
     overlay_montage.py --experiment_name ${exp} --target_channel ${morphology_channel} \
     --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
-    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \$CELL_IDS_OPT
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} --cell_ids "${cell_ids}"
 
     if [ \$? -eq 0 ]; then
         echo "✅ Overlay completed successfully for well ${well}"
@@ -1010,12 +1012,13 @@ process BUNDLED_STD_WORKFLOW {
     
     # Step 5: OVERLAY
     echo "🎨 Step 5/5: Creating overlay for well ${well}"
-    CELL_IDS_OPT=""
-    [ -n "${cell_ids}" ] && CELL_IDS_OPT="--cell_ids ${cell_ids}"
+    # Quote the value: it may be a path captured from another process's
+    # stdout and can contain spaces or extra lines. overlay_montage.py
+    # treats an empty value as "overlay every cell".
     overlay_montage.py --experiment_name ${exp} --target_channel ${morphology_channel} \
     --chosen_wells ${well} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
-    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} \$CELL_IDS_OPT
+    --channels_toggle ${channels_toggle} --shift ${shift} --contrast ${contrast} --cell_ids "${cell_ids}"
 
     if [ \$? -eq 0 ]; then
         echo "✅ Overlay completed successfully for well ${well}"
