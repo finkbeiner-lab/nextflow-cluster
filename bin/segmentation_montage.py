@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 import numpy as np
 import pandas as pd
 import tifffile
+from scipy import ndimage
 from scipy.spatial import cKDTree
 from skimage import exposure, filters, measure
 
@@ -202,42 +203,54 @@ class Segmentation:
         return self._cp_model
 
     @staticmethod
-    def _clean_masks(img: np.ndarray, masks: np.ndarray, k: float) -> np.ndarray:
-        """Drop Cellpose cells that are background-level (dim false positives).
+    def _filter_masks_fast(img: np.ndarray, masks: np.ndarray, k: float,
+                           area_tiny: int, area_max: int, ecc_max: float) -> np.ndarray:
+        """Combined intensity + shape mask cleanup, vectorized.
 
-        Keeps only cells whose median intensity exceeds background median +
-        k * robust-SD (MAD-based), measured on the RAW image.
+        Equivalent to the per-label MAD intensity gate (drop cells whose median
+        intensity < background median + k*MAD) plus the shape debris filter (drop
+        small round objects), but computed in a few O(pixels) passes instead of
+        two O(cells x pixels) Python loops -- much faster on large montages.
+
+        Args:
+            img: RAW intensity image (background/brightness measured here).
+            masks: integer-labelled mask.
+            k: MAD multiplier for the background brightness gate (<=0 disables).
+            area_tiny: always drop labels smaller than this (0 disables).
+            area_max/ecc_max: drop labels smaller than area_max AND rounder than
+                ecc_max (0 disables the shape filter).
+
+        Returns:
+            The relabelled mask with debris/dim cells set to 0.
         """
-        bg = img[masks == 0]
-        if bg.size == 0 or masks.max() == 0:
+        max_lab = int(masks.max())
+        if max_lab == 0:
             return masks
-        bg_med = np.median(bg)
-        bg_mad = 1.4826 * np.median(np.abs(bg - bg_med))
-        thr = bg_med + k * bg_mad
-        out = np.zeros_like(masks)
-        for lab in range(1, int(masks.max()) + 1):
-            m = masks == lab
-            if m.any() and np.median(img[m]) >= thr:
-                out[m] = lab
-        return out
-
-    @staticmethod
-    def _filter_debris(masks: np.ndarray, area_tiny: int, area_max: int, ecc_max: float) -> np.ndarray:
-        """Remove small, round dead-cell debris while keeping fibroblasts.
-
-        Drops a label if it is very small (< area_tiny) OR both small
-        (< area_max) and round (eccentricity < ecc_max). Keeps elongated
-        fibroblasts and large rounded dying cells.
-        """
-        if masks.max() == 0 or (area_tiny <= 0 and area_max <= 0):
-            return masks
-        out = masks.copy()
-        for rp in measure.regionprops(masks):
-            tiny = area_tiny > 0 and rp.area < area_tiny
-            small_round = area_max > 0 and rp.area < area_max and rp.eccentricity < ecc_max
-            if tiny or small_round:
-                out[masks == rp.label] = 0
-        return out
+        # background brightness threshold (one pass)
+        if k and k > 0:
+            bg = img[masks == 0]
+            if bg.size:
+                bg_med = np.median(bg)
+                bg_mad = 1.4826 * np.median(np.abs(bg - bg_med))
+                thr = bg_med + k * bg_mad
+            else:
+                thr = -np.inf
+        else:
+            thr = -np.inf
+        props = measure.regionprops(masks)
+        present = np.array([rp.label for rp in props])
+        # per-label median intensity in C (one pass)
+        meds = ndimage.labeled_comprehension(img, masks, present, np.median, float, 0.0)
+        keep_lut = np.zeros(max_lab + 1, dtype=bool)
+        for rp, med in zip(props, meds):
+            a = rp.area
+            bright = (thr == -np.inf) or (med >= thr)
+            tiny = area_tiny > 0 and a < area_tiny
+            small_round = area_max > 0 and a < area_max and rp.eccentricity < ecc_max
+            if bright and not (tiny or small_round):
+                keep_lut[rp.label] = True
+        # relabel in one pass (drops non-kept labels to 0)
+        return np.where(keep_lut[masks], masks, 0)
 
     def cellpose_single_image(self, model: Any, img: np.ndarray) -> Tuple[np.ndarray, pd.DataFrame]:
         """Segment one montage image with Cellpose-SAM + CLAHE + cleanup.
@@ -258,9 +271,9 @@ class Segmentation:
         masks = model.eval(norm, batch_size=self.opt.batch_size, diameter=self.opt.cell_diameter,
                            flow_threshold=self.opt.flow_threshold,
                            cellprob_threshold=self.opt.cell_probability)[0]
-        masks = self._clean_masks(raw, masks, self.opt.cleanup_k)
-        masks = self._filter_debris(masks, self.opt.debris_area_tiny,
-                                    self.opt.debris_area_max, self.opt.debris_ecc_max)
+        masks = self._filter_masks_fast(raw, masks, self.opt.cleanup_k,
+                                        self.opt.debris_area_tiny, self.opt.debris_area_max,
+                                        self.opt.debris_ecc_max)
         props = measure.regionprops_table(masks, intensity_image=img, properties=self.region_props)
         return masks, pd.DataFrame(props)
 
