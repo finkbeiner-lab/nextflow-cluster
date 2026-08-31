@@ -6,7 +6,7 @@ import numpy as np
 from cellpose import models
 # import matplotlib.pyplot as plt #KS edit
 from skimage import (
-    color, feature, filters, measure, morphology, segmentation, util
+    color, exposure, feature, filters, measure, morphology, segmentation, util
 )
 from segmentation_helper import save_mask, update_celldata_and_intensitycelldata
 from normalization import Normalize
@@ -123,18 +123,49 @@ class CellposeSegmentation:
                 out[m] = lab
         return out
 
+    @staticmethod
+    def _filter_debris(masks, area_tiny, area_max, ecc_max):
+        """Remove small, round dead-cell debris while keeping fibroblasts.
+
+        Fibroblasts are elongated (high eccentricity); dead-cell circular debris
+        is small and round. Drops a label if it is very small (< area_tiny) OR
+        both small (< area_max) and round (eccentricity < ecc_max). Conservative
+        defaults spare genuinely dying cells that round up (they retain a large
+        area) and let tracking + min-track-length remove transient debris. Set
+        area_tiny=0 and area_max=0 to disable.
+        """
+        if masks.max() == 0 or (area_tiny <= 0 and area_max <= 0):
+            return masks
+        out = masks.copy()
+        for rp in measure.regionprops(masks):
+            tiny = area_tiny > 0 and rp.area < area_tiny
+            small_round = area_max > 0 and rp.area < area_max and rp.eccentricity < ecc_max
+            if tiny or small_round:
+                out[masks == rp.label] = 0
+        return out
+
     def cellpose_single_image(self, model, chan, img):
-        # Contrast-normalize (percentile clip) so dim cells aren't lost to a few
-        # bright outliers, then run Cellpose-SAM (v4 eval: 3-value return, no
-        # `channels` arg).
+        # Percentile-clip then CLAHE adaptive contrast so dim spread-cell
+        # cytoplasm is lifted (the huge GFP dynamic range otherwise leaves dim
+        # fibroblasts near-black and only partially segmented). Then run
+        # Cellpose-SAM (v4 eval: 3-value return, no `channels` arg).
         raw = img.astype(np.float32)
         lo, hi = np.percentile(raw, 1), np.percentile(raw, 99.5)
-        norm = np.clip((raw - lo) / (hi - lo + 1e-9), 0, 1) * 255.0 if hi > lo else np.zeros_like(raw)
+        if hi > lo:
+            stretched = np.clip((raw - lo) / (hi - lo + 1e-9), 0, 1)
+            if self.opt.clahe_clip and self.opt.clahe_clip > 0:
+                stretched = exposure.equalize_adapthist(stretched, clip_limit=self.opt.clahe_clip)
+            norm = (stretched * 255.0).astype(np.float32)
+        else:
+            norm = np.zeros_like(raw)
         masks = model.eval(norm, batch_size=self.opt.batch_size, diameter=self.opt.cell_diameter,
                            flow_threshold=self.opt.flow_threshold,
                            cellprob_threshold=self.opt.cell_probability)[0]
         # Intensity cleanup on the RAW image (measures true brightness).
         masks = self._clean_masks(raw, masks, self.opt.cleanup_k)
+        # Shape cleanup: drop small round dead-cell debris.
+        masks = self._filter_debris(masks, self.opt.debris_area_tiny,
+                                    self.opt.debris_area_max, self.opt.debris_ecc_max)
 
         # Convert the grayscale masks to a heatmap using a colormap (e.g., 'hot' or 'viridis')
     #     cmap = plt.get_cmap('hot')  # You can also use 'viridis', 'plasma', etc.
@@ -203,6 +234,14 @@ if __name__ == '__main__':
     parser.add_argument('--cell_probability', default=-1.5, type=float)
     parser.add_argument('--cleanup_k', default=3.0, type=float,
                         help="Drop cells dimmer than background median + k*MAD (0 disables).")
+    parser.add_argument('--clahe_clip', default=0.03, type=float,
+                        help="CLAHE clip limit for adaptive contrast before Cellpose (0 disables).")
+    parser.add_argument('--debris_area_tiny', default=800, type=int,
+                        help="Always drop mask objects smaller than this many px (0 disables).")
+    parser.add_argument('--debris_area_max', default=3000, type=int,
+                        help="Objects smaller than this AND round (< debris_ecc_max) are debris (0 disables).")
+    parser.add_argument('--debris_ecc_max', default=0.8, type=float,
+                        help="Eccentricity below this counts as round-ish debris candidate.")
     parser.add_argument('--model_type', default='cyto2', type=str,
                         help="Unused with Cellpose-SAM v4; kept for config compatibility.")
     parser.add_argument("--wells_toggle", default='include',
