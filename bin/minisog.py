@@ -441,8 +441,11 @@ class MiniSOG:
                 peak_hours=float(hrs[peak_idx]),
                 dynamic_range=dynamic_range,
                 auc=auc,
-                timecourse_slope=_slope(hrs, y),
-                timecourse_rho=_spearman(tps, y),
+                # Rise-to-peak kinetics: the death signal rises to a peak then
+                # declines (photobleach/detachment), so monotonic-rise metrics are
+                # measured over baseline..peak, not the full non-monotonic trace.
+                timecourse_slope=_slope(hrs[:peak_idx + 1], y[:peak_idx + 1]),
+                timecourse_rho=_spearman(tps[:peak_idx + 1], y[:peak_idx + 1]),
                 snr=snr,
                 dropout=int(1 if tps[-1] < max_tp else 0),
                 # helper columns (not written to minisogtrackdata)

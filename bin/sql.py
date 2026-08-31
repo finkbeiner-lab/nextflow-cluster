@@ -342,8 +342,8 @@ class Database:
             Column('peak_hours', Float),
             Column('dynamic_range', Float),     # peak / baseline_t0
             Column('auc', Float),               # trapezoid integral of (post - baseline) over hours
-            Column('timecourse_slope', Float),  # OLS slope of post(t) vs hours
-            Column('timecourse_rho', Float),    # Spearman rho of post(t) vs timepoint
+            Column('timecourse_slope', Float),  # OLS slope of post(t) vs hours over the rise (baseline->peak)
+            Column('timecourse_rho', Float),    # Spearman rho of post(t) vs timepoint over the rise (baseline->peak)
             Column('snr', Float),               # (peak - baseline_t0) / baseline_std
             Column('dropout', Integer),         # 1 if track lost before last experiment timepoint
         )
