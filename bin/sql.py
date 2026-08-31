@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 from sqlalchemy import (
     Column, Float, Integer, MetaData, String, Table, UniqueConstraint,
-    ForeignKey, and_, create_engine, delete, func, select, update,
+    ForeignKey, and_, create_engine, delete, func, select, text, update,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Session
@@ -102,6 +102,10 @@ class Database:
                 self.create_modeldata_table()
             if not self.engine.dialect.has_table(connection, 'modelcropdata'):
                 self.create_modelcropdata_table()
+            if not self.engine.dialect.has_table(connection, 'minisogtrackdata'):
+                self.create_minisogtrackdata_table()
+            if not self.engine.dialect.has_table(connection, 'minisogcomparisondata'):
+                self.create_minisogcomparisondata_table()
             self.meta.reflect(bind=self.engine, resolve_fks=True)
 
     def create_experimentdata_table(self) -> None:
@@ -296,6 +300,85 @@ class Database:
             Column('intensity_mean', Float),
             Column('intensity_min', Float),
             Column('intensity_std', Float),
+        )
+        self.meta.create_all(self.engine)
+
+    def create_minisogtrackdata_table(self) -> None:
+        """Create the per-track miniSOG-RGEDI death-signal metrics table.
+
+        One row per (tracked cell x candidate red sensor). Summarises a whole
+        track across timepoints, so it is keyed by ``welldata_id`` + ``cellid``
+        (+ ``tile`` for tile-level tracking) + ``channeldata_id`` (the post-stim
+        red channel), NOT ``tiledata_id`` (which is timepoint-specific). Keyed
+        analogously to intensitycelldata but at the track level. Written by
+        ``bin/minisog.py``.
+
+        The ``id`` column carries a ``uuid_generate_v4()`` server default so that
+        inserts on the *reflected* table (second run onward, when the Python-side
+        ``default`` is not present) still receive a primary key.
+        """
+        minisogtrackdata = Table(
+            'minisogtrackdata', self.meta,
+            Column('id', UUID(as_uuid=True), server_default=text('uuid_generate_v4()'),
+                   default=uuid.uuid4, primary_key=True),
+            Column("experimentdata_id", UUID(as_uuid=True), ForeignKey("experimentdata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("welldata_id", UUID(as_uuid=True), ForeignKey("welldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("channeldata_id", UUID(as_uuid=True), ForeignKey("channeldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column('cellid', Integer),
+            Column('tile', Integer),
+            Column('sensor', String),          # 'RFP16' | 'NarrowRFP'
+            Column('post_channel', String),    # e.g. 'Epi-RFP16-2'
+            Column('n_timepoints', Integer),
+            Column('first_timepoint', Integer),
+            Column('last_timepoint', Integer),
+            Column('baseline_t0', Float),       # T0 pre-stim read (absolute baseline)
+            Column('baseline_std', Float),
+            Column('baseline_cv', Float),       # noise floor
+            Column('peak_intensity', Float),
+            Column('peak_timepoint', Integer),
+            Column('peak_hours', Float),
+            Column('dynamic_range', Float),     # peak / baseline_t0
+            Column('auc', Float),               # trapezoid integral of (post - baseline) over hours
+            Column('timecourse_slope', Float),  # OLS slope of post(t) vs hours
+            Column('timecourse_rho', Float),    # Spearman rho of post(t) vs timepoint
+            Column('snr', Float),               # (peak - baseline_t0) / baseline_std
+            Column('dropout', Integer),         # 1 if track lost before last experiment timepoint
+        )
+        self.meta.create_all(self.engine)
+
+    def create_minisogcomparisondata_table(self) -> None:
+        """Create the miniSOG red-sensor comparison summary table.
+
+        One row per (cell line x candidate red sensor): the decision-ready
+        RFP16-vs-NarrowRFP comparison, aggregating the per-track metrics against
+        the plate's dose-response and time-course structure. ``channeldata_id`` is
+        nullable because channeldata is per-well while a sensor spans the plate;
+        the authoritative sensor identity is the ``sensor`` string. Written by
+        ``bin/minisog.py``.
+        """
+        minisogcomparisondata = Table(
+            'minisogcomparisondata', self.meta,
+            Column('id', UUID(as_uuid=True), server_default=text('uuid_generate_v4()'),
+                   default=uuid.uuid4, primary_key=True),
+            Column("experimentdata_id", UUID(as_uuid=True), ForeignKey("experimentdata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("channeldata_id", UUID(as_uuid=True), ForeignKey("channeldata.id", ondelete="CASCADE"),
+                   index=True, nullable=True),
+            Column('sensor', String),                # 'RFP16' | 'NarrowRFP'
+            Column('celltype', String),              # cell line (e.g. TP0357)
+            Column('n_wells', Integer),
+            Column('n_tracks', Integer),
+            Column('dose_response_rho', Float),      # Spearman of per-well median readout vs dose (ms)
+            Column('dose_response_slope', Float),
+            Column('timecourse_rho_median', Float),  # median per-track monotonic-rise rho
+            Column('dynamic_range_median', Float),
+            Column('baseline_cv_median', Float),     # noise floor
+            Column('dropout_rate', Float),           # tracking robustness
+            Column('quality_score', Float),          # composite verdict metric
+            Column('is_winner', Integer),            # 1 if this sensor wins its cell line
         )
         self.meta.create_all(self.engine)
 

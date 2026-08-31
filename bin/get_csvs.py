@@ -47,6 +47,8 @@ class GetCSVS:
         modeldata = Db.get_df_from_query('modeldata', dict(experimentdata_id=exp_uuid))
         modelcropdata = Db.get_df_from_query('modelcropdata', dict(experimentdata_id=exp_uuid))
         cropdata = Db.get_df_from_query('cropdata', dict(experimentdata_id=exp_uuid))
+        minisogtrackdata = Db.get_df_from_query('minisogtrackdata', dict(experimentdata_id=exp_uuid))
+        minisogcomparisondata = Db.get_df_from_query('minisogcomparisondata', dict(experimentdata_id=exp_uuid))
 
         experimentdata.to_csv(os.path.join(savedir, 'experimentdata.csv'))
         welldata.to_csv(os.path.join(savedir, 'welldata.csv'))
@@ -60,6 +62,8 @@ class GetCSVS:
         modeldata.to_csv(os.path.join(savedir, 'modeldata.csv'))
         modelcropdata.to_csv(os.path.join(savedir, 'modelcropdata.csv'))
         cropdata.to_csv(os.path.join(savedir, 'cropdata.csv'))
+        minisogtrackdata.to_csv(os.path.join(savedir, 'minisogtrackdata.csv'))
+        minisogcomparisondata.to_csv(os.path.join(savedir, 'minisogcomparisondata.csv'))
         get_legacy_celldata_csv(savedir)
         print(f'Saved csvs to {savedir}.')
         
