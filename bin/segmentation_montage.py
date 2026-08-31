@@ -29,7 +29,7 @@ import numpy as np
 import pandas as pd
 import tifffile
 from scipy.spatial import cKDTree
-from skimage import filters, measure
+from skimage import exposure, filters, measure
 
 from db_util import Ops
 from normalization import Normalize
@@ -107,7 +107,9 @@ class Segmentation:
             manual=None,
             tryall=filters.try_all_threshold,
         )
-        self.thresh_func = self.threshold_func[self.segmentation_method]
+        # `.get` so segmentation_method='cellpose' (not a threshold) does not KeyError
+        self.thresh_func = self.threshold_func.get(self.segmentation_method)
+        self._cp_model = None  # lazily-loaded Cellpose-SAM model (cellpose method)
 
         # Region properties extracted for every labelled cell
         self.region_props: Tuple[str, ...] = (
@@ -172,7 +174,10 @@ class Segmentation:
     def run(self) -> None:
         """Execute the full segmentation workflow and log elapsed time."""
         self.start_time = time()
-        self.run_threshold()
+        if self.segmentation_method == 'cellpose':
+            self.run_cellpose()
+        else:
+            self.run_threshold()
 
         total_time = time() - self.start_time
         logger.warning(f'Completed threshold in {total_time:.2f}s')
@@ -182,6 +187,145 @@ class Segmentation:
 
         print(f'SEGMENTATION COMPLETED in {total_time:.2f}s ({total_time/60:.2f} min)')
         self._cleanup()
+
+    # ------------------------------------------------------------------
+    # Cellpose-SAM segmentation (segmentation_method == 'cellpose')
+    # ------------------------------------------------------------------
+
+    def _get_cellpose_model(self) -> Any:
+        """Lazily load a single Cellpose-SAM (v4) model (GPU). Imported here so
+        the threshold path never imports cellpose."""
+        if self._cp_model is None:
+            from cellpose import models
+            logger.warning('Loading Cellpose-SAM (v4) model (gpu=True)')
+            self._cp_model = models.CellposeModel(gpu=True)
+        return self._cp_model
+
+    @staticmethod
+    def _clean_masks(img: np.ndarray, masks: np.ndarray, k: float) -> np.ndarray:
+        """Drop Cellpose cells that are background-level (dim false positives).
+
+        Keeps only cells whose median intensity exceeds background median +
+        k * robust-SD (MAD-based), measured on the RAW image.
+        """
+        bg = img[masks == 0]
+        if bg.size == 0 or masks.max() == 0:
+            return masks
+        bg_med = np.median(bg)
+        bg_mad = 1.4826 * np.median(np.abs(bg - bg_med))
+        thr = bg_med + k * bg_mad
+        out = np.zeros_like(masks)
+        for lab in range(1, int(masks.max()) + 1):
+            m = masks == lab
+            if m.any() and np.median(img[m]) >= thr:
+                out[m] = lab
+        return out
+
+    @staticmethod
+    def _filter_debris(masks: np.ndarray, area_tiny: int, area_max: int, ecc_max: float) -> np.ndarray:
+        """Remove small, round dead-cell debris while keeping fibroblasts.
+
+        Drops a label if it is very small (< area_tiny) OR both small
+        (< area_max) and round (eccentricity < ecc_max). Keeps elongated
+        fibroblasts and large rounded dying cells.
+        """
+        if masks.max() == 0 or (area_tiny <= 0 and area_max <= 0):
+            return masks
+        out = masks.copy()
+        for rp in measure.regionprops(masks):
+            tiny = area_tiny > 0 and rp.area < area_tiny
+            small_round = area_max > 0 and rp.area < area_max and rp.eccentricity < ecc_max
+            if tiny or small_round:
+                out[masks == rp.label] = 0
+        return out
+
+    def cellpose_single_image(self, model: Any, img: np.ndarray) -> Tuple[np.ndarray, pd.DataFrame]:
+        """Segment one montage image with Cellpose-SAM + CLAHE + cleanup.
+
+        Percentile-clip then CLAHE adaptive contrast (lifts dim spread-cell
+        cytoplasm), run Cellpose-SAM, then MAD intensity cleanup and the
+        shape debris filter. Returns the labelled mask and its regionprops.
+        """
+        raw = img.astype(np.float32)
+        lo, hi = np.percentile(raw, 1), np.percentile(raw, 99.5)
+        if hi > lo:
+            stretched = np.clip((raw - lo) / (hi - lo + 1e-9), 0, 1)
+            if getattr(self.opt, 'clahe_clip', 0) and self.opt.clahe_clip > 0:
+                stretched = exposure.equalize_adapthist(stretched, clip_limit=self.opt.clahe_clip)
+            norm = (stretched * 255.0).astype(np.float32)
+        else:
+            norm = np.zeros_like(raw)
+        masks = model.eval(norm, batch_size=self.opt.batch_size, diameter=self.opt.cell_diameter,
+                           flow_threshold=self.opt.flow_threshold,
+                           cellprob_threshold=self.opt.cell_probability)[0]
+        masks = self._clean_masks(raw, masks, self.opt.cleanup_k)
+        masks = self._filter_debris(masks, self.opt.debris_area_tiny,
+                                    self.opt.debris_area_max, self.opt.debris_ecc_max)
+        props = measure.regionprops_table(masks, intensity_image=img, properties=self.region_props)
+        return masks, pd.DataFrame(props)
+
+    def run_cellpose(self) -> None:
+        """Cellpose-SAM segmentation over the well's montages (serial, GPU).
+
+        Mirrors :meth:`run_threshold` but processes each unique montage once
+        (not once per tile row) and runs serially (Cellpose eval is not
+        thread-safe). The mask/celldata write path is reused verbatim.
+        """
+        Db = Database()
+        tiledata_df: pd.DataFrame = self.Norm.get_tiledata_df()
+        tiledata_df = tiledata_df[tiledata_df['well'] == self.opt.chosen_wells]
+        if tiledata_df.empty:
+            logger.warning(f'No tile data for well {self.opt.chosen_wells}')
+            return
+        self.total_tiles = len(tiledata_df)
+        print(f'Cellpose: {self.total_tiles} tile rows for well {self.opt.chosen_wells}')
+        self._precreate_directories(tiledata_df)
+        all_tile_ids: Set = set(tiledata_df['id'].tolist())
+        model = self._get_cellpose_model()
+        for (well, timepoint), df in tiledata_df.groupby(['well', 'timepoint']):
+            self.cellpose_single_group(Db, df, well, timepoint, model)
+        if all_tile_ids:
+            self.bulk_delete_celldata(Db, all_tile_ids)
+
+    def cellpose_single_group(self, Db: Database, df: pd.DataFrame, well: str,
+                              timepoint: Any, model: Any) -> None:
+        """Segment one montage once and write masks/celldata for all its tile rows."""
+        strt = time()
+        df = df.sort_values(by='tile').copy()
+        row0 = df.iloc[0]
+        img_path = row0.alignedmontagepath if pd.notna(row0.alignedmontagepath) else row0.newimagemontage
+        if not img_path or not os.path.exists(img_path):
+            print(f'Warning: montage image missing for {well} {timepoint}: {img_path}')
+            return
+        img = tifffile.imread(img_path)
+        masks, props_df = self.cellpose_single_image(model, img)
+        mask_dir = os.path.join(self.analysisdir, self.mask_folder_name, well)
+        os.makedirs(mask_dir, exist_ok=True)
+        maskpath = save_mask(masks, img_path, mask_dir)
+
+        batch_updates: List[Dict[str, Any]] = []
+        batch_data: List[Tuple[Any, pd.DataFrame]] = []
+        for _, row in df.iterrows():
+            batch_updates.append({
+                'kwargs': dict(experimentdata_id=row.experimentdata_id, welldata_id=row.welldata_id,
+                               channeldata_id=row.channeldata_id, tile=row.tile, timepoint=row.timepoint),
+                'data': dict(alignedmontagemaskpath=maskpath),
+            })
+            if not props_df.empty:
+                batch_data.append((row, props_df))
+        if batch_updates:
+            self.batch_update_tiledata(Db, batch_updates)
+        if batch_data:
+            self.batch_update_celldata_optimized(Db, batch_data, df)
+        try:
+            del self.Norm.backgrounds[well][timepoint]
+        except (KeyError, AttributeError):
+            pass
+        gc.collect()
+        n_cells = 0 if props_df.empty else len(props_df)
+        self.processed_tiles += len(df)
+        print(f'Cellpose {well} {timepoint}: {n_cells} cells, {time()-strt:.1f}s '
+              f'({self.processed_tiles}/{self.total_tiles} rows)')
 
     # ------------------------------------------------------------------
     # Thresholding
@@ -644,8 +788,18 @@ if __name__ == '__main__':
     parser.add_argument('--experiment',default='0907-FB-1-JL-gedi-test', type=str)
 
     parser.add_argument('--segmentation_method', default='sd_from_mean', choices=['sd_from_mean', 'minimum', 'yen', 'local', 'li', 'isodata', 'mean',
-                                                          'otsu', 'sauvola', 'triangle', 'manual', 'tryall'], type=str,
-                        help='Auto segmentation method.')
+                                                          'otsu', 'sauvola', 'triangle', 'manual', 'tryall', 'cellpose'], type=str,
+                        help='Auto segmentation method. "cellpose" = Cellpose-SAM v4 with CLAHE + debris cleanup.')
+    # Cellpose-SAM params (only used when segmentation_method='cellpose'); tuned defaults for 20X fibroblast GFP morphology
+    parser.add_argument('--batch_size', default=16, type=int, help="Cellpose eval batch size.")
+    parser.add_argument('--cell_diameter', default=70, type=int, help="Cellpose diameter (SAM is scale-invariant; value has little effect).")
+    parser.add_argument('--flow_threshold', default=0.6, type=float, help="Cellpose flow threshold.")
+    parser.add_argument('--cell_probability', default=-1.5, type=float, help="Cellpose cellprob threshold (lower=more/dimmer cells).")
+    parser.add_argument('--cleanup_k', default=3.0, type=float, help="Drop cells dimmer than bg median + k*MAD (0 disables).")
+    parser.add_argument('--clahe_clip', default=0.03, type=float, help="CLAHE clip limit for adaptive contrast before Cellpose (0 disables).")
+    parser.add_argument('--debris_area_tiny', default=800, type=int, help="Always drop mask objects smaller than this many px (0 disables).")
+    parser.add_argument('--debris_area_max', default=3000, type=int, help="Objects smaller than this AND round (< debris_ecc_max) are debris (0 disables).")
+    parser.add_argument('--debris_ecc_max', default=0.8, type=float, help="Eccentricity below this counts as round-ish debris candidate.")
     parser.add_argument('--img_norm_name', default='subtraction', choices=['division', 'subtraction', 'identity'], type=str,
                         help='Image normalization method using flatfield image.')
     parser.add_argument('--lower_area_thresh', default=50, type=int, help="Lowerbound for cell area. Remove cells with area less than this value.")
