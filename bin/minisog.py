@@ -526,16 +526,21 @@ class MiniSOG:
                        cv_med: float, dropout_rate: float) -> float:
         """Composite 'cleaner death signal' score (higher is better).
 
-        Bounded terms so no single component dominates: dose-response and
-        time-course correlations in [-1, 1]; a dynamic-range term in [0, 1);
-        penalties for baseline noise and tracking dropout.
+        Weighted toward the robust discriminators. **Dynamic range** is the
+        primary term (0.55): it is the amplitude of the death signal and is
+        stable across cell lines. The **rise-to-peak** correlation (0.15) rewards
+        clean death kinetics. **dose_response_rho** is deliberately down-weighted
+        (0.10): with only 4 dose points per cell line the Spearman is noisy, and
+        empirically the dose-response saturates (little monotonic dose-dependence),
+        so it is diagnostic rather than decisive. Small penalties for baseline
+        noise and tracking dropout. All terms bounded so none dominates.
         """
         def z(v: float) -> float:
             return 0.0 if (v is None or not np.isfinite(v)) else float(v)
         dr_term = 1.0 - 1.0 / max(z(dr_med), 1.0) if np.isfinite(dr_med) else 0.0
-        return (0.35 * z(dose_rho)
-                + 0.25 * z(tc_rho)
-                + 0.20 * dr_term
+        return (0.55 * dr_term
+                + 0.15 * z(tc_rho)
+                + 0.10 * z(dose_rho)
                 - 0.10 * min(z(cv_med), 1.0)
                 - 0.10 * z(dropout_rate))
 
