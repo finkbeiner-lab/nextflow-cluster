@@ -275,7 +275,7 @@ class MiniSOG:
         ``value`` column (the death signal) plus hours + well metadata.
         """
         keys = ['welldata_id', 'tile', 'cellid', 'timepoint']
-        post = merged[merged['channel'] == post_ch][keys + ['hours', 'celltype', 'condition',
+        post = merged[merged['channel'] == post_ch][keys + ['well', 'hours', 'celltype', 'condition',
                                                             'dosage', 'channeldata_id', 'readout']]
         post = post.rename(columns={'readout': 'post'})
         if self.death_metric == 'raw':
@@ -385,10 +385,10 @@ class MiniSOG:
             pct_dead = float(sub['died'].mean())
             tod = sub[sub['died'] == 1]['time_to_death'].values
             med_tod = float(np.nanmedian(tod)) if len(tod) else float('nan')
-            # dose-response of DEATH: per-well %dead vs dose
-            wells = sub.groupby('well').agg(dose=('dosage', 'first'), pdead=('died', 'mean')).dropna(subset=['dose'])
-            dose_rho = _spearman(wells['dose'].values, wells['pdead'].values) if len(wells) >= 3 else float('nan')
-            dose_slope = _slope(wells['dose'].values, wells['pdead'].values) if len(wells) >= 2 else float('nan')
+            # dose-response of DEATH: %dead vs blue-light dose (one well per dose within a line)
+            dg = sub.dropna(subset=['dosage']).groupby('dosage')['died'].mean()
+            dose_rho = _spearman(dg.index.values, dg.values) if len(dg) >= 3 else float('nan')
+            dose_slope = _slope(dg.index.values, dg.values) if len(dg) >= 2 else float('nan')
             dr_med = float(np.nanmedian(sub['dynamic_range']))
             cv_med = float(np.nanmedian(sub['baseline_cv']))
             dropout_rate = float(np.nanmean(sub['dropout']))
