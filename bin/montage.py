@@ -359,14 +359,22 @@ class Montage:
         mont = np.zeros((stride_h * (side - 1) + h, stride_w * (side - 1) + w), dtype=np.uint16)
         for i in range(side):
             for j in range(side):
-                #TODO: map montages for legacy montage, new montages, and ixm montages
+                # Tile serpentine phase differs by microscope (which corner the
+                # boustrophedon scan starts and which rows are reversed):
+                #   'legacy'   = roboscope, reverse EVEN rows (top-right start):
+                #                3 2 1 / 4 5 6 / 9 8 7
+                #   'ixm'      = top-left serpentine, reverse ODD rows:
+                #                1 2 3 / 6 5 4 / 7 8 9  (empirically correct for
+                #                hevo-pmsG-1 -- matches the measured tile overlaps;
+                #                the IXM snake differs from the roboscope one)
+                #   'standard' = no snake: 1 2 3 / 4 5 6 / 7 8 9
                 if self.opt.montage_pattern == 'legacy':
-                    if i % 2 == 0:
-                        k = side - (j + 1)
-                    else:
-                        k = j
+                    rev = (i % 2 == 0)
+                elif self.opt.montage_pattern in ('ixm', 'serpentine_lr'):
+                    rev = (i % 2 == 1)
                 else:
-                    k = j
+                    rev = False
+                k = side - (j + 1) if rev else j
                 y0, x0 = i * stride_h, j * stride_w
                 # last-tile-wins in the overlap strip (no duplication)
                 mont[y0:y0 + h, x0:x0 + w] = images[i * side + k]
