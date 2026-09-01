@@ -143,9 +143,13 @@ params.target_channel = ['FITC', 'RFP']  // Channels to compute intensity on (pa
 // tracking-montage summary CSV (montage flow); 'auto' tries DB then CSV.
 // morphology_channel (section 3) is the RGEDI-green segmentation channel (Epi-GFP16).
 // Each sensor is 'name:post_channel:baseline_channel' (baseline sampled at baseline_timepoint).
-params.minisog_sensors           = 'RFP16:Epi-RFP16-2:Epi-RFP16,NarrowRFP:Epi-NarrowRFP-2:Epi-NarrowRFP'
-params.minisog_intensity_source  = 'auto'   // 'auto' | 'db' | 'csv'
-params.minisog_baseline_timepoint = 0        // Timepoint whose pre-stim read is the absolute baseline
+params.minisog_sensors           = 'RFP16:Epi-RFP16-2'   // 'name:post_channel' (GEDI red death channel)
+params.minisog_gfp_channel       = 'Epi-GFP16'           // morphology channel for the GEDI ratio (red/GFP)
+params.minisog_intensity_source  = 'csv'                 // 'csv' (montage tracking summary) | 'db' | 'auto'
+params.minisog_death_metric      = 'ratio'               // 'ratio' = post/GFP (GEDI) | 'raw' = post red
+params.minisog_death_threshold_pct = 99                  // T0 all-live percentile for the death threshold
+params.minisog_death_persist     = 2         // Sustained frames above threshold to call death
+params.minisog_baseline_timepoint = 0        // Timepoint defining the T0 all-live baseline population
 params.minisog_min_track_len     = 4         // Minimum observed timepoints for a track to be scored
 
 

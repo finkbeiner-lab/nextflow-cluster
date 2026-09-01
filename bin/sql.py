@@ -346,6 +346,12 @@ class Database:
             Column('timecourse_rho', Float),    # Spearman rho of post(t) vs timepoint over the rise (baseline->peak)
             Column('snr', Float),               # (peak - baseline_t0) / baseline_std
             Column('dropout', Integer),         # 1 if track lost before last experiment timepoint
+            # GEDI-style death call (metric = 'ratio' red/GFP, or 'raw' red)
+            Column('metric', String),           # 'ratio' | 'raw'
+            Column('threshold', Float),          # death threshold applied (T0-percentile)
+            Column('died', Integer),             # 1 if the GEDI signal crossed the threshold (sustained)
+            Column('death_timepoint', Integer),  # first sustained-crossing timepoint (NULL if never)
+            Column('time_to_death', Float),      # hours from T0 to death_timepoint (NULL if never)
         )
         self.meta.create_all(self.engine)
 
@@ -379,6 +385,11 @@ class Database:
             Column('dropout_rate', Float),           # tracking robustness
             Column('quality_score', Float),          # composite verdict metric
             Column('is_winner', Integer),            # 1 if this sensor wins its cell line
+            # GEDI death-call summaries (per cell line x sensor)
+            Column('threshold', Float),              # death threshold used (T0-percentile)
+            Column('n_died', Integer),               # tracks that crossed the threshold
+            Column('pct_dead', Float),               # fraction of tracks that died
+            Column('median_time_to_death', Float),   # median hours-to-death among died tracks
         )
         self.meta.create_all(self.engine)
 

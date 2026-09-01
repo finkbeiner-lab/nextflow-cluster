@@ -233,6 +233,10 @@ process MINISOG {
     val exp
     val morphology_channel
     val sensors
+    val gfp_channel
+    val death_metric
+    val death_threshold_pct
+    val death_persist
     val intensity_source
     val baseline_timepoint
     val min_track_len
@@ -247,7 +251,9 @@ process MINISOG {
     script:
     """
     minisog.py --experiment ${exp} --morphology_channel ${morphology_channel} \
-    --sensors '${sensors}' --intensity_source ${intensity_source} \
+    --sensors '${sensors}' --gfp_channel ${gfp_channel} \
+    --death_metric ${death_metric} --death_threshold_pct ${death_threshold_pct} \
+    --death_persist ${death_persist} --intensity_source ${intensity_source} \
     --baseline_timepoint ${baseline_timepoint} --min_track_len ${min_track_len} \
     --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
