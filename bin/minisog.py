@@ -78,6 +78,32 @@ def _slope(x: np.ndarray, y: np.ndarray) -> float:
     return float(np.polyfit(x[m], y[m], 1)[0])
 
 
+def _km(event_times: np.ndarray, censor_times: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Kaplan-Meier product-limit survival estimate (no lifelines dependency).
+
+    Args:
+        event_times: times (hours) at which death occurred.
+        censor_times: last-observed times (hours) for cells that never died.
+
+    Returns:
+        (t, S) step-function arrays: survival probability S at each time t.
+    """
+    event_times = np.asarray(event_times, float)
+    censor_times = np.asarray(censor_times, float)
+    times = np.concatenate([event_times, censor_times])
+    ev = np.concatenate([np.ones(len(event_times)), np.zeros(len(censor_times))])
+    if len(times) == 0:
+        return np.array([0.0]), np.array([1.0])
+    ts, ss, S = [0.0], [1.0], 1.0
+    for t in np.unique(event_times):
+        at_risk = int(np.sum(times >= t))
+        d = int(np.sum((event_times == t)))
+        if at_risk > 0:
+            S *= (1 - d / at_risk)
+        ts.append(float(t)); ss.append(S)
+    return np.array(ts), np.array(ss)
+
+
 class MiniSOG:
     """GEDI-style death quantification and per-cell-line dose-response.
 
@@ -299,15 +325,18 @@ class MiniSOG:
         return thr
 
     def _death_timepoint(self, tps: np.ndarray, vals: np.ndarray, thr: float) -> Optional[int]:
-        """First timepoint whose value crosses thr and stays above for death_persist obs
-        (or through the end of the track). Returns the timepoint, or None."""
+        """First timepoint whose value crosses thr and stays above for a full
+        ``death_persist``-frame window. A crossing in the last (death_persist-1)
+        observed frames cannot be confirmed, so it is NOT called (the cell is
+        left censored) -- this avoids inflating deaths at the final timepoints.
+        Returns the crossing timepoint, or None."""
         above = vals > thr
         n = len(tps)
         for i in range(n):
             if not above[i]:
                 continue
             win = above[i:i + self.death_persist]
-            if win.all():   # sustained (or fewer obs remain but all above)
+            if len(win) >= self.death_persist and win.all():
                 return int(tps[i])
         return None
 
@@ -465,6 +494,27 @@ class MiniSOG:
                 fig.tight_layout(rect=[0, 0, 1, 0.95])
                 fig.savefig(os.path.join(self.plotdir, f'gedi_death_{sensor}.png'), dpi=120)
                 plt.close(fig)
+
+                # Kaplan-Meier survival (death = event, non-death = censored at last obs)
+                figk, axk = plt.subplots(1, 2, figsize=(13, 5))
+                for ct, sub in ts.groupby('celltype'):
+                    ev = sub[sub['died'] == 1]['time_to_death'].dropna().values
+                    cens = sub[sub['died'] == 0]['last_timepoint'].values * 4.0
+                    t, S = _km(ev, cens)
+                    axk[0].step(t, S, where='post', label=str(ct))
+                axk[0].set_title('KM survival by cell line'); axk[0].set_xlabel('hours')
+                axk[0].set_ylabel('survival'); axk[0].set_ylim(0, 1.02); axk[0].legend(fontsize=8)
+                for dz, sub in ts.dropna(subset=['dosage']).groupby('dosage'):
+                    ev = sub[sub['died'] == 1]['time_to_death'].dropna().values
+                    cens = sub[sub['died'] == 0]['last_timepoint'].values * 4.0
+                    t, S = _km(ev, cens)
+                    axk[1].step(t, S, where='post', label=f'{int(dz)}ms')
+                axk[1].set_title('KM survival by dose'); axk[1].set_xlabel('hours')
+                axk[1].set_ylabel('survival'); axk[1].set_ylim(0, 1.02); axk[1].legend(fontsize=8)
+                figk.suptitle(f'{sensor} Kaplan-Meier survival (GEDI, thr={ts["threshold"].iloc[0]:.3f})')
+                figk.tight_layout(rect=[0, 0, 1, 0.95])
+                figk.savefig(os.path.join(self.plotdir, f'gedi_survival_{sensor}.png'), dpi=120)
+                plt.close(figk)
             print(f'Wrote plots to {self.plotdir}')
         except Exception as e:
             logger.warning(f'Plot emission failed: {e}')

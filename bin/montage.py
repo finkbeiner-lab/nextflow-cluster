@@ -343,18 +343,33 @@ class Montage:
         side = int(np.sqrt(num_tiles))
         montage_creation_start = time()
         h, w = np.shape(images[0])
-        mont = np.zeros((int(h * side), int(w * side)), dtype=np.uint16)
+        # Honor the physical tile overlap (fraction from tiledata.overlap, e.g. 0.1)
+        # so overlapping regions coincide instead of being duplicated. Placing tiles
+        # at full-tile stride (the old behavior) shifts every tile by one overlap
+        # width per step, producing the visible seam offsets. Stride = tile - overlap.
+        try:
+            overlap_frac = float(df['overlap'].iloc[0])
+        except Exception:
+            overlap_frac = 0.0
+        if not (0.0 <= overlap_frac < 0.9):
+            overlap_frac = 0.0
+        ov_h = int(round(h * overlap_frac))
+        ov_w = int(round(w * overlap_frac))
+        stride_h, stride_w = h - ov_h, w - ov_w
+        mont = np.zeros((stride_h * (side - 1) + h, stride_w * (side - 1) + w), dtype=np.uint16)
         for i in range(side):
             for j in range(side):
                 #TODO: map montages for legacy montage, new montages, and ixm montages
                 if self.opt.montage_pattern == 'legacy':
-                    if i%2==0:
-                        k = side - (j+1)
+                    if i % 2 == 0:
+                        k = side - (j + 1)
                     else:
                         k = j
                 else:
                     k = j
-                mont[i * h:(i + 1) * h, j * w:(j + 1) * w] = images[i * side + k]
+                y0, x0 = i * stride_h, j * stride_w
+                # last-tile-wins in the overlap strip (no duplication)
+                mont[y0:y0 + h, x0:x0 + w] = images[i * side + k]
 
         if savebool:
             imageio.v3.imwrite(savepath, mont)
