@@ -352,6 +352,12 @@ class Database:
             Column('died', Integer),             # 1 if the GEDI signal crossed the threshold (sustained)
             Column('death_timepoint', Integer),  # first sustained-crossing timepoint (NULL if never)
             Column('time_to_death', Float),      # hours from T0 to death_timepoint (NULL if never)
+            # switch (changepoint) confirmation: best sustained upward step ratio
+            # mean(after)/mean(before); ~1 = flat/always-high (no death event),
+            # >>1 = a real low->high transition. Used to gate 'died' when
+            # switch_confirm is on (combined value-threshold + switch call).
+            Column('switch_mag', Float),
+            Column('switch_confirmed', Integer),  # 1 if switch_mag >= switch_fc
         )
         self.meta.create_all(self.engine)
 

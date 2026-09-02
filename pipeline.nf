@@ -20,6 +20,8 @@ if (!params.containsKey('minisog_death_threshold_pct')) { params.minisog_death_t
 if (!params.containsKey('minisog_death_persist')) { params.minisog_death_persist = 2 }
 if (!params.containsKey('minisog_baseline_timepoint')) { params.minisog_baseline_timepoint = 0 }
 if (!params.containsKey('minisog_min_track_len')) { params.minisog_min_track_len = 4 }
+if (!params.containsKey('minisog_switch_confirm')) { params.minisog_switch_confirm = false }
+if (!params.containsKey('minisog_switch_fc')) { params.minisog_switch_fc = 1.5 }
 if (!params.containsKey('minisog_intensity_source')) { params.minisog_intensity_source = 'csv' }
 
 input_path_ch = Channel.of(params.input_path)
@@ -121,6 +123,8 @@ minisog_death_threshold_pct_ch = Channel.of(params.minisog_death_threshold_pct)
 minisog_death_persist_ch = Channel.of(params.minisog_death_persist)
 minisog_baseline_tp_ch = Channel.of(params.minisog_baseline_timepoint)
 minisog_min_track_len_ch = Channel.of(params.minisog_min_track_len)
+minisog_switch_confirm_ch = Channel.of(params.minisog_switch_confirm)
+minisog_switch_fc_ch = Channel.of(params.minisog_switch_fc)
 minisog_intensity_source_ch = Channel.of(params.minisog_intensity_source)
 
 // Fallback if tiletype is missing from config
@@ -463,7 +467,8 @@ if (params.DO_MINISOG) {
     minisog_ch = MINISOG(minisog_flag, experiment_ch, morphology_ch, minisog_sensors_ch,
                          minisog_gfp_channel_ch, minisog_death_metric_ch, minisog_death_threshold_pct_ch,
                          minisog_death_persist_ch, minisog_intensity_source_ch, minisog_baseline_tp_ch,
-                         minisog_min_track_len_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
+                         minisog_min_track_len_ch, minisog_switch_confirm_ch, minisog_switch_fc_ch,
+                         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
     minisog_ch.view { it }
     minisog_result = MINISOG.out
 }

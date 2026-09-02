@@ -10,6 +10,12 @@ Death is quantified the way the GEDI paper does (Linsley et al., Nat Commun 2021
   percentile of the T0 ratio distribution -- the "live ceiling").
 * **Time of death** = the first timepoint a cell's ratio crosses the threshold and
   stays above it (sustained). Cells that never cross are censored (alive/unknown).
+* **Switch confirmation** (optional, ``--switch_confirm``): because GEDI death is a
+  fast, switch-like transition, a "confident death" additionally requires a real
+  low->high step in the cell's own trajectory (``switch_mag`` = the best sustained
+  ``mean(after)/mean(before)`` fold-ratio must reach ``--switch_fc``). This rejects
+  drifting / always-high cells that clear the absolute threshold without a genuine
+  death *event*. ``switch_mag`` is recorded on every track regardless.
 
 From these it reports per-cell death metrics (``minisogtrackdata``), a per-cell-line
 summary with the dose-response of death (``minisogcomparisondata``), and survival /
@@ -129,6 +135,11 @@ class MiniSOG:
         self.baseline_tp: int = int(opt.baseline_timepoint)
         self.death_persist: int = int(opt.death_persist)
         self.min_track_len: int = int(opt.min_track_len)
+        # combined death call: gate the value-threshold crossing on a confirmed
+        # switch (a real low->high transition) to reject drifting / always-high
+        # cells. switch_confirm=False keeps the plain value-threshold call.
+        self.switch_confirm: bool = bool(getattr(opt, 'switch_confirm', False))
+        self.switch_fc: float = float(getattr(opt, 'switch_fc', 1.5))
         self.exp_uuid = self.Db.get_table_uuid('experimentdata', dict(experiment=opt.experiment))
         if self.exp_uuid is None:
             raise Exception(f'Experiment not found in database: {opt.experiment}')
@@ -340,6 +351,33 @@ class MiniSOG:
                 return int(tps[i])
         return None
 
+    def _switch_magnitude(self, vals: np.ndarray) -> float:
+        """Confirm a real death *event* (a low->high switch), not a flat/always-high
+        trajectory. Finds the split k that maximises the sustained upward step
+        ``mean(vals[k:]) - mean(vals[:k])`` (with at least ``death_persist`` frames
+        after k), and returns that segment's fold ratio ``mean(after)/mean(before)``.
+        A value near 1 means no switch (drift or high from the start); a large value
+        means a genuine low->high transition. Baseline-scale-invariant, so it works
+        the same across cells regardless of expression level.
+
+        Args:
+            vals: the per-cell death-signal series (already time-ordered).
+
+        Returns:
+            The switch fold-ratio (>= 0); 1.0 when the series is too short to split.
+        """
+        n = len(vals)
+        if n < self.death_persist + 1:
+            return 1.0
+        best_step, best_k = -np.inf, 1
+        for k in range(1, n - self.death_persist + 1):
+            step = float(vals[k:].mean() - vals[:k].mean())
+            if step > best_step:
+                best_step, best_k = step, k
+        pre = float(vals[:best_k].mean())
+        post = float(vals[best_k:].mean())
+        return post / pre if pre > 0 else float('inf')
+
     def compute_track_metrics(self, series: pd.DataFrame, sensor: str, post_ch: str,
                               thr: float) -> pd.DataFrame:
         """Per-track continuous features + GEDI death call, for one sensor."""
@@ -362,6 +400,14 @@ class MiniSOG:
             baseline_std = float(np.std(early))
             peak_idx = int(np.nanargmax(y)); peak = float(y[peak_idx])
             dtp = self._death_timepoint(g['timepoint'].values.astype(int), y, thr)
+            # switch confirmation: a real low->high transition, not drift/always-high
+            switch_mag = self._switch_magnitude(y)
+            switch_confirmed = int(switch_mag >= self.switch_fc)
+            # combined call: keep the value-threshold death only if the switch is
+            # confirmed. Cells that cross the absolute threshold but never truly
+            # rose (flat/always-high) are censored as non-events.
+            if self.switch_confirm and dtp is not None and not switch_confirmed:
+                dtp = None
             death_hours = float(4.0 * dtp) if dtp is not None else float('nan')
             # hours for death: use observed hours at that tp when available
             if dtp is not None:
@@ -385,6 +431,7 @@ class MiniSOG:
                 metric=self.death_metric, threshold=thr,
                 died=int(dtp is not None), death_timepoint=(dtp if dtp is not None else None),
                 time_to_death=death_hours,
+                switch_mag=float(switch_mag), switch_confirmed=switch_confirmed,
                 # helpers (not written to DB)
                 well=first.get('well'), celltype=first.get('celltype'),
                 dosage=float(first['dosage']) if pd.notna(first.get('dosage')) else float('nan'),
@@ -396,7 +443,8 @@ class MiniSOG:
                    'post_channel', 'n_timepoints', 'first_timepoint', 'last_timepoint', 'baseline_t0',
                    'baseline_std', 'baseline_cv', 'peak_intensity', 'peak_timepoint', 'peak_hours',
                    'dynamic_range', 'auc', 'timecourse_slope', 'timecourse_rho', 'snr', 'dropout',
-                   'metric', 'threshold', 'died', 'death_timepoint', 'time_to_death')
+                   'metric', 'threshold', 'died', 'death_timepoint', 'time_to_death',
+                   'switch_mag', 'switch_confirmed')
 
     def write_track_metrics(self, per_track: pd.DataFrame) -> None:
         for (wid, chid), _ in per_track.groupby(['welldata_id', 'channeldata_id']):
@@ -533,6 +581,13 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="'ratio' = post/GFP (GEDI); 'raw' = post red only.")
     p.add_argument('--death_threshold_pct', default=99.0, type=float,
                    help='Percentile of the T0 all-live distribution used as the death threshold.')
+    p.add_argument('--switch_confirm', action='store_true',
+                   help="Combined 'confident death' call: keep a value-threshold crossing only if it is "
+                        "confirmed by a real low->high switch (rejects drifting/always-high cells). "
+                        "Off = plain value-threshold call. switch_mag is always recorded either way.")
+    p.add_argument('--switch_fc', default=1.5, type=float,
+                   help="Switch-confirmation strictness: min mean(after)/mean(before) fold-ratio of the "
+                        "best sustained upward step for a crossing to count as a real death event.")
     p.add_argument('--death_persist', default=2, type=int,
                    help='Sustained frames above threshold required to call death.')
     p.add_argument('--baseline_timepoint', default=0, type=int)

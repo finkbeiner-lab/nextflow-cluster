@@ -359,18 +359,22 @@ class Montage:
         mont = np.zeros((stride_h * (side - 1) + h, stride_w * (side - 1) + w), dtype=np.uint16)
         for i in range(side):
             for j in range(side):
-                # Tile serpentine phase differs by microscope (which corner the
-                # boustrophedon scan starts and which rows are reversed):
-                #   'legacy'   = roboscope, reverse EVEN rows (top-right start):
-                #                3 2 1 / 4 5 6 / 9 8 7
-                #   'ixm'      = top-left serpentine, reverse ODD rows:
-                #                1 2 3 / 6 5 4 / 7 8 9  (empirically correct for
-                #                hevo-pmsG-1 -- matches the measured tile overlaps;
-                #                the IXM snake differs from the roboscope one)
-                #   'standard' = no snake: 1 2 3 / 4 5 6 / 7 8 9
+                # Tile serpentine phase differs by acquisition system (which corner
+                # the boustrophedon scan starts and which rows are reversed):
+                #   'legacy'          = reverse EVEN rows (top-right start):
+                #                       3 2 1 / 4 5 6 / 9 8 7
+                #   'robo4_serpentine'= reverse ODD rows (top-left serpentine):
+                #                       1 2 3 / 6 5 4 / 7 8 9  (empirically correct
+                #                       for hevo-pmsG-1, captured on Robo4 -- matches
+                #                       the measured tile overlaps). Aliases:
+                #                       'serpentine_odd', 'serpentine_lr'. NOTE: 'ixm'
+                #                       is kept only as a back-compat alias; this
+                #                       ordering was validated on Robo4, not the IXM.
+                #   'standard'        = no snake: 1 2 3 / 4 5 6 / 7 8 9
                 if self.opt.montage_pattern == 'legacy':
                     rev = (i % 2 == 0)
-                elif self.opt.montage_pattern in ('ixm', 'serpentine_lr'):
+                elif self.opt.montage_pattern in ('robo4_serpentine', 'serpentine_odd',
+                                                  'serpentine_lr', 'ixm'):
                     rev = (i % 2 == 1)
                 else:
                     rev = False
@@ -466,7 +470,11 @@ if __name__ == '__main__':
                         help='Image normalization method using flatfield image.')
     parser.add_argument('--bg_mode', default='per_well', choices=['per_well', 'per_tile'], type=str,
                         help='Background correction mode: "per_well" uses one background for all tiles in a well/timepoint (default), "per_tile" calculates background for each tile position separately.')
-    parser.add_argument('--montage_pattern',default='standard', choices=['standard', 'legacy'], help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
+    parser.add_argument('--montage_pattern', default='standard',
+                        choices=['standard', 'legacy', 'robo4_serpentine', 'serpentine_odd', 'serpentine_lr', 'ixm'],
+                        help="Tile serpentine: 'legacy' reverses even rows (3 2 1/4 5 6/9 8 7); "
+                             "'robo4_serpentine' (aliases serpentine_odd/serpentine_lr/ixm) reverses odd rows "
+                             "(1 2 3/6 5 4/7 8 9, correct for Robo4 e.g. hevo-pmsG-1); 'standard' = no snake.")
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle", default='include',

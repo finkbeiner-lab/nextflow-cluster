@@ -151,6 +151,8 @@ params.minisog_death_threshold_pct = 99                  // T0 all-live percenti
 params.minisog_death_persist     = 2         // Sustained frames above threshold to call death
 params.minisog_baseline_timepoint = 0        // Timepoint defining the T0 all-live baseline population
 params.minisog_min_track_len     = 4         // Minimum observed timepoints for a track to be scored
+params.minisog_switch_confirm    = false     // Confident-death: keep a value-threshold crossing only if a real low->high switch confirms it
+params.minisog_switch_fc         = 1.5       // Switch strictness: min mean(after)/mean(before) fold-ratio to count as a death event
 
 
 // ============================================================================
@@ -164,7 +166,7 @@ params.target_channel_crop = ['FITC']    // Channels to crop (parallel)
 // 11. MONTAGE / PLATE MONTAGE
 // ============================================================================
 params.tiletype                   = 'filename'   // 'filename' | 'maskpath' | 'trackedmaskpath'
-params.montage_pattern            = 'standard'   // 'standard' (no snake) | 'legacy' (robo, reverse even) | 'ixm' (reverse odd serpentine, e.g. hevo-pmsG-1)
+params.montage_pattern            = 'standard'   // 'standard' (no snake) | 'legacy' (reverse even rows) | 'robo4_serpentine' (reverse odd rows, e.g. Robo4 hevo-pmsG-1; aliases serpentine_odd/serpentine_lr/ixm)
 params.well_size_for_platemontage = 3000         // Per-well side length (px)
 params.norm_intensity             = 50000        // Normalisation: (img / norm_intensity) * 255
 params.image_overlap              = 10           // Tile overlap (px)
