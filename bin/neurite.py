@@ -16,11 +16,13 @@ fragment. This module fixes the root cause with three changes:
 1.  **Multiscale vesselness enhancement** (Frangi/Sato) on the morphology
     channel *before* thresholding, so thin curvilinear processes are boosted
     relative to background and blobs.
-2.  **Per-soma attribution**: skeleton segments are assigned to the nearest
-    upstream-segmented soma within ``max_soma_distance`` px, giving genuine
-    *per-cell* measurements (total neurite length, branch points, primary
-    neurites, max path length) instead of whole-field aggregates. Per-cell rows
-    are what the downstream mixed-effects model needs (see README).
+2.  **Per-soma attribution**: skeleton segments are assigned to the soma they
+    are physically *connected to along the skeleton* (not merely the nearest
+    centroid), giving genuine *per-cell* measurements (total neurite length,
+    branch points, primary neurites, max path length) instead of whole-field
+    aggregates. ``max_soma_distance`` is kept only as a near-miss fallback for
+    small skeleton gaps. Per-cell rows are what the downstream mixed-effects
+    model needs (see README).
 3.  **Spur pruning** at ``min_branch_length`` px to suppress segmentation noise.
 
 Design notes
@@ -93,9 +95,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--vesselness_sigma_max", type=float, default=8.0)
     p.add_argument("--vesselness_sigma_steps", type=int, default=5)
     p.add_argument("--neurite_threshold", type=float, default=0.15)
+    # Adaptive thresholding of the vesselness response. ``global`` reproduces the
+    # original single-threshold behaviour; ``hysteresis`` (default) recovers
+    # faint distal neurites that are connected to a confident ridge; ``otsu``
+    # picks a data-driven cut on the nonzero response.
+    p.add_argument("--threshold_method", default="hysteresis",
+                   choices=["global", "hysteresis", "otsu"])
+    # Hysteresis band. When unset, low defaults to ``neurite_threshold`` and high
+    # to ``2 * neurite_threshold`` (clamped to [low, 1.0]).
+    p.add_argument("--hysteresis_low", type=float, default=None)
+    p.add_argument("--hysteresis_high", type=float, default=None)
     p.add_argument("--min_branch_length", type=int, default=10)
     p.add_argument("--max_soma_distance", type=int, default=150)
     p.add_argument("--soma_dilation", type=int, default=3)
+    # Optional denoise front-end. ``none`` (default) is a pure no-op so existing
+    # behaviour is unchanged. ``n2v`` attempts to load a Noise2Void model from
+    # ``--denoise_model`` and apply it before enhancement; if the package or model
+    # is unavailable it logs a warning and falls back to the raw image.
+    p.add_argument("--denoise", default="none", choices=["none", "n2v"])
+    p.add_argument("--denoise_model", default=None)
     p.add_argument("--tile", type=int, default=0)
     return p.parse_args(argv)
 
@@ -149,6 +167,97 @@ def enhance_vesselness(
     return resp
 
 
+def _threshold_vesselness(resp: np.ndarray, args: argparse.Namespace) -> np.ndarray:
+    """Binarize the vesselness response with the selected adaptive method.
+
+    Replaces the original single global cut. Three methods are supported via
+    ``args.threshold_method``:
+
+    * ``global``: ``resp >= neurite_threshold`` (backward-compatible behaviour).
+    * ``hysteresis`` (default): double-threshold via
+      :func:`skimage.filters.apply_hysteresis_threshold`. Pixels above ``high``
+      seed the mask and any pixel above ``low`` that is connected to a seed is
+      kept. This recovers faint distal neurites that are continuous with a
+      confident ridge -- the key RGEDI failure mode -- without flooding the
+      background with isolated low-response speckle. ``low`` defaults to
+      ``neurite_threshold`` and ``high`` to ``2 * neurite_threshold`` (clamped),
+      overridable via ``--hysteresis_low`` / ``--hysteresis_high``.
+    * ``otsu``: :func:`skimage.filters.threshold_otsu` on the nonzero response.
+
+    Args:
+        resp: vesselness response normalized to [0, 1].
+        args: parsed CLI namespace (reads ``threshold_method``,
+            ``neurite_threshold``, ``hysteresis_low``, ``hysteresis_high``).
+
+    Returns:
+        Boolean neurite foreground mask, same shape as ``resp``.
+    """
+    method = getattr(args, "threshold_method", "hysteresis")
+    thr = float(args.neurite_threshold)
+
+    if method == "global":
+        return resp >= thr
+
+    if method == "otsu":
+        from skimage.filters import threshold_otsu
+        nz = resp[resp > 0]
+        if nz.size == 0:
+            return np.zeros(resp.shape, dtype=bool)
+        try:
+            t = float(threshold_otsu(nz))
+        except Exception:  # noqa: BLE001 - degenerate response -> fall back to global
+            t = thr
+        return resp >= t
+
+    # hysteresis (default)
+    from skimage.filters import apply_hysteresis_threshold
+    low = getattr(args, "hysteresis_low", None)
+    high = getattr(args, "hysteresis_high", None)
+    low = thr if low is None else float(low)
+    high = 2.0 * thr if high is None else float(high)
+    # Keep a valid, in-range band: low <= high <= 1.0.
+    high = min(1.0, max(high, low))
+    if not (resp > 0).any():
+        return np.zeros(resp.shape, dtype=bool)
+    return apply_hysteresis_threshold(resp, low, high).astype(bool)
+
+
+def _maybe_denoise(img: np.ndarray, args: argparse.Namespace) -> np.ndarray:
+    """Optionally denoise the morphology image before enhancement.
+
+    Controlled by ``args.denoise``. ``none`` (default) returns the input
+    unchanged (pure no-op). ``n2v`` attempts to load a Noise2Void model from
+    ``args.denoise_model`` and apply it; the real model is provided by Track B.
+    Any failure (missing package, missing/invalid model, prediction error) is
+    logged and the raw image is returned -- this hook must never crash the run.
+
+    Args:
+        img: 2D morphology image.
+        args: parsed CLI namespace (reads ``denoise``, ``denoise_model``).
+
+    Returns:
+        The denoised image, or ``img`` unchanged on the ``none`` path or on any
+        failure.
+    """
+    method = getattr(args, "denoise", "none")
+    if method in (None, "none"):
+        return img
+    if method == "n2v":
+        model_path = getattr(args, "denoise_model", None)
+        try:
+            if not model_path or not os.path.isdir(model_path):
+                raise FileNotFoundError(f"denoise_model not found: {model_path!r}")
+            from n2v.models import N2V  # type: ignore
+            basedir, name = os.path.split(os.path.normpath(model_path))
+            model = N2V(config=None, name=name or ".", basedir=basedir or ".")
+            den = model.predict(img.astype(np.float32), axes="YX")
+            return np.asarray(den)
+        except Exception as e:  # noqa: BLE001 - denoise is best-effort; never crash
+            logger.warning("denoise=n2v unavailable (%s); using raw image", e)
+            return img
+    return img
+
+
 def _skeleton_graph_metrics(skel: np.ndarray) -> tuple[int, int]:
     """Return (n_branch_points, n_end_points) from a boolean skeleton.
 
@@ -183,9 +292,11 @@ def measure_cell_neurites(
         One :class:`NeuriteMeasurement` per soma label present. ``cellid``
         holds the soma label (``randomcellid``).
     """
-    from scipy import ndimage as ndi
     from skimage.morphology import (
         skeletonize, binary_dilation, binary_closing, disk, remove_small_objects)
+
+    # 0. Optional denoise front-end (no-op unless --denoise n2v is requested).
+    morphology = _maybe_denoise(morphology, args)
 
     # 1. Enhance + threshold to a neurite foreground mask.
     vness = enhance_vesselness(
@@ -194,7 +305,7 @@ def measure_cell_neurites(
         args.vesselness_sigma_max,
         args.vesselness_sigma_steps,
     )
-    neurite_mask = vness >= float(args.neurite_threshold)
+    neurite_mask = _threshold_vesselness(vness, args)
     # Clean the neurite mask before skeletonizing. The robust vesselness comes
     # through fragmented (real thin processes break into sub-10px pieces), so a
     # bare small-object filter would delete real-but-broken neurites along with
@@ -217,13 +328,10 @@ def measure_cell_neurites(
     # 4. Prune spurs shorter than min_branch_length (iterative endpoint erosion).
     skel = _prune_spurs(skel, args.min_branch_length)
 
-    # 5. Attribute skeleton pixels to the nearest soma within max_soma_distance.
-    #    distance_transform gives, for every pixel, the nearest soma label.
-    inv = soma_labels == 0
-    dist, (iy, ix) = ndi.distance_transform_edt(inv, return_indices=True)
-    nearest_label = soma_labels[iy, ix]
-    attribute = skel & (dist <= args.max_soma_distance)
-    owner = np.where(attribute, nearest_label, 0)
+    # 5. Attribute skeleton pixels to the soma they are physically connected to
+    #    ALONG the skeleton (connectivity), not merely the nearest centroid.
+    owner = _attribute_skeleton_to_somas(
+        skel, soma_labels, int(args.soma_dilation), int(args.max_soma_distance))
 
     results: list[NeuriteMeasurement] = []
     for cid in np.unique(soma_labels):
@@ -327,6 +435,100 @@ def _max_path_from_soma(cell_skel: np.ndarray, soma: np.ndarray) -> float:
                     maxd = max(maxd, dist[ny, nx])
                     q.append((ny, nx))
     return float(maxd)
+
+
+def _attribute_skeleton_to_somas(
+    skel: np.ndarray,
+    soma_labels: np.ndarray,
+    soma_dilation: int,
+    max_soma_distance: int,
+) -> np.ndarray:
+    """Assign each skeleton pixel to the soma it is connected to along the skeleton.
+
+    This replaces the previous Euclidean/Voronoi assignment (a whole-field
+    ``distance_transform_edt`` that gave every skeleton pixel to its nearest soma
+    *centroid* regardless of whether a physical process actually joined them).
+    A skeleton branch that runs close to soma B but is only continuous with soma
+    A is now correctly credited to A.
+
+    Algorithm:
+
+    1.  *Seed* the skeleton pixels that touch a soma (within a small Euclidean
+        radius derived from ``soma_dilation``) with that soma's label. The
+        Euclidean distance transform is used only to plant these sources.
+    2.  Multi-source breadth-first search *along the 8-connected skeleton graph*
+        propagates labels outward. Because BFS expands in order of graph
+        distance, every pixel receives the label of the nearest seed measured
+        along the skeleton. A component that seeds from two somas is therefore
+        split at the geodesic midpoint (nearest-along-skeleton), and a component
+        connected to a single soma is fully credited to it.
+    3.  *Orphan* components that never reach a soma are dropped, except for a
+        near-miss fallback: if a component's closest pixel is within
+        ``max_soma_distance`` px of a soma, the whole component is attached to
+        that soma. ``max_soma_distance`` is thus only a fallback for small gaps,
+        not the primary attribution rule.
+
+    Args:
+        skel: 2D boolean pruned skeleton of the neurite+soma foreground.
+        soma_labels: 2D integer soma-label image (0 = background); labels are the
+            ``randomcellid`` values.
+        soma_dilation: soma dilation (px) used upstream; sets the seed radius.
+        max_soma_distance: fallback attachment radius (px) for orphan components.
+
+    Returns:
+        Integer owner-label image the same shape as ``skel``: each skeleton pixel
+        holds the soma label it was attributed to, 0 where unattributed.
+    """
+    from collections import deque
+    from scipy import ndimage as ndi
+
+    owner = np.zeros_like(soma_labels)
+    if not skel.any() or not (soma_labels > 0).any():
+        return owner
+
+    H, W = skel.shape
+    # Euclidean nearest-soma label + distance, used only to seed sources (step 1)
+    # and for the orphan fallback (step 3).
+    inv = soma_labels == 0
+    dist, (iy, ix) = ndi.distance_transform_edt(inv, return_indices=True)
+    nearest_label = soma_labels[iy, ix]
+
+    seed_radius = max(int(soma_dilation) + 1, 2)
+    seed_mask = skel & (dist <= seed_radius)
+
+    # Step 2: multi-source BFS along the skeleton.
+    dist_along = np.full(skel.shape, -1, dtype=np.int32)
+    q: deque[tuple[int, int]] = deque()
+    ys, xs = np.where(seed_mask)
+    for y, x in zip(ys.tolist(), xs.tolist()):
+        owner[y, x] = nearest_label[y, x]
+        dist_along[y, x] = 0
+        q.append((y, x))
+    while q:
+        y, x = q.popleft()
+        cur = owner[y, x]
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dy == 0 and dx == 0:
+                    continue
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < H and 0 <= nx < W and skel[ny, nx] and dist_along[ny, nx] < 0:
+                    dist_along[ny, nx] = dist_along[y, x] + 1
+                    owner[ny, nx] = cur
+                    q.append((ny, nx))
+
+    # Step 3: near-miss fallback for components that never touched a soma.
+    orphan = skel & (dist_along < 0)
+    if orphan.any() and max_soma_distance > 0:
+        lbl, n = ndi.label(orphan, structure=np.ones((3, 3)))
+        for comp in range(1, n + 1):
+            comp_mask = lbl == comp
+            cy, cx = np.where(comp_mask)
+            comp_dist = dist[cy, cx]
+            k = int(np.argmin(comp_dist))
+            if comp_dist[k] <= max_soma_distance:
+                owner[comp_mask] = nearest_label[cy[k], cx[k]]
+    return owner
 
 
 # --------------------------------------------------------------------------- #
