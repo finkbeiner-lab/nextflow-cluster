@@ -128,6 +128,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="Probability cutoff [0-1] for the clDice neurite map.")
     p.add_argument("--device", default="cuda", choices=["cuda", "cpu"],
                    help="Torch device for the clDice detector.")
+    p.add_argument("--neurite_tile", type=int, default=1024,
+                   help="Sliding-window tile size for clDice inference on large "
+                        "montages (0 = whole-image).")
     p.add_argument("--tile", type=int, default=0)
     return p.parse_args(argv)
 
@@ -321,7 +324,7 @@ def measure_cell_neurites(
         from neurite_model import predict_neurite_probmap
         prob = predict_neurite_probmap(
             morphology, checkpoint=args.checkpoint, device=args.device,
-            normalize=True)
+            normalize=True, tile=args.neurite_tile)
         neurite_mask = prob >= args.neurite_prob_threshold
     else:
         vness = enhance_vesselness(

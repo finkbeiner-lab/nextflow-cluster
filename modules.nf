@@ -263,6 +263,7 @@ process NEURITE {
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
     --detector ${params.neurite_detector} --checkpoint '${params.neurite_checkpoint}' \
     --neurite_prob_threshold ${params.neurite_prob_threshold} --device ${params.neurite_device} \
+    --neurite_tile ${params.neurite_tile} \
     --tile ${tile}
     """
 }
