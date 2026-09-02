@@ -261,6 +261,8 @@ process NEURITE {
     --soma_dilation ${soma_dilation} --img_norm_name ${img_norm_name} \
     --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
     --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --detector ${params.neurite_detector} --checkpoint '${params.neurite_checkpoint}' \
+    --neurite_prob_threshold ${params.neurite_prob_threshold} --device ${params.neurite_device} \
     --tile ${tile}
     """
 }

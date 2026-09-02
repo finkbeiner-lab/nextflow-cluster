@@ -15,6 +15,7 @@ From: ubuntu:22.04
     # env-gated containerOptions block. Any change to these files
     # requires a rebuild (`bash build.sh` at the repo root) to ship.
     bin        /app
+    ml         /ml
     modules.nf /workflow/modules.nf
     pipeline.nf /workflow/pipeline.nf
 
@@ -101,4 +102,6 @@ From: ubuntu:22.04
     export M2_HOME="/opt/apache-maven-3.9.5"
     export PATH="$JAVA_HOME/bin:$M2_HOME/bin:/usr/local/bin:$PATH"
     export PYTHONUNBUFFERED=1
+    # ml/neurite (clDice detector) is baked at /ml alongside /app; neurite_model.py reads this.
+    export NEURITE_ML_DIR=/ml/neurite
 
