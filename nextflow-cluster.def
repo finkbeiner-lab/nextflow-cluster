@@ -61,7 +61,9 @@ From: ubuntu:22.04
 
     # Use python3.9 as default
     ln -s /usr/bin/python3.9 /usr/local/bin/python
-    curl -sS https://bootstrap.pypa.io/get-pip.py | python
+    # Pin the 3.9-specific bootstrap: the generic get-pip.py dropped Python 3.9
+    # (now requires >=3.10) and aborts the build if used here.
+    curl -sS https://bootstrap.pypa.io/pip/3.9/get-pip.py | python
 
     # Upgrade pip and install Python packages
     pip install --upgrade pip setuptools wheel
