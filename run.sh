@@ -14,8 +14,13 @@
 #
 # Users run:  sbatch /gladstone/finkbeiner/steve/work/projects/nextflow-cluster/run.sh
 # from their own workspace directory.
+#
+# INSTALL_DIR defaults to the shared canonical install. A developer running
+# their own branch checkout overrides it without editing this file:
+#   sbatch --export=NEXTFLOW_INSTALL_DIR=/path/to/checkout run.sh -c <config>
+# (or export it in the environment). Shared-install users are unaffected.
 # ---------------------------------------------------------------------------
-INSTALL_DIR="/gladstone/finkbeiner/steve/work/projects/nextflow-cluster"
+INSTALL_DIR="${NEXTFLOW_INSTALL_DIR:-/gladstone/finkbeiner/steve/work/projects/nextflow-cluster}"
 
 if [ -n "${SLURM_SUBMIT_DIR:-}" ]; then
     USER_DIR="${SLURM_SUBMIT_DIR}"
