@@ -269,7 +269,12 @@ process NEURITE {
 }
 
 process NEURITE_MONTAGE {
-    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    // --nv gives the Cellpose-SAM + clDice task GPU access (this per-process
+    // containerOptions REPLACES the global one, so the GPU flag must be repeated
+    // here). Reserve a Slurm GPU only when the montage device is cuda, so a
+    // device=cpu run does not idle a scarce V100.
+    containerOptions "--nv --mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    clusterOptions { params.neurite_montage_device == 'cuda' ? '--gres=gpu:1' : '' }
     cpus 20
     // Whole-well montage neurite quantification: builds the montage, segments
     // somas with Cellpose-SAM (+ debris filter), traces neurites with the clDice
