@@ -268,6 +268,44 @@ process NEURITE {
     """
 }
 
+process NEURITE_MONTAGE {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    cpus 20
+    // Whole-well montage neurite quantification: builds the montage, segments
+    // somas with Cellpose-SAM (+ debris filter), traces neurites with the clDice
+    // model across seams, attributes per cell, and writes celldata +
+    // neuritecelldata. Self-contained (builds its own montage from raw tiles),
+    // so it gates on segmentation readiness only for ordering. Montage/soma/
+    // detector params are passed via params.* to keep this positional signature
+    // small (mirrors how NEURITE passes its detector params).
+    input:
+    val ready
+    val exp
+    val morphology_channel
+    val chosen_wells
+    val chosen_timepoints
+    val wells_toggle
+    val timepoints_toggle
+
+    output:
+    val true
+
+    script:
+    """
+    neurite_montage.py --experiment ${exp} --morphology_channel ${morphology_channel} \
+    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle} \
+    --detector ${params.neurite_detector} --checkpoint '${params.neurite_checkpoint}' \
+    --neurite_prob_threshold ${params.neurite_prob_threshold} --device ${params.neurite_montage_device} \
+    --neurite_tile ${params.neurite_tile} --neurite_grid ${params.neurite_grid} \
+    --neurite_flatten_size ${params.neurite_flatten_size} --neurite_seam_band ${params.neurite_seam_band} \
+    --neurite_min_object ${params.neurite_min_object} \
+    --soma_diameter ${params.soma_diameter} --soma_flow ${params.soma_flow} \
+    --soma_cellprob ${params.soma_cellprob} --soma_clean_k ${params.soma_clean_k} \
+    --soma_dilation ${params.soma_dilation}
+    """
+}
+
 process COPY_MASK_TO_TRACKED {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     
