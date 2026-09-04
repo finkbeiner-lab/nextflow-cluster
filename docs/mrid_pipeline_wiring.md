@@ -1,4 +1,32 @@
-# MRID pipeline wiring (PR3) — reviewable patch, not yet applied to live files
+# RGEDI → MRID pipeline: modules, run recipe, wiring
+
+## Runnable now (2-stage self-contained sbatch, validated Python chain)
+
+The full RGEDI analysis reuses the existing background-corrected + aligned montages and runs:
+**Cellpose (ungated) → EGFP gate (k=1.5) → track → ratio → MRID logodds.** Two staged sbatches in
+`~/Downloads/sbatch-claude/` bind-mount the committed `bin/` over `/app` (no SIF rebuild):
+
+- `rgedi_segment.sbatch` (GPU): `cellpose_montage_rgedi.py` on a well×timepoint manifest →
+  `<OUTDIR>/percell_all.csv` + `masks/`. Edit the embedded manifest for the full well set. The
+  default manifest (D03 CTR + J03 XDP × T1–T9) is a ready **test**.
+- `rgedi_analyze.sbatch` (CPU): `egfp_gate.py` (k=1.5) → `track_cells.py` → `ratio.py` →
+  `mrid_logodds.R` → `<OUTDIR>/mrid/` (ratio_output, OR_*.csv, Data.csv, plots).
+
+**One-time cluster prereq:** `cd ~/nextflow-cluster && git fetch origin && git checkout austin/RGEDI && git pull`
+(so the bind-mounted `bin/` has these modules + `bin/mrid_R/`).
+
+Module deps: all Python is numpy/scipy/skimage/pandas/tifffile/cellpose only — **no sklearn**
+(`gmm1d.py` replaces it). `mrid_logodds.R` needs the container R stack (lme4, tidyverse, …).
+Not yet validated on cluster: the R stage + first full multi-timepoint run — the first run shakes those out.
+
+## EGFP gate default: k = 1.5
+`egfp_gate.py` defaults to **k = 1.5 SD above each experiment×timepoint background mode** (Austin,
+2026-09-03), with `--manual-fitc` overriding any REVIEW-flagged group (e.g. XDP10, whose split isn't
+cleanly bimodal). `--anchor VALUE` opts into the old anchored mode.
+
+---
+
+# MRID pipeline wiring (PR3) — Nextflow form, reviewable patch (sbatch above is the validated path)
 
 New files staged (safe additions): `bin/ratio.py`, `bin/ratio_threshold.py`, `bin/mrid_logodds.R`,
 `bin/plate_layout.py`, `bin/mrid_R/*.R`. The changes below to `finkbeiner.config`, `modules.nf`,

@@ -37,7 +37,11 @@ def load_gated(path, gate_col):
     df['ObjectLabelsFound'] = df['label']
     df['filenames'] = (df['exp'].astype(str) + '_T' + df['Timepoint'].astype(str)
                        + '_' + df['Sci_WellID'] + '_' + df['label'].astype(str))
-    return df[['exp', 'tp', 'Timepoint', 'Sci_WellID', 'ObjectLabelsFound', 'filenames', 'ratio']]
+    keep = ['exp', 'tp', 'Timepoint', 'Sci_WellID', 'ObjectLabelsFound', 'filenames', 'ratio']
+    for c in ('genotype', 'line'):          # carry through for a self-derived Sci_SampleID
+        if c in df.columns:
+            keep.append(c)
+    return df[keep]
 
 
 def load_legacy(path, exp_name):
@@ -75,7 +79,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--input', help='percell_gated.csv (our pipeline)')
     ap.add_argument('--legacy', help='legacy cell_data.csv')
-    ap.add_argument('--plate-layout', required=True, help='Sci_WellID,Sci_SampleID,Drug')
+    ap.add_argument('--plate-layout', default=None,
+                    help='Sci_WellID,Sci_SampleID,Drug csv; if omitted, Sci_SampleID is derived '
+                         'as <genotype>_<line> from the per-cell data (MRID compare_class then '
+                         'matches the genotype substring), Drug = "No drug"')
     ap.add_argument('--expt-name', default='EXPT')
     ap.add_argument('--gate-col', default='egfp_pos_ksd')
     ap.add_argument('--output-path', default='.')
@@ -85,15 +92,25 @@ def main():
     ap.add_argument('--live', type=float, default=None)
     ap.add_argument('--dead', type=float, default=None)
     ap.add_argument('--ambiguous-margin', type=float, default=0.0)
+    ap.add_argument('--hours-per-tp', type=float, default=24.0,
+                    help='uniform hours between timepoints for timepoint.csv (if no explicit csv)')
+    ap.add_argument('--timepoint-hours-csv', default=None,
+                    help='explicit Timepoint,Hour csv (overrides --hours-per-tp)')
     a = ap.parse_args()
     os.makedirs(a.output_path, exist_ok=True)
 
     cells = load_gated(a.input, a.gate_col) if a.input else load_legacy(a.legacy, a.expt_name)
-    layout = pd.read_csv(a.plate_layout)
-    layout.columns = [c.strip().lstrip('﻿') for c in layout.columns]
-    if 'Drug' not in layout.columns:
-        layout['Drug'] = 'No drug'
-    cells = cells.merge(layout[['Sci_WellID', 'Sci_SampleID', 'Drug']], on='Sci_WellID', how='left')
+    if a.plate_layout:
+        layout = pd.read_csv(a.plate_layout)
+        layout.columns = [c.strip().lstrip('﻿') for c in layout.columns]
+        if 'Drug' not in layout.columns:
+            layout['Drug'] = 'No drug'
+        cells = cells.merge(layout[['Sci_WellID', 'Sci_SampleID', 'Drug']], on='Sci_WellID', how='left')
+    else:   # derive Sci_SampleID = <genotype>_<line> so MRID's class matcher finds the genotype
+        geno = cells['genotype'].astype(str) if 'genotype' in cells.columns else ''
+        line = cells['line'].astype(str) if 'line' in cells.columns else ''
+        cells['Sci_SampleID'] = (geno + '_' + line).str.strip('_')
+        cells['Drug'] = 'No drug'
 
     gates, k = rt.calibrate(cells, a.method, a.anchor_exp, a.anchor, a.live, a.dead, a.ambiguous_margin)
     pd.DataFrame([dict(exp=e, tp=t, live_threshold=round(lv, 6), dead_threshold=round(dd, 6), reliable=rel)
@@ -114,6 +131,14 @@ def main():
                                       names=['Sci_WellID', 'Timepoint']).to_frame(index=False)
     ccw = full.merge(ccw, on=['Sci_WellID', 'Timepoint'], how='left')
     ccw.to_csv(os.path.join(a.output_path, 'cell_count_well.csv'), index=False)
+
+    # timepoint.csv (Timepoint, Hour) consumed by the logodds stage
+    tps = sorted(cells.Timepoint.unique())
+    if a.timepoint_hours_csv:
+        th = pd.read_csv(a.timepoint_hours_csv)
+    else:
+        th = pd.DataFrame({'Timepoint': tps, 'Hour': [(t - tps[0]) * a.hours_per_tp for t in tps]})
+    th.to_csv(os.path.join(a.output_path, 'timepoint.csv'), index=False)
 
     print(f"{len(out)} live/dead-called cells (of {len(cells)} paired). "
           f"method={a.method}, wrote {a.expt_name}_ratio_output.csv + cell counts to {a.output_path}")

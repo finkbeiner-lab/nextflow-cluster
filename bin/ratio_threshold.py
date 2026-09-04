@@ -24,20 +24,19 @@ Methods:
 import argparse
 import numpy as np
 import pandas as pd
-from sklearn.mixture import GaussianMixture
+
+import gmm1d  # dependency-free 2-component GMM (no sklearn in the pipeline container)
 
 MIN_RATIO = 1e-6
 
 
 def fit_live_mode(ratio):
     """2-comp GMM on log10(ratio); return LIVE (lower) mode stats + BIC + reliability."""
-    x = np.log10(np.clip(ratio.astype(float), MIN_RATIO, None)).reshape(-1, 1)
-    g2 = GaussianMixture(2, random_state=0, n_init=5).fit(x)
-    g1 = GaussianMixture(1, random_state=0).fit(x)
-    i = int(np.argmin(g2.means_.ravel()))          # lower mean = live
-    mu = float(g2.means_.ravel()[i]); sd = float(np.sqrt(g2.covariances_.ravel()[i]))
-    mu_hi = float(g2.means_.ravel()[1 - i]); w = float(g2.weights_.ravel()[i])
-    bimodal = g2.bic(x) < g1.bic(x)
+    x = np.log10(np.clip(ratio.astype(float), MIN_RATIO, None))
+    f = gmm1d.fit2(x)
+    mu, sd = float(f['mu'][0]), float(f['sigma'][0])   # lower mean = live
+    mu_hi, w = float(f['mu'][1]), float(f['w'][0])
+    bimodal = f['bic2'] < f['bic1']
     reliable = bimodal and (0.10 <= w <= 0.90) and abs(mu_hi - mu) >= 0.25
     return dict(mu=mu, sd=sd, mu_dead=mu_hi, w_live=w, reliable=reliable)
 
@@ -47,7 +46,8 @@ def calibrate(df, method, anchor_exp, anchor_value, live_manual, dead_manual,
     """Return {(exp,tp): (live_thr, dead_thr, reliable)} + the anchor constant k."""
     k = None
     if method == 'auto':
-        a = fit_live_mode(df[df.exp == anchor_exp].ratio)
+        ref = df[df.exp == anchor_exp] if (df.exp == anchor_exp).any() else df
+        a = fit_live_mode(ref.ratio)
         k = (np.log10(anchor_value) - a['mu']) / a['sd']      # constant fixed by anchor
     out = {}
     for (exp, tp), g in df.groupby(['exp', 'tp']):
@@ -61,9 +61,12 @@ def calibrate(df, method, anchor_exp, anchor_value, live_manual, dead_manual,
                 print(f"  !! {exp} {tp}: live-mode fit UNRELIABLE (w_live={f['w_live']:.2f}) "
                       f"-> using manual {live_manual}/{dead_manual}", flush=True)
             else:
-                raise ValueError(
-                    f"{exp} {tp}: ratio not cleanly bimodal and no manual thresholds set. "
-                    f"Set mrid_live_threshold/mrid_dead_threshold for this dataset.")
+                # unreliable (e.g. an early, all-live/unimodal frame): still gate from this
+                # group's own live mode -- keeps ~all cells live, correct when few have died.
+                lt = 10 ** (f['mu'] + k * f['sd'])
+                out[(exp, tp)] = (float(lt), float(10 ** (f['mu'] + k * f['sd'] + ambiguous_margin)), False)
+                print(f"  !! {exp} {tp}: live/dead fit UNRELIABLE (w_live={f['w_live']:.2f}) -> "
+                      f"live-anchored gate {lt:.4f} (mostly live); set --live/--dead to override", flush=True)
             continue
         live_thr = 10 ** (f['mu'] + k * f['sd'])
         dead_thr = 10 ** (f['mu'] + k * f['sd'] + ambiguous_margin)

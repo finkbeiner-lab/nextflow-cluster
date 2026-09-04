@@ -54,7 +54,7 @@ convert_old_cnnoutput <- function(input_path){
       
       ratio_csv <- ratio_csv %>% select("filenames","Sci_WellID","Sci_SampleID","Drug",
                                         "Timepoint","ratio","live_guesses","classifier.score.live","classifier.score.dead")
-      write.csv(ratio_csv,paste0(input_path,'/',subfolder_check,'/',file_string,"_ratio_output.csv"))
+      write.csv(ratio_csv,file.path(input_path,subfolder_check,paste0(file_string,"_ratio_output.csv")))  # file.path avoids '//'
       
       print(paste0("Converting old", cnn_files[i]," to ",file_string,"_ratio_output.csv"))
       
@@ -270,7 +270,7 @@ mrid_death_plot <- function(data, drug, multiple_experiments, multiple_plates, c
   
   if(multiple_experiments){
     n_exp = length(levels(factor(data$Experiment)))
-      for(i in 1:range(n_exp)){
+      for(i in seq_len(n_exp)){   # was 1:range(n_exp) -- range() returns c(min,max), not a count
         base <- ggplot(data[data$Experiment == levels(data$Experiment)[i],], aes(Hour, Death, color = CellLine)) +
           geom_boxplot() +
           ylim(0, 1) +
