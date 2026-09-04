@@ -114,6 +114,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     # is unavailable it logs a warning and falls back to the raw image.
     p.add_argument("--denoise", default="none", choices=["none", "n2v"])
     p.add_argument("--denoise_model", default=None)
+    # Neurite detector. ``frangi`` (default) is the classical multiscale
+    # vesselness above -- unchanged behaviour. ``cldice`` runs the trained 2D
+    # U-Net (soft-clDice) from ml/neurite via bin/neurite_model.py, which clears
+    # the ~0.25 F1 ceiling that classical fiber filters plateau at on faint
+    # RGEDI neurites (held-out F1 0.645 vs 0.135 Frangi). Requires --checkpoint
+    # and torch in the container; a GPU is strongly recommended (montage-scale
+    # inference is slow on CPU).
+    p.add_argument("--detector", default="frangi", choices=["frangi", "cldice"])
+    p.add_argument("--checkpoint", default=None,
+                   help="Path to the trained clDice .pt checkpoint (detector=cldice).")
+    p.add_argument("--neurite_prob_threshold", type=float, default=0.5,
+                   help="Probability cutoff [0-1] for the clDice neurite map.")
+    p.add_argument("--device", default="cuda", choices=["cuda", "cpu"],
+                   help="Torch device for the clDice detector.")
+    p.add_argument("--neurite_tile", type=int, default=1024,
+                   help="Sliding-window tile size for clDice inference on large "
+                        "montages (0 = whole-image).")
     p.add_argument("--tile", type=int, default=0)
     return p.parse_args(argv)
 
@@ -298,14 +315,25 @@ def measure_cell_neurites(
     # 0. Optional denoise front-end (no-op unless --denoise n2v is requested).
     morphology = _maybe_denoise(morphology, args)
 
-    # 1. Enhance + threshold to a neurite foreground mask.
-    vness = enhance_vesselness(
-        morphology,
-        args.vesselness_sigma_min,
-        args.vesselness_sigma_max,
-        args.vesselness_sigma_steps,
-    )
-    neurite_mask = _threshold_vesselness(vness, args)
+    # 1. Detect the neurite foreground mask. ``frangi`` (default) is the
+    #    classical multiscale vesselness + adaptive threshold. ``cldice`` swaps
+    #    in the trained U-Net probability map (drop-in via bin/neurite_model.py);
+    #    everything downstream (skeletonize -> attribution -> skan metrics -> DB)
+    #    is identical for both detectors.
+    if args.detector == "cldice":
+        from neurite_model import predict_neurite_probmap
+        prob = predict_neurite_probmap(
+            morphology, checkpoint=args.checkpoint, device=args.device,
+            normalize=True, tile=args.neurite_tile)
+        neurite_mask = prob >= args.neurite_prob_threshold
+    else:
+        vness = enhance_vesselness(
+            morphology,
+            args.vesselness_sigma_min,
+            args.vesselness_sigma_max,
+            args.vesselness_sigma_steps,
+        )
+        neurite_mask = _threshold_vesselness(vness, args)
     # Clean the neurite mask before skeletonizing. The robust vesselness comes
     # through fragmented (real thin processes break into sub-10px pieces), so a
     # bare small-object filter would delete real-but-broken neurites along with

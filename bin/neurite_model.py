@@ -135,11 +135,16 @@ def predict_neurite_probmap(
     checkpoint: Optional[str] = None,
     device: str = "cpu",
     normalize: bool = True,
+    tile: int = 1024,
+    halo: int = 64,
 ) -> np.ndarray:
     """Predict a neurite probability map for one morphology image.
 
     This is the primary entry point for the wiring track. It returns a plain
     probability map and performs no DB or file I/O.
+
+    Large inputs (whole-well montages, e.g. 8192x8192) are run with sliding-
+    window tiling so GPU memory stays bounded; smaller inputs run whole-image.
 
     Args:
         image: 2D morphology image (H, W), any real dtype. 3D input uses channel 0.
@@ -148,6 +153,10 @@ def predict_neurite_probmap(
         device: ``"cpu"`` or ``"cuda"``.
         normalize: Apply the 1-99.5 percentile normalization internally (leave
             True and pass raw images; matches training).
+        tile: Interior tile size for sliding-window inference. If the image's
+            larger side exceeds this, tiled inference is used; else whole-image.
+            Set ``0`` to force whole-image.
+        halo: Reflect-padded context added around each tile before inference.
 
     Returns:
         Float32 probability map (H, W) in [0, 1], same HxW as ``image``.
@@ -157,10 +166,19 @@ def predict_neurite_probmap(
         FileNotFoundError: If the checkpoint is missing.
     """
     checkpoint = checkpoint or DEFAULT_CHECKPOINT
-    infer, model, dev = _get_model(checkpoint, device)
-    return infer.predict_probmap(
-        model, np.asarray(image), device=dev, normalize=normalize
-    )
+    infer, model, dev = _get_model(checkpoint, device)  # adds ml/neurite to sys.path
+    img = np.asarray(image).astype(np.float32)
+    if img.ndim == 3:
+        img = img[..., 0]
+    if normalize:
+        from dataset import percentile_normalize
+        img = percentile_normalize(img)
+    # Tile montage-scale inputs. predict_tiled is the audited sliding-window
+    # inference (every output pixel written exactly once).
+    if tile and max(img.shape) > tile:
+        from percell_integrate import predict_tiled
+        return predict_tiled(model, img, dev, tile=tile, halo=halo)
+    return infer.predict_probmap(model, img, device=dev, normalize=False)
 
 
 def segment_neurites(

@@ -7,6 +7,7 @@ if (!params.containsKey('DO_BUNDLED_STD_WORKFLOW'))  { params.DO_BUNDLED_STD_WOR
 if (!params.containsKey('DO_BUNDLED_IXM_STABLE_TRACK')) { params.DO_BUNDLED_IXM_STABLE_TRACK = false }
 if (!params.containsKey('DO_STABLE_CELL_FILTER'))    { params.DO_STABLE_CELL_FILTER = false }
 if (!params.containsKey('DO_NEURITE'))               { params.DO_NEURITE = false }
+if (!params.containsKey('DO_NEURITE_MONTAGE'))        { params.DO_NEURITE_MONTAGE = false }
 if (!params.containsKey('stable_cell_filter_input_csv')) { params.stable_cell_filter_input_csv = '' }
 if (!params.containsKey('stable_cell_filter_morphology_channel')) { params.stable_cell_filter_morphology_channel = 'FITC' }
 if (!params.containsKey('stable_cell_filter_reporter_channel')) { params.stable_cell_filter_reporter_channel = 'RFP' }
@@ -178,7 +179,7 @@ optimizer_ch = Channel.of(params.optimizer)
 
 include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;SEGMENTATION_MONTAGE;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY;
-    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; STABLE_CELL_FILTER; NEURITE; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW; BUNDLED_IXM_STABLE_TRACK; MINISOG} from './modules.nf'
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; STABLE_CELL_FILTER; NEURITE; NEURITE_MONTAGE; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW; BUNDLED_IXM_STABLE_TRACK; MINISOG} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -212,6 +213,7 @@ log.info """\
     Overlay: ${params.DO_OVERLAY}
     Overlay Montage: ${params.DO_OVERLAY_MONTAGE}
     Neurite: ${params.DO_NEURITE}
+    Neurite Montage: ${params.DO_NEURITE_MONTAGE}
     Standard Workflow: ${params.DO_STD_WORKFLOW}
     Standard IXM Workflow: ${params.DO_STD_WORKFLOW_IXM}
     Bundled Standard Workflow: ${params.DO_BUNDLED_STD_WORKFLOW}
@@ -243,6 +245,7 @@ workflow {
             params.DO_STABLE_CELL_FILTER       ? 'STABLE_FILTER' : null,
             params.DO_OVERLAY_MONTAGE          ? 'OVERLAY_MONT'  : null,
             params.DO_NEURITE                  ? 'NEURITE'       : null,
+            params.DO_NEURITE_MONTAGE          ? 'NEURITE_MONT'  : null,
             params.DO_STD_WORKFLOW             ? 'STD'           : null,
             params.DO_STD_WORKFLOW_IXM         ? 'STD_IXM'       : null,
             params.DO_BUNDLED_STD_WORKFLOW     ? 'BUNDLED_STD'   : null,
@@ -507,6 +510,22 @@ if (params.DO_NEURITE) {
 }
 else {
     neurite_result = Channel.of(true)
+}
+
+if (params.DO_NEURITE_MONTAGE) {
+    // Whole-well montage neurite quantification. Self-contained: builds its own
+    // montage from raw tiles and segments somas with Cellpose-SAM, so it needs
+    // no upstream step and fires immediately. Iterates wells/timepoints
+    // internally (fresh Channel.of per input to avoid consuming shared channels).
+    neurite_montage_ch = NEURITE_MONTAGE(Channel.of(true),
+        Channel.of(params.experiment), Channel.of(params.morphology_channel),
+        Channel.of(params.chosen_wells), Channel.of(params.chosen_timepoints),
+        Channel.of(params.wells_toggle), Channel.of(params.timepoints_toggle))
+    neurite_montage_ch.view { it }
+    neurite_montage_result = NEURITE_MONTAGE.out
+}
+else {
+    neurite_montage_result = Channel.of(true)
 }
 
 if (params.DO_CROP) {
