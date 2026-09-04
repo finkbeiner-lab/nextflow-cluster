@@ -1,0 +1,6 @@
+# Generated artifacts from the training harness — not source.
+data/
+runs/
+*.pt
+*.npy
+__pycache__/

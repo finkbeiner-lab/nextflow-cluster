@@ -1,0 +1,22 @@
+# Offline DL neurite-segmentation training harness (Track B).
+# Install into a dedicated env (NOT the pipeline container's bin/ path):
+#   python -m venv .venv-neurite && . .venv-neurite/bin/activate
+#   pip install -r ml/neurite/requirements-ml.txt
+#
+# Versions are lower bounds; the harness is verified to import/dry-run on the
+# older stack already present on this machine (torch 1.10, numpy 1.21,
+# scikit-image 0.19, scipy 1.7). Pin exact versions for cluster reproducibility.
+
+# --- core (required) ---
+torch>=1.10           # model, losses, training. GPU build recommended for real training.
+numpy>=1.21
+scipy>=1.7            # distance_transform_edt for the F1 metric
+scikit-image>=0.19    # skeletonize, dilation, morphology (rasterize + metric)
+tifffile>=2021.7      # tile / mask I/O
+
+# --- optional: alternative loss backend ---
+# monai>=1.3          # provides SoftDiceclDiceLoss; pure-torch fallback in losses.py
+
+# --- optional: Noise2Void denoising (denoise_n2v.py) ---
+# careamics>=0.1      # preferred maintained N2V implementation
+# n2v>=0.3            # legacy N2V (Keras/TensorFlow); careamics is preferred
