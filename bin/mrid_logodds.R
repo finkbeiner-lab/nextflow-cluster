@@ -18,8 +18,8 @@
 #   (for(i in 1:range(n_exp)) -> seq_len(n_exp);  '//' join in convert_old_cnnoutput).
 
 suppressPackageStartupMessages({
-  library(tidyverse); library(rlang); library(ggplot2)
-  library(xtable); library(knitr); library(lme4); library(dplyr)
+  library(dplyr); library(tidyr); library(stringr); library(readr)   # instead of full tidyverse
+  library(rlang); library(ggplot2); library(xtable); library(knitr); library(lme4)
 })
 
 # ---- arg parsing (simple --key value) ----
