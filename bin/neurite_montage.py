@@ -351,15 +351,22 @@ class NeuriteMontage:
         print(f'Done. {total_cells} cells written, {total_neur} with neurites.')
 
     def _delete_prior_montage_cells(self, Db, tiledata_id) -> None:
-        """Delete only montage-tagged celldata (randomcellid_montage not null)
-        for this tiledata row, cascading to their neuritecelldata; per-tile cells
-        (randomcellid_montage null) are left in place."""
-        prior = Db.get_df_from_query('celldata', dict(tiledata_id=tiledata_id))
-        if prior.empty or 'randomcellid_montage' not in prior.columns:
+        """Delete only montage-tagged celldata (randomcellid_montage not null) for
+        this tiledata row in ONE statement, cascading (FK ON DELETE CASCADE) to
+        their neuritecelldata; per-tile cells (randomcellid_montage null) are left
+        in place. One bulk DELETE — not a per-row loop — so re-running a dense
+        well does not fire thousands of query+delete+commit round-trips (and log
+        lines)."""
+        from sqlalchemy import delete as _delete
+        cell = Db.meta.tables['celldata']
+        if 'randomcellid_montage' not in cell.c:
             return
-        montage_rows = prior[prior['randomcellid_montage'].notna()]
-        for cid in montage_rows['id'].tolist():
-            Db.delete_based_on_duplicate_name(tablename='celldata', kwargs=dict(id=cid))
+        stmt = _delete(cell).where(
+            cell.c.tiledata_id == tiledata_id,
+            cell.c.randomcellid_montage.isnot(None),
+        )
+        with Db.engine.begin() as conn:
+            conn.execute(stmt)
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
