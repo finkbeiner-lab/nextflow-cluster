@@ -138,7 +138,8 @@ def main():
         th = pd.read_csv(a.timepoint_hours_csv)
     else:
         th = pd.DataFrame({'Timepoint': tps, 'Hour': [(t - tps[0]) * a.hours_per_tp for t in tps]})
-    th.to_csv(os.path.join(a.output_path, 'timepoint.csv'), index=False)
+    # MRID matches the timepoint file to the ratio file by experiment name -> <expt>_timepoint.csv
+    th.to_csv(os.path.join(a.output_path, f'{a.expt_name}_timepoint.csv'), index=False)
 
     print(f"{len(out)} live/dead-called cells (of {len(cells)} paired). "
           f"method={a.method}, wrote {a.expt_name}_ratio_output.csv + cell counts to {a.output_path}")
