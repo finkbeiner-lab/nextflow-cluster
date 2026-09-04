@@ -81,21 +81,26 @@ def main():
     ap.add_argument('--fitc', default='FITC'); ap.add_argument('--rfp', default='RFP')
     a = ap.parse_args()
     mdir = os.path.join(a.out_dir, 'masks'); os.makedirs(mdir, exist_ok=True)
+    pdir = os.path.join(a.out_dir, 'percell'); os.makedirs(pdir, exist_ok=True)
     man = pd.read_csv(a.manifest)
-    # use_bfloat16=False: bf16 is ~10x slower on the galaxy V100s (cellpose 4.x default is True)
-    model = models.CellposeModel(gpu=True, use_bfloat16=False)
-    rows = []
+    model = None   # lazy-load Cellpose only if there is work to do (resume-friendly)
     for r in man.itertuples():
         tag = f"{r.exp}_{r.well}_{r.tp}"
+        mnpz = os.path.join(mdir, f"{tag}_masks.npz"); pcsv = os.path.join(pdir, f"{tag}.csv")
+        if os.path.exists(mnpz) and os.path.exists(pcsv):
+            print(f"{tag}: skip (already done)", flush=True); continue   # RESUME
         try:
             fp = find_one(f"{r.gxytmp}/AlignedImages/{r.well}/*_{r.tp}_0-1_{r.well}_0_{a.fitc}_*_ALIGNED.tif")
             rp = find_one(f"{r.gxytmp}/AlignedImages/{r.well}/*_{r.tp}_0-1_{r.well}_0_{a.rfp}_*_ALIGNED.tif")
             if not (fp and rp):
                 print(f"{tag}: MISSING fitc={bool(fp)} rfp={bool(rp)}", flush=True); continue
             fitc = tifffile.imread(fp).astype(np.float32); rfp = tifffile.imread(rp).astype(np.float32)
+            if model is None:
+                # use_bfloat16=False: bf16 is ~10x slower on the galaxy V100s (cellpose 4.x default is True)
+                model = models.CellposeModel(gpu=True, use_bfloat16=False)
             cp = cellpose_seg(model, fitc)
             d = measure(cp, fitc, rfp)
-            np.savez_compressed(os.path.join(mdir, f"{tag}_masks.npz"), cp=cp,
+            np.savez_compressed(mnpz, cp=cp,
                                 cp_label=(d['label'].to_numpy() if len(d) else np.array([], int)),
                                 cp_fitc=(d['fitc_mean'].to_numpy() if len(d) else np.array([], float)),
                                 meta=np.array([r.exp, r.well, r.tp]))
@@ -104,13 +109,15 @@ def main():
                 for c, v in (('exp', r.exp), ('well', r.well), ('tp', r.tp),
                              ('line', getattr(r, 'line', '')), ('genotype', getattr(r, 'genotype', ''))):
                     d[c] = v
-                rows.append(d)
+            d.to_csv(pcsv, index=False)   # per-montage (empty ok -> marks done, resume-safe)
             print(f"{tag}: {len(d)} cells", flush=True)
         except Exception as e:
             import traceback; print(f"{tag}: FAILED {type(e).__name__}: {e}", flush=True); traceback.print_exc()
-    if rows:
-        pd.concat(rows, ignore_index=True).to_csv(os.path.join(a.out_dir, 'percell_all.csv'), index=False)
-    print(f"DONE -> {a.out_dir}/percell_all.csv + masks/", flush=True)
+    # rebuild percell_all.csv from every per-montage file (correct after resume / multiple jobs)
+    parts = [p for p in (pd.read_csv(f) for f in sorted(glob.glob(os.path.join(pdir, '*.csv')))) if len(p)]
+    if parts:
+        pd.concat(parts, ignore_index=True).to_csv(os.path.join(a.out_dir, 'percell_all.csv'), index=False)
+    print(f"DONE -> {a.out_dir}/percell_all.csv + masks/ ({len(parts)} montages with cells)", flush=True)
 
 
 if __name__ == '__main__':
