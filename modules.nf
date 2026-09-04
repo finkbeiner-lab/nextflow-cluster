@@ -273,7 +273,17 @@ process NEURITE_MONTAGE {
     // containerOptions REPLACES the global one, so the GPU flag must be repeated
     // here). Reserve a Slurm GPU only when the montage device is cuda, so a
     // device=cpu run does not idle a scarce V100.
-    containerOptions "--nv --mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    containerOptions {
+        // A per-process containerOptions REPLACES the global one, so repeat --nv
+        // (GPU) + the data mount here. In DEEPCELL_DEV mode also shadow the baked
+        // /app with the host bin (NEXTFLOW_INSTALL_DIR/bin) so a bin/ edit is
+        // picked up without a container rebuild — mirrors nextflow.config's global
+        // dev bind, which this override would otherwise drop.
+        def dev = System.getenv('DEEPCELL_DEV') == '1'
+        def inst = System.getenv('NEXTFLOW_INSTALL_DIR') ?: '/gladstone/finkbeiner/steve/work/projects/nextflow-cluster'
+        def base = "--nv --mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+        dev ? "--bind ${inst}/bin:/app ${base}" : base
+    }
     clusterOptions { params.neurite_montage_device == 'cuda' ? '--gres=gpu:1' : '' }
     cpus 20
     // Whole-well montage neurite quantification: builds the montage, segments
