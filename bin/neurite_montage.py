@@ -146,16 +146,33 @@ def measure_montage_neurites(
     lengths = per_soma_lengths(owner, skel, soma_labels)   # {label: (len, skel_px)}
     props = regionprops(soma_labels, intensity_image=image01)
 
+    # Per-cell metrics run on a CROP, not the whole montage. find_objects gives
+    # each owner label's bounding box (the soma + its attributed neurites) in a
+    # single pass, so the per-cell graph metrics cost O(sum of cell bboxes)
+    # instead of O(n_cells * montage): on a dense 8192^2 well that is the
+    # difference between ~1 min and ~50 min. The crop always contains every
+    # ``owner == lab`` pixel (that is what the bbox bounds) plus a small pad for
+    # the soma-dilation ring, so the metrics are identical to the whole-image
+    # computation — just translated into a smaller array.
+    from scipy import ndimage as ndi
+    owner_slices = ndi.find_objects(owner)
+    pad = int(opt.soma_dilation) + 2
+    H, W = owner.shape
+
     results: List[SomaNeurite] = []
     for p in props:
         lab = int(p.label)
         length, skpx = lengths.get(lab, (0.0, 0))
-        if skpx > 0:
-            cell_skel = (owner == lab) & skel
+        sl = owner_slices[lab - 1] if lab - 1 < len(owner_slices) else None
+        if skpx > 0 and sl is not None:
+            ys, xs = sl
+            ysl = slice(max(0, ys.start - pad), min(H, ys.stop + pad))
+            xsl = slice(max(0, xs.start - pad), min(W, xs.stop + pad))
+            cell_skel = (owner[ysl, xsl] == lab) & skel[ysl, xsl]
+            soma_c = soma_labels[ysl, xsl] == lab
             n_branch, n_end = _skeleton_graph_metrics(cell_skel)
-            n_primary = _count_primary_neurites(
-                cell_skel, soma_labels == lab, int(opt.soma_dilation))
-            max_len = _max_path_from_soma(cell_skel, soma_labels == lab)
+            n_primary = _count_primary_neurites(cell_skel, soma_c, int(opt.soma_dilation))
+            max_len = _max_path_from_soma(cell_skel, soma_c)
         else:
             n_branch = n_end = n_primary = 0
             max_len = 0.0
