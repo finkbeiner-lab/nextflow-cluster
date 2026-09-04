@@ -12,6 +12,17 @@ if (!params.containsKey('stable_cell_filter_reporter_channel')) { params.stable_
 if (!params.containsKey('stable_cell_filter_displacement_threshold')) { params.stable_cell_filter_displacement_threshold = 100 }
 if (!params.containsKey('stable_cell_filter_area_fold_threshold')) { params.stable_cell_filter_area_fold_threshold = 1.5 }
 if (!params.containsKey('stable_cell_filter_intensity_fold_threshold')) { params.stable_cell_filter_intensity_fold_threshold = 1.5 }
+if (!params.containsKey('DO_MINISOG')) { params.DO_MINISOG = false }
+if (!params.containsKey('minisog_sensors')) { params.minisog_sensors = 'RFP16:Epi-RFP16-2' }
+if (!params.containsKey('minisog_gfp_channel')) { params.minisog_gfp_channel = 'Epi-GFP16' }
+if (!params.containsKey('minisog_death_metric')) { params.minisog_death_metric = 'ratio' }
+if (!params.containsKey('minisog_death_threshold_pct')) { params.minisog_death_threshold_pct = 99 }
+if (!params.containsKey('minisog_death_persist')) { params.minisog_death_persist = 2 }
+if (!params.containsKey('minisog_baseline_timepoint')) { params.minisog_baseline_timepoint = 0 }
+if (!params.containsKey('minisog_min_track_len')) { params.minisog_min_track_len = 4 }
+if (!params.containsKey('minisog_switch_confirm')) { params.minisog_switch_confirm = false }
+if (!params.containsKey('minisog_switch_fc')) { params.minisog_switch_fc = 1.5 }
+if (!params.containsKey('minisog_intensity_source')) { params.minisog_intensity_source = 'csv' }
 
 input_path_ch = Channel.of(params.input_path)
 output_path_ch = Channel.of(params.output_path)
@@ -103,6 +114,19 @@ def target_channel_str = params.target_channel instanceof List
     ? params.target_channel.join(',')
     : params.target_channel
 target_channel_ch = Channel.value(target_channel_str)
+
+// MINISOG channels
+minisog_sensors_ch = Channel.value(params.minisog_sensors)
+minisog_gfp_channel_ch = Channel.of(params.minisog_gfp_channel)
+minisog_death_metric_ch = Channel.of(params.minisog_death_metric)
+minisog_death_threshold_pct_ch = Channel.of(params.minisog_death_threshold_pct)
+minisog_death_persist_ch = Channel.of(params.minisog_death_persist)
+minisog_baseline_tp_ch = Channel.of(params.minisog_baseline_timepoint)
+minisog_min_track_len_ch = Channel.of(params.minisog_min_track_len)
+minisog_switch_confirm_ch = Channel.of(params.minisog_switch_confirm)
+minisog_switch_fc_ch = Channel.of(params.minisog_switch_fc)
+minisog_intensity_source_ch = Channel.of(params.minisog_intensity_source)
+
 // Fallback if tiletype is missing from config
 if (!params.tiletype) {
     params.tiletype = 'maskpath'
@@ -153,7 +177,7 @@ optimizer_ch = Channel.of(params.optimizer)
 
 include { OVERLAY;REGISTER_EXPERIMENT;ALIGN_TILES_DFT;ALIGN_MONTAGE_DFT;SEGMENTATION;SEGMENTATION_MONTAGE;
     CELLPOSE; PUNCTA; TRACKING; TRACKING_MONTAGE; ALIGNMENT; INTENSITY;
-    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; STABLE_CELL_FILTER; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW; BUNDLED_IXM_STABLE_TRACK} from './modules.nf'
+    CROP; CROP_MASK; MONTAGE; PLATEMONTAGE; CNN; GETCSVS; BASHEX; UPDATEPATHS; NORMALIZATION; COPY_MASK_TO_TRACKED; OVERLAY_MONTAGE; STABLE_CELL_FILTER; BUNDLED_WORKFLOW_IXM; BUNDLED_STD_WORKFLOW; BUNDLED_IXM_STABLE_TRACK; MINISOG} from './modules.nf'
 
 params.outdir = 'results'
 
@@ -170,6 +194,7 @@ log.info """\
     Copy Mask to Masktracked: ${params.DO_COPY_MASK_TO_TRACKED}
     Segmentation: ${params.DO_SEGMENTATION}
     Cellpose: ${params.DO_CELLPOSE_SEGMENTATION}
+    MiniSOG: ${params.DO_MINISOG}
     View Normalization: ${params.DO_VIEW_NORMALIZATION_IMAGES}
     Tracking: ${params.DO_TRACKING}
     Intensity: ${params.DO_INTENSITY}
@@ -436,7 +461,21 @@ if (params.DO_INTENSITY) {
 else {
     intensity_result = Channel.of(true)
 }
-   
+
+if (params.DO_MINISOG) {
+    minisog_flag = seg_result.mix(cellpose_result).mix(track_result).mix(intensity_result).collect()
+    minisog_ch = MINISOG(minisog_flag, experiment_ch, morphology_ch, minisog_sensors_ch,
+                         minisog_gfp_channel_ch, minisog_death_metric_ch, minisog_death_threshold_pct_ch,
+                         minisog_death_persist_ch, minisog_intensity_source_ch, minisog_baseline_tp_ch,
+                         minisog_min_track_len_ch, minisog_switch_confirm_ch, minisog_switch_fc_ch,
+                         well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
+    minisog_ch.view { it }
+    minisog_result = MINISOG.out
+}
+else {
+    minisog_result = Channel.of(true)
+}
+
 if (params.DO_CROP) {
     crop_ch = CROP(track_result, experiment_ch, target_channel_crop_ch, morphology_ch, crop_size_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
     crop_ch.view { it }
@@ -464,7 +503,7 @@ else {
 }
 
 if (params.DO_GET_CSVS) {
-    csv_ready = updatepaths_result.mix(register_result).mix(seg_result).mix(cellpose_result).mix(puncta_result).mix(track_result).mix(intensity_result).mix(crop_result).mix(cnn_result).collect()
+    csv_ready = updatepaths_result.mix(register_result).mix(seg_result).mix(cellpose_result).mix(puncta_result).mix(track_result).mix(intensity_result).mix(minisog_result).mix(crop_result).mix(cnn_result).collect()
     csv_ch = GETCSVS(csv_ready, experiment_ch)
     csv_ch.view { it }
 }

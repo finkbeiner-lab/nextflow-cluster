@@ -14,7 +14,7 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 from sqlalchemy import (
     Column, Float, Integer, MetaData, String, Table, UniqueConstraint,
-    ForeignKey, and_, create_engine, delete, func, select, update,
+    ForeignKey, and_, create_engine, delete, func, select, text, update,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Session
@@ -102,6 +102,10 @@ class Database:
                 self.create_modeldata_table()
             if not self.engine.dialect.has_table(connection, 'modelcropdata'):
                 self.create_modelcropdata_table()
+            if not self.engine.dialect.has_table(connection, 'minisogtrackdata'):
+                self.create_minisogtrackdata_table()
+            if not self.engine.dialect.has_table(connection, 'minisogcomparisondata'):
+                self.create_minisogcomparisondata_table()
             self.meta.reflect(bind=self.engine, resolve_fks=True)
 
     def create_experimentdata_table(self) -> None:
@@ -299,6 +303,102 @@ class Database:
         )
         self.meta.create_all(self.engine)
 
+    def create_minisogtrackdata_table(self) -> None:
+        """Create the per-track miniSOG-RGEDI death-signal metrics table.
+
+        One row per (tracked cell x candidate red sensor). Summarises a whole
+        track across timepoints, so it is keyed by ``welldata_id`` + ``cellid``
+        (+ ``tile`` for tile-level tracking) + ``channeldata_id`` (the post-stim
+        red channel), NOT ``tiledata_id`` (which is timepoint-specific). Keyed
+        analogously to intensitycelldata but at the track level. Written by
+        ``bin/minisog.py``.
+
+        The ``id`` column carries a ``uuid_generate_v4()`` server default so that
+        inserts on the *reflected* table (second run onward, when the Python-side
+        ``default`` is not present) still receive a primary key.
+        """
+        minisogtrackdata = Table(
+            'minisogtrackdata', self.meta,
+            Column('id', UUID(as_uuid=True), server_default=text('uuid_generate_v4()'),
+                   default=uuid.uuid4, primary_key=True),
+            Column("experimentdata_id", UUID(as_uuid=True), ForeignKey("experimentdata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("welldata_id", UUID(as_uuid=True), ForeignKey("welldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("channeldata_id", UUID(as_uuid=True), ForeignKey("channeldata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column('cellid', Integer),
+            Column('tile', Integer),
+            Column('sensor', String),          # 'RFP16' | 'NarrowRFP'
+            Column('post_channel', String),    # e.g. 'Epi-RFP16-2'
+            Column('n_timepoints', Integer),
+            Column('first_timepoint', Integer),
+            Column('last_timepoint', Integer),
+            Column('baseline_t0', Float),       # T0 pre-stim read (absolute baseline)
+            Column('baseline_std', Float),
+            Column('baseline_cv', Float),       # noise floor
+            Column('peak_intensity', Float),
+            Column('peak_timepoint', Integer),
+            Column('peak_hours', Float),
+            Column('dynamic_range', Float),     # peak / baseline_t0
+            Column('auc', Float),               # trapezoid integral of (post - baseline) over hours
+            Column('timecourse_slope', Float),  # OLS slope of post(t) vs hours over the rise (baseline->peak)
+            Column('timecourse_rho', Float),    # Spearman rho of post(t) vs timepoint over the rise (baseline->peak)
+            Column('snr', Float),               # (peak - baseline_t0) / baseline_std
+            Column('dropout', Integer),         # 1 if track lost before last experiment timepoint
+            # GEDI-style death call (metric = 'ratio' red/GFP, or 'raw' red)
+            Column('metric', String),           # 'ratio' | 'raw'
+            Column('threshold', Float),          # death threshold applied (T0-percentile)
+            Column('died', Integer),             # 1 if the GEDI signal crossed the threshold (sustained)
+            Column('death_timepoint', Integer),  # first sustained-crossing timepoint (NULL if never)
+            Column('time_to_death', Float),      # hours from T0 to death_timepoint (NULL if never)
+            # switch (changepoint) confirmation: best sustained upward step ratio
+            # mean(after)/mean(before); ~1 = flat/always-high (no death event),
+            # >>1 = a real low->high transition. Used to gate 'died' when
+            # switch_confirm is on (combined value-threshold + switch call).
+            Column('switch_mag', Float),
+            Column('switch_confirmed', Integer),  # 1 if switch_mag >= switch_fc
+        )
+        self.meta.create_all(self.engine)
+
+    def create_minisogcomparisondata_table(self) -> None:
+        """Create the miniSOG red-sensor comparison summary table.
+
+        One row per (cell line x candidate red sensor): the decision-ready
+        RFP16-vs-NarrowRFP comparison, aggregating the per-track metrics against
+        the plate's dose-response and time-course structure. ``channeldata_id`` is
+        nullable because channeldata is per-well while a sensor spans the plate;
+        the authoritative sensor identity is the ``sensor`` string. Written by
+        ``bin/minisog.py``.
+        """
+        minisogcomparisondata = Table(
+            'minisogcomparisondata', self.meta,
+            Column('id', UUID(as_uuid=True), server_default=text('uuid_generate_v4()'),
+                   default=uuid.uuid4, primary_key=True),
+            Column("experimentdata_id", UUID(as_uuid=True), ForeignKey("experimentdata.id", ondelete="CASCADE"),
+                   index=True, nullable=False),
+            Column("channeldata_id", UUID(as_uuid=True), ForeignKey("channeldata.id", ondelete="CASCADE"),
+                   index=True, nullable=True),
+            Column('sensor', String),                # 'RFP16' | 'NarrowRFP'
+            Column('celltype', String),              # cell line (e.g. TP0357)
+            Column('n_wells', Integer),
+            Column('n_tracks', Integer),
+            Column('dose_response_rho', Float),      # Spearman of per-well median readout vs dose (ms)
+            Column('dose_response_slope', Float),
+            Column('timecourse_rho_median', Float),  # median per-track monotonic-rise rho
+            Column('dynamic_range_median', Float),
+            Column('baseline_cv_median', Float),     # noise floor
+            Column('dropout_rate', Float),           # tracking robustness
+            Column('quality_score', Float),          # composite verdict metric
+            Column('is_winner', Integer),            # 1 if this sensor wins its cell line
+            # GEDI death-call summaries (per cell line x sensor)
+            Column('threshold', Float),              # death threshold used (T0-percentile)
+            Column('n_died', Integer),               # tracks that crossed the threshold
+            Column('pct_dead', Float),               # fraction of tracks that died
+            Column('median_time_to_death', Float),   # median hours-to-death among died tracks
+        )
+        self.meta.create_all(self.engine)
+
     def create_intensitypunctadata_table(self) -> None:
         """Create the per-puncta intensity statistics table."""
         intensitypunctadata = Table(
@@ -398,16 +498,23 @@ class Database:
             dct: A single dict (one row) or list of dicts (bulk insert).
             chunk_size: Max rows per INSERT statement for the bulk-list case.
         """
+        def _native(d: Dict[str, Any]) -> Dict[str, Any]:
+            # numpy scalars (e.g. regionprops output) stringify as
+            # "np.float64(...)" under numpy 2.0, which the SQL build then emits
+            # as a literal -> "schema np does not exist". Cast to native Python.
+            return {k: (v.item() if hasattr(v, 'item') else v) for k, v in d.items()}
+
         table = self.meta.tables[tablename]
         with self.engine.connect() as connection:
             if isinstance(dct, list):
                 if not dct:
                     return
-                for start in range(0, len(dct), chunk_size):
-                    chunk = dct[start:start + chunk_size]
+                rows = [_native(d) for d in dct]
+                for start in range(0, len(rows), chunk_size):
+                    chunk = rows[start:start + chunk_size]
                     connection.execute(table.insert().values(chunk))
             else:
-                connection.execute(table.insert().values(dct))
+                connection.execute(table.insert().values(_native(dct)))
             connection.commit()
 
     def update(self, tablename: str, update_dct: Dict[str, Any], kwargs: Dict[str, Any]) -> None:

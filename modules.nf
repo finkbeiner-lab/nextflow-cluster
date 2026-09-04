@@ -225,6 +225,44 @@ process INTENSITY {
     """
 }
 
+process MINISOG {
+    containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
+    cpus 8
+    input:
+    val ready
+    val exp
+    val morphology_channel
+    val sensors
+    val gfp_channel
+    val death_metric
+    val death_threshold_pct
+    val death_persist
+    val intensity_source
+    val baseline_timepoint
+    val min_track_len
+    val switch_confirm
+    val switch_fc
+    val chosen_wells
+    val chosen_timepoints
+    val wells_toggle
+    val timepoints_toggle
+
+    output:
+    val true
+
+    script:
+    """
+    minisog.py --experiment ${exp} --morphology_channel ${morphology_channel} \
+    --sensors '${sensors}' --gfp_channel ${gfp_channel} \
+    --death_metric ${death_metric} --death_threshold_pct ${death_threshold_pct} \
+    --death_persist ${death_persist} --intensity_source ${intensity_source} \
+    --baseline_timepoint ${baseline_timepoint} --min_track_len ${min_track_len} \
+    ${switch_confirm ? '--switch_confirm' : ''} --switch_fc ${switch_fc} \
+    --chosen_wells ${chosen_wells} --chosen_timepoints ${chosen_timepoints} \
+    --wells_toggle ${wells_toggle} --timepoints_toggle ${timepoints_toggle}
+    """
+}
+
 process COPY_MASK_TO_TRACKED {
     containerOptions "--mount type=bind,src=/gladstone/finkbeiner/,target=/gladstone/finkbeiner/"
     

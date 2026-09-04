@@ -343,18 +343,45 @@ class Montage:
         side = int(np.sqrt(num_tiles))
         montage_creation_start = time()
         h, w = np.shape(images[0])
-        mont = np.zeros((int(h * side), int(w * side)), dtype=np.uint16)
+        # Honor the physical tile overlap (fraction from tiledata.overlap, e.g. 0.1)
+        # so overlapping regions coincide instead of being duplicated. Placing tiles
+        # at full-tile stride (the old behavior) shifts every tile by one overlap
+        # width per step, producing the visible seam offsets. Stride = tile - overlap.
+        try:
+            overlap_frac = float(df['overlap'].iloc[0])
+        except Exception:
+            overlap_frac = 0.0
+        if not (0.0 <= overlap_frac < 0.9):
+            overlap_frac = 0.0
+        ov_h = int(round(h * overlap_frac))
+        ov_w = int(round(w * overlap_frac))
+        stride_h, stride_w = h - ov_h, w - ov_w
+        mont = np.zeros((stride_h * (side - 1) + h, stride_w * (side - 1) + w), dtype=np.uint16)
         for i in range(side):
             for j in range(side):
-                #TODO: map montages for legacy montage, new montages, and ixm montages
+                # Tile serpentine phase differs by acquisition system (which corner
+                # the boustrophedon scan starts and which rows are reversed):
+                #   'legacy'          = reverse EVEN rows (top-right start):
+                #                       3 2 1 / 4 5 6 / 9 8 7
+                #   'robo4_serpentine'= reverse ODD rows (top-left serpentine):
+                #                       1 2 3 / 6 5 4 / 7 8 9  (empirically correct
+                #                       for hevo-pmsG-1, captured on Robo4 -- matches
+                #                       the measured tile overlaps). Aliases:
+                #                       'serpentine_odd', 'serpentine_lr'. NOTE: 'ixm'
+                #                       is kept only as a back-compat alias; this
+                #                       ordering was validated on Robo4, not the IXM.
+                #   'standard'        = no snake: 1 2 3 / 4 5 6 / 7 8 9
                 if self.opt.montage_pattern == 'legacy':
-                    if i%2==0:
-                        k = side - (j+1)
-                    else:
-                        k = j
+                    rev = (i % 2 == 0)
+                elif self.opt.montage_pattern in ('robo4_serpentine', 'serpentine_odd',
+                                                  'serpentine_lr', 'ixm'):
+                    rev = (i % 2 == 1)
                 else:
-                    k = j
-                mont[i * h:(i + 1) * h, j * w:(j + 1) * w] = images[i * side + k]
+                    rev = False
+                k = side - (j + 1) if rev else j
+                y0, x0 = i * stride_h, j * stride_w
+                # last-tile-wins in the overlap strip (no duplication)
+                mont[y0:y0 + h, x0:x0 + w] = images[i * side + k]
 
         if savebool:
             imageio.v3.imwrite(savepath, mont)
@@ -443,7 +470,11 @@ if __name__ == '__main__':
                         help='Image normalization method using flatfield image.')
     parser.add_argument('--bg_mode', default='per_well', choices=['per_well', 'per_tile'], type=str,
                         help='Background correction mode: "per_well" uses one background for all tiles in a well/timepoint (default), "per_tile" calculates background for each tile position separately.')
-    parser.add_argument('--montage_pattern',default='standard', choices=['standard', 'legacy'], help="Montage snaking with 3 2 1 4 5 6 9 8 7 pattern.")
+    parser.add_argument('--montage_pattern', default='standard',
+                        choices=['standard', 'legacy', 'robo4_serpentine', 'serpentine_odd', 'serpentine_lr', 'ixm'],
+                        help="Tile serpentine: 'legacy' reverses even rows (3 2 1/4 5 6/9 8 7); "
+                             "'robo4_serpentine' (aliases serpentine_odd/serpentine_lr/ixm) reverses odd rows "
+                             "(1 2 3/6 5 4/7 8 9, correct for Robo4 e.g. hevo-pmsG-1); 'standard' = no snake.")
     parser.add_argument("--wells_toggle", default='include',
                         help="Chose whether to include or exclude specified wells.")
     parser.add_argument("--timepoints_toggle", default='include',
