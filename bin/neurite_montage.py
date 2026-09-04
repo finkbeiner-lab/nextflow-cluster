@@ -188,10 +188,34 @@ class NeuriteMontage:
         self._cp_model = None
 
     def _cellpose(self):
-        """Lazily construct the Cellpose-SAM model (cached)."""
+        """Lazily construct the Cellpose-SAM model (cached).
+
+        ``use_bfloat16=False`` is critical on V100/Volta GPUs. cellpose defaults
+        to bfloat16 and casts the whole ViT-L forward to bf16 with no autocast
+        and no GPU-arch check; Volta (sm_70) has no native bf16, so the forward
+        is emulated and runs ~10x slower (~4 min/well -> ~50 min/well). fp32 is
+        GPU-arch-agnostic and fast (cellpose tiles internally, so memory stays
+        bounded). ``pretrained_model='cpsam'`` pins the checkpoint the soma
+        recipe was validated with (cpsam_v2 is a newer same-architecture
+        checkpoint that became the default after a cellpose version bump).
+        """
         if self._cp_model is None:
             from cellpose import models
-            self._cp_model = models.CellposeModel(gpu=(self.opt.device == "cuda"))
+            self._cp_model = models.CellposeModel(
+                gpu=(self.opt.device == "cuda"),
+                pretrained_model="cpsam",
+                use_bfloat16=False,
+            )
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    logger.info("Cellpose-SAM on GPU %s (fp32, bf16 disabled)",
+                                torch.cuda.get_device_name(0))
+                else:
+                    logger.warning("Cellpose-SAM running on CPU (no CUDA visible) "
+                                   "— this is ~10x+ slower; check --nv/--gres.")
+            except Exception:  # noqa: BLE001
+                pass
         return self._cp_model
 
     def run(self) -> None:
@@ -240,10 +264,14 @@ class NeuriteMontage:
                 'channeldata', dict(channel=self.opt.morphology_channel,
                                     welldata_id=rep.welldata_id))
             try:
+                logger.info('%s T%s: building montage + Cellpose-SAM somas over %d tiles...',
+                            well, timepoint, len(paths))
                 image01, soma = build_montages(
                     cp, paths, sites, self.opt.soma_diameter, self.opt.soma_flow,
                     self.opt.soma_cellprob, self.opt.soma_clean_k,
                     flatten_size=self.opt.neurite_flatten_size)
+                logger.info('%s T%s: %d somas segmented; tracing neurites on the montage...',
+                            well, timepoint, int(soma.max()))
                 measurements = measure_montage_neurites(image01, soma, self.opt)
             except Exception as exc:  # noqa: BLE001 - one bad well must not kill the run
                 logger.warning('%s T%s FAILED: %s: %s', well, timepoint,
