@@ -95,6 +95,10 @@ def track_well(eng, exp_uuid: str, well: str, ch: str, opt) -> int:
     config.linking_config.max_distance = opt.max_distance
     config.linking_config.max_neighbors = opt.max_neighbors
     config.tracking_config.solver_name = opt.solver  # '' = auto (Gurobi if licensed, else CBC)
+    # more-negative appear/disappear penalties discourage spurious track breaks
+    # (fragmentation) on motile cells; defaults (-0.001) are very weak.
+    config.tracking_config.appear_weight = opt.appear_weight
+    config.tracking_config.disappear_weight = opt.disappear_weight
 
     tracker = Tracker(config)
     tracker.track(foreground=foreground, contours=contours, overwrite='all')
@@ -131,6 +135,8 @@ def main() -> None:
     p.add_argument('--min_area', type=int, default=500)
     p.add_argument('--max_area', type=int, default=40000)
     p.add_argument('--sigma', type=float, default=1.0, help='labels_to_contours edge smoothing.')
+    p.add_argument('--appear_weight', type=float, default=-0.001, help='Penalty for a track appearing (more negative = fewer new tracks).')
+    p.add_argument('--disappear_weight', type=float, default=-0.001, help='Penalty for a track disappearing (more negative = fewer track ends).')
     p.add_argument('--solver', default='', help="'' (auto: Gurobi if licensed else CBC) | 'GUROBI' | 'CBC'.")
     p.add_argument('--work_dir', default='/gladstone/finkbeiner/home/aholub/GXYTMPS/ULTRACK_WORK')
     p.add_argument('--out_csv', default='')
