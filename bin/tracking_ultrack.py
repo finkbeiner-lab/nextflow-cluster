@@ -65,7 +65,14 @@ def track_well(eng, exp_uuid: str, well: str, ch: str, opt) -> int:
             WHERE w.well=:w AND ch.channel=:c AND t.experimentdata_id=:x
               AND t.alignedmontagemaskpath IS NOT NULL
             ORDER BY t.timepoint"""), {'w': well, 'c': ch, 'x': exp_uuid}).fetchall()
-    rows = [(int(tp), mp) for tp, mp in rows if mp and os.path.exists(mp)]
+    # The montage mask path is stored on ALL 9 tile rows of each (well, timepoint),
+    # so the query returns ~9x duplicate rows per timepoint. Dedupe to ONE mask per
+    # timepoint (keep first) — otherwise Ultrack tracks 9x duplicated frames.
+    seen = {}
+    for tp, mp in rows:
+        if mp and os.path.exists(mp) and int(tp) not in seen:
+            seen[int(tp)] = mp
+    rows = sorted(seen.items())
     if len(rows) < 2:
         print(f'  {well}: <2 timepoints with masks — skipping', flush=True)
         return 0
