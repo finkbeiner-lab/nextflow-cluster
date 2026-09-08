@@ -167,6 +167,82 @@ def build_montages(cp_model, paths: List[str], sites: List[int],
     return image01, soma
 
 
+# --------------------------- arborization ----------------------------------
+# Per-cell branching metrics on the attributed neurite skeleton (NumPy/scipy
+# only -- no skan). Branch points are counted as NODES (adjacent degree>=3
+# skeleton pixels clustered into one), and tips exclude the soma-attachment
+# roots, so the numbers read as anatomy: a straight process = 0 branch points /
+# 1 tip, a single Y = 1 branch point / 2 tips.
+_K8 = np.array([[1, 1, 1], [1, 0, 1], [1, 1, 1]])
+_S8 = np.ones((3, 3))
+
+
+def _arbor_metrics(cell_skel: np.ndarray, soma: np.ndarray,
+                   dilation: int) -> Tuple[int, int, int, float]:
+    """Arborization of one cell's attributed neurite skeleton.
+
+    Args:
+        cell_skel: Boolean skeleton for this cell (soma interior already removed).
+        soma: Boolean mask of this cell's soma body.
+        dilation: Soma-dilation radius used to build the emergence ring.
+
+    Returns:
+        ``(n_branch_points, n_tips, n_primary_neurites, max_branch_length)``:
+        bifurcation nodes, terminal tips (excluding soma roots), branches
+        leaving the soma, and the longest path from the soma (px).
+    """
+    from scipy import ndimage as ndi
+    from skimage.morphology import binary_dilation, disk
+    if cell_skel.sum() == 0:
+        return 0, 0, 0, 0.0
+    nb = ndi.convolve(cell_skel.astype(np.uint8), _K8, mode="constant") * cell_skel
+    # branch NODES: cluster adjacent degree>=3 pixels so one junction counts once
+    n_branch = int(ndi.label(nb >= 3, structure=_S8)[1])
+    ring = binary_dilation(soma, disk(max(1, dilation) + 1)) & ~soma
+    # tips: degree-1 endpoints that are NOT the soma-attachment roots
+    n_tips = int(np.sum((nb == 1) & ~ring))
+    # primary neurites: skeleton components crossing the soma ring
+    emerging = cell_skel & ring
+    n_primary = int(ndi.label(emerging, structure=_S8)[1]) if emerging.any() else 0
+    return n_branch, n_tips, n_primary, _max_path_from_soma(cell_skel, soma)
+
+
+def _max_path_from_soma(cell_skel: np.ndarray, soma: np.ndarray) -> float:
+    """Longest geodesic distance along the skeleton from the soma (px).
+
+    Args:
+        cell_skel: Boolean skeleton for this cell.
+        soma: Boolean mask of this cell's soma body.
+
+    Returns:
+        Longest shortest-path length (px) reachable along the skeleton.
+    """
+    from collections import deque
+    from scipy import ndimage as ndi
+    if cell_skel.sum() == 0:
+        return 0.0
+    seed = cell_skel & ndi.binary_dilation(soma, structure=np.ones((3, 3)))
+    if not seed.any():
+        return 0.0
+    dist = np.full(cell_skel.shape, -1, dtype=np.int32)
+    q = deque(zip(*np.where(seed)))
+    for y, x in list(q):
+        dist[y, x] = 0
+    maxd, H, W = 0, cell_skel.shape[0], cell_skel.shape[1]
+    while q:
+        y, x = q.popleft()
+        for dy in (-1, 0, 1):
+            for dx in (-1, 0, 1):
+                if dy == 0 and dx == 0:
+                    continue
+                ny, nx = y + dy, x + dx
+                if 0 <= ny < H and 0 <= nx < W and cell_skel[ny, nx] and dist[ny, nx] < 0:
+                    dist[ny, nx] = dist[y, x] + 1
+                    maxd = max(maxd, dist[ny, nx])
+                    q.append((ny, nx))
+    return float(maxd)
+
+
 def main() -> None:
     """CLI entry point."""
     ap = argparse.ArgumentParser(description=__doc__)
@@ -191,6 +267,9 @@ def main() -> None:
                     help="data-driven rolling-background (pseudo flat-field) "
                          "footprint in px applied to the neurite image before "
                          "normalization; ~128 corrects vignetting, 0 disables")
+    ap.add_argument("--soma-dilation", type=int, default=3,
+                    help="soma-dilation radius (px) used to count primary "
+                         "neurites emerging from each soma (arborization)")
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
@@ -203,13 +282,16 @@ def main() -> None:
 
     cell_fh = open(os.path.join(args.out_dir, "percell.csv"), "w", newline="")
     cfields = ["experiment", "well", "cell_line", "genotype", "soma_id",
-               "area_px", "cy", "cx", "neurite_len_px", "skel_px"]
+               "area_px", "cy", "cx", "neurite_len_px", "skel_px",
+               "n_branch_points", "n_end_points", "n_primary_neurites",
+               "max_branch_length"]
     cwriter = csv.DictWriter(cell_fh, fieldnames=cfields)
     cwriter.writeheader()
     well_fh = open(os.path.join(args.out_dir, "perwell.csv"), "w", newline="")
     wfields = ["experiment", "well", "cell_line", "genotype", "n_somas",
                "n_somas_with_neurite", "total_len_px", "mean_len_per_soma",
-               "median_len_per_soma"]
+               "median_len_per_soma", "mean_branch_points", "mean_tips",
+               "mean_primary_neurites", "mean_max_branch_len", "frac_branched"]
     wwriter = csv.DictWriter(well_fh, fieldnames=wfields)
     wwriter.writeheader()
 
@@ -246,26 +328,61 @@ def main() -> None:
             lengths = per_soma_lengths(owner, skel, soma)
             props = {p.label: p for p in regionprops(soma)}
 
+            # Per-cell arborization runs on a CROP, not the whole montage:
+            # find_objects gives each owner label's bbox (soma + its attributed
+            # neurites) in one pass, so the graph metrics cost O(sum of cell
+            # bboxes), not O(n_cells * montage). The crop bounds every
+            # owner==lab pixel plus a soma-ring pad, so metrics are identical to
+            # a whole-image computation, just translated into a smaller array.
+            owner_slices = ndimage.find_objects(owner)
+            pad = int(args.soma_dilation) + 2
+            Hh, Ww = owner.shape
+
+            def cell_arbor(lab: int, skpx: int):
+                sl = owner_slices[lab - 1] if lab - 1 < len(owner_slices) else None
+                if skpx <= 0 or sl is None:
+                    return 0, 0, 0, 0.0
+                ys, xs = sl
+                ysl = slice(max(0, ys.start - pad), min(Hh, ys.stop + pad))
+                xsl = slice(max(0, xs.start - pad), min(Ww, xs.stop + pad))
+                cell_skel = (owner[ysl, xsl] == lab) & skel[ysl, xsl]
+                soma_c = soma[ysl, xsl] == lab
+                return _arbor_metrics(cell_skel, soma_c, int(args.soma_dilation))
+
             line, geno = row.get("cell_line", "?"), row.get("genotype", "?")
             percell_lens = []
+            a_branch, a_tips, a_prim, a_max = [], [], [], []
             for lab, (length, skpx) in lengths.items():
                 p = props.get(lab)
                 if p is None:
                     continue
                 cy, cx = p.centroid
+                nb, ne, npri, mx = cell_arbor(lab, skpx)
                 cwriter.writerow(dict(experiment=exp, well=well, cell_line=line,
                                       genotype=geno, soma_id=lab, area_px=int(p.area),
                                       cy=round(cy, 1), cx=round(cx, 1),
-                                      neurite_len_px=round(length, 1), skel_px=skpx))
+                                      neurite_len_px=round(length, 1), skel_px=skpx,
+                                      n_branch_points=nb, n_end_points=ne,
+                                      n_primary_neurites=npri,
+                                      max_branch_length=round(mx, 1)))
                 percell_lens.append(length)
+                if skpx > 0:  # arborization aggregates over neurite-bearing somas
+                    a_branch.append(nb); a_tips.append(ne)
+                    a_prim.append(npri); a_max.append(mx)
             n = int(soma.max())
             nwith = int(np.sum(np.array(percell_lens) > 0))
             total = float(np.sum(percell_lens))
+            amean = lambda v: round(float(np.mean(v)), 2) if v else 0.0
             wwriter.writerow(dict(experiment=exp, well=well, cell_line=line, genotype=geno,
                                   n_somas=n, n_somas_with_neurite=nwith,
                                   total_len_px=round(total, 1),
                                   mean_len_per_soma=round(total / max(n, 1), 1),
-                                  median_len_per_soma=round(float(np.median(percell_lens)) if percell_lens else 0.0, 1)))
+                                  median_len_per_soma=round(float(np.median(percell_lens)) if percell_lens else 0.0, 1),
+                                  mean_branch_points=amean(a_branch),
+                                  mean_tips=amean(a_tips),
+                                  mean_primary_neurites=amean(a_prim),
+                                  mean_max_branch_len=amean(a_max),
+                                  frac_branched=round(float(np.mean([b >= 1 for b in a_branch])), 3) if a_branch else 0.0))
             cell_fh.flush(); well_fh.flush()
             print(f"{exp+'/'+well:18}{line:10}{geno:>5}{n:7d}{(total/max(n,1)):10.1f}")
             tifffile.imwrite(os.path.join(args.out_dir, f"{exp}_{well}_{tp}_percell.tif"),
