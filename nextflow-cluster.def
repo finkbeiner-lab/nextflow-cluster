@@ -21,6 +21,10 @@ From: ubuntu:22.04
 %post
     # Enable noninteractive install
     export DEBIAN_FRONTEND=noninteractive
+    # apt's download sandbox drops to the unprivileged `_apt` user, which cannot
+    # chown inside the user namespace created by `apptainer build --fakeroot`
+    # (fails with "Operation not permitted" -> dpkg error 100). Keep apt as root.
+    printf 'APT::Sandbox::User "root";\n' > /etc/apt/apt.conf.d/999-no-sandbox
 
     # Basic packages
     apt-get update && apt-get install -y \
@@ -71,7 +75,9 @@ From: ubuntu:22.04
                 pyomo \
                 numpy \
                 tifffile \
-                imreg_dft
+                imreg_dft \
+                skan \
+                gurobipy
 
     # Install Java 17
     apt-get install -y openjdk-17-jdk
@@ -80,6 +86,10 @@ From: ubuntu:22.04
     curl -s https://get.nextflow.io | bash
     mv nextflow /usr/local/bin/nextflow
     chmod +x /usr/local/bin/nextflow
+
+    # Mountpoint for the runtime-bound Gurobi WLS license (SIF is read-only, so the
+    # target dir must exist inside the image; the gurobi.lic is bind-mounted here).
+    mkdir -p /opt/gurobi
 
     # Clean up
     apt-get clean
@@ -91,6 +101,9 @@ From: ubuntu:22.04
     export JAVA_HOME="/usr/lib/jvm/java-17-openjdk-amd64"
     export GUROBI_HOME="/opt/gurobi"
     export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${GUROBI_HOME}/lib"
+    # gurobipy (pip) bundles its own libs; the license is provided at RUNTIME via a
+    # bind-mounted WLS gurobi.lic (never baked into the image). Point Gurobi at it.
+    export GRB_LICENSE_FILE=/opt/gurobi/gurobi.lic
     export NUMBA_CACHE_DIR=/tmp
     export M2_HOME="/opt/apache-maven-3.9.5"
     export PATH="$JAVA_HOME/bin:$M2_HOME/bin:/usr/local/bin:$PATH"
