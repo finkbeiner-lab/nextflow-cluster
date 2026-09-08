@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import csv
 import glob
+import json
 import os
 import re
 from typing import Dict, List, Tuple
@@ -270,12 +271,30 @@ def main() -> None:
     ap.add_argument("--soma-dilation", type=int, default=3,
                     help="soma-dilation radius (px) used to count primary "
                          "neurites emerging from each soma (arborization)")
+    ap.add_argument("--cache-dir", default="",
+                    help="if set, save per-well {soma_labels(uint16), "
+                         "neurite_prob(uint8), meta} .npz here and reuse it on "
+                         "re-run so metrics recompute on CPU with NO Cellpose / "
+                         "U-Net -- enables resume and later re-thresholding "
+                         "without the GPU")
     args = ap.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
+    if args.cache_dir:
+        os.makedirs(args.cache_dir, exist_ok=True)
     device = torch.device(args.device)
-    cp_model = models.CellposeModel(gpu=(args.device == "cuda"))
-    unet = load_model(args.checkpoint, device)
+
+    # Lazy model init: Cellpose + the U-Net are built only when a well actually
+    # needs the GPU (a cache miss). A re-run whose wells are all cached touches
+    # no GPU and runs on a CPU node -- that is the "recompute from cache" path
+    # (re-threshold, new metrics) with no cluster GPU.
+    _models = {}
+    def ensure_models():
+        if "cp" not in _models:
+            cp_model = models.CellposeModel(gpu=(args.device == "cuda"))
+            _models["cp"] = cp_model
+            _models["unet"] = load_model(args.checkpoint, device)
+        return _models["cp"], _models["unet"]
 
     manifest = list(csv.DictReader(open(args.manifest)))
     print(f"manifest: {len(manifest)} wells")
@@ -307,17 +326,43 @@ def main() -> None:
         # etc.) must NOT abort the remaining wells. Completed wells are already
         # flushed to disk; a failed well is logged and skipped.
         try:
-            image01, soma = build_montages(cp_model, paths, sites, args.diameter,
-                                           args.flow, args.cellprob, args.clean_k,
-                                           flatten_size=args.flatten_size)
-            prob = predict_tiled(unet, image01, device)
+            cache_path = (os.path.join(args.cache_dir, f"{exp}_{well}_{tp}.npz")
+                          if args.cache_dir else None)
+            if cache_path and os.path.exists(cache_path):
+                # Reuse saved intermediates -> recompute metrics on CPU (no
+                # Cellpose / U-Net). Overlays are not regenerated (image not cached).
+                z = np.load(cache_path)
+                soma = z["soma_labels"].astype(np.int32)
+                prob = z["neurite_prob"].astype(np.float32) / 255.0
+                image01, from_cache = None, True
+            else:
+                cp_model, unet = ensure_models()
+                image01, soma = build_montages(cp_model, paths, sites, args.diameter,
+                                               args.flow, args.cellprob, args.clean_k,
+                                               flatten_size=args.flatten_size)
+                prob = predict_tiled(unet, image01, device)
+                from_cache = False
+                if cache_path:  # write once, atomically (temp then rename)
+                    tmp = cache_path + ".tmp.npz"
+                    np.savez_compressed(
+                        tmp, soma_labels=soma.astype(np.uint16),
+                        neurite_prob=(np.clip(prob, 0, 1) * 255).round().astype(np.uint8),
+                        meta=np.array(json.dumps(dict(
+                            experiment=exp, well=well, timepoint=tp,
+                            cell_line=row.get("cell_line", "?"),
+                            genotype=row.get("genotype", "?"), grid=GRID,
+                            threshold=args.threshold, seam_band=args.seam_band,
+                            min_neurite=args.min_neurite, flatten_size=args.flatten_size,
+                            diameter=args.diameter, flow=args.flow,
+                            cellprob=args.cellprob, clean_k=args.clean_k))))
+                    os.replace(tmp, cache_path)
             raw_mask = prob >= args.threshold
             # Seam suppression: the per-tile normalization step at each interior
             # tile boundary reads as a straight edge that the ridge-sensitive
             # U-Net fires on (false long straight neurites). Zero a thin band at
             # each interior seam; real neurites crossing a seam lose only ~2*band
             # px (negligible for length). Outer edges are untouched.
-            th_m, tw_m = image01.shape[0] // GRID, image01.shape[1] // GRID
+            th_m, tw_m = soma.shape[0] // GRID, soma.shape[1] // GRID
             band = args.seam_band
             if band > 0:
                 for kk in range(1, GRID):
@@ -384,9 +429,11 @@ def main() -> None:
                                   mean_max_branch_len=amean(a_max),
                                   frac_branched=round(float(np.mean([b >= 1 for b in a_branch])), 3) if a_branch else 0.0))
             cell_fh.flush(); well_fh.flush()
-            print(f"{exp+'/'+well:18}{line:10}{geno:>5}{n:7d}{(total/max(n,1)):10.1f}")
-            tifffile.imwrite(os.path.join(args.out_dir, f"{exp}_{well}_{tp}_percell.tif"),
-                             colorize(image01, soma, owner, skel)[::4, ::4])
+            tag = " (cache)" if from_cache else ""
+            print(f"{exp+'/'+well:18}{line:10}{geno:>5}{n:7d}{(total/max(n,1)):10.1f}{tag}")
+            if image01 is not None:  # overlay only on a fresh compute (image not cached)
+                tifffile.imwrite(os.path.join(args.out_dir, f"{exp}_{well}_{tp}_percell.tif"),
+                                 colorize(image01, soma, owner, skel)[::4, ::4])
         except Exception as exc:  # noqa: BLE001 - keep the batch alive
             print(f"{exp}/{well}  FAILED: {type(exc).__name__}: {exc}", flush=True)
             continue
