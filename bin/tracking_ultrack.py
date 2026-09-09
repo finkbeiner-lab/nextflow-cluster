@@ -17,7 +17,8 @@ bundled CBC — so it degrades gracefully on compute nodes without WLS network.
 
 Usage:
     tracking_ultrack.py --experiment hevo-pmsG-1 --wells C6,F6 \
-        --max_distance 150 --min_area 500 --max_area 40000 --solver '' \
+        --max_distance 450 --appear_weight -1.0 --disappear_weight -1.0 \
+        --min_area 250 --max_area 40000 --solver '' \
         --work_dir /gladstone/finkbeiner/home/aholub/GXYTMPS/ULTRACK_WORK
 """
 import argparse
@@ -129,14 +130,17 @@ def main() -> None:
     p.add_argument('--experiment', required=True)
     p.add_argument('--wells', default='all')
     p.add_argument('--morphology_channel', default='Epi-GFP16')
-    p.add_argument('--max_distance', type=float, default=150.0,
-                   help='Max displacement (px) between segments across frames.')
+    # Defaults tuned on hevo-pmsG-1 F6 (see ultrack_tuning/): md=450 + appear/disappear=-1.0
+    # gave 73% T0->end survival (median track len 19) vs the proximity tracker's 31% (len 13);
+    # the weak default penalties (-0.001) fragmented badly. min_area=250 recovers small cells.
+    p.add_argument('--max_distance', type=float, default=450.0,
+                   help='Max displacement (px) between segments across frames (fibroblasts move far).')
     p.add_argument('--max_neighbors', type=int, default=5)
-    p.add_argument('--min_area', type=int, default=500)
+    p.add_argument('--min_area', type=int, default=250)
     p.add_argument('--max_area', type=int, default=40000)
     p.add_argument('--sigma', type=float, default=1.0, help='labels_to_contours edge smoothing.')
-    p.add_argument('--appear_weight', type=float, default=-0.001, help='Penalty for a track appearing (more negative = fewer new tracks).')
-    p.add_argument('--disappear_weight', type=float, default=-0.001, help='Penalty for a track disappearing (more negative = fewer track ends).')
+    p.add_argument('--appear_weight', type=float, default=-1.0, help='Penalty for a track appearing (more negative = fewer new tracks / less fragmentation).')
+    p.add_argument('--disappear_weight', type=float, default=-1.0, help='Penalty for a track disappearing (more negative = fewer track ends).')
     p.add_argument('--solver', default='', help="'' (auto: Gurobi if licensed else CBC) | 'GUROBI' | 'CBC'.")
     p.add_argument('--work_dir', default='/gladstone/finkbeiner/home/aholub/GXYTMPS/ULTRACK_WORK')
     p.add_argument('--out_csv', default='')
