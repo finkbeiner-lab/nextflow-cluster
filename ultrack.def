@@ -1,0 +1,36 @@
+Bootstrap: docker
+From: python:3.11
+
+# Dedicated, isolated container for Ultrack (ILP multi-hypothesis cell tracking,
+# royerlab/ultrack). Kept SEPARATE from nextflow-cluster.sif because Ultrack needs
+# Python >= 3.10 and pulls heavy version-pinned deps (higra, numba, zarr, mip) that
+# would conflict with the main SIF's Python 3.9 + cellpose/torch stack. Segmentation
+# and GEDI2 stay in the main SIF; only tracking runs here.
+#
+# Ultrack solves tracking as an ILP and uses Gurobi when a license is available
+# (gurobipy ships with ultrack); the WLS gurobi.lic is bind-mounted at RUNTIME
+# (never baked in) exactly as for the main SIF. With solver_name='' Ultrack auto-
+# selects Gurobi if licensed, else the bundled open-source CBC solver.
+#
+# BUILD (fakeroot): apptainer build --fakeroot ultrack.sif ultrack.def
+# RUNTIME: bind the license -> apptainer exec -B ~/gurobi.lic:/opt/gurobi/gurobi.lic ...
+
+%post
+    export DEBIAN_FRONTEND=noninteractive
+    # keep apt as root so `apptainer build --fakeroot` can chown in the user namespace
+    printf 'APT::Sandbox::User "root";\n' > /etc/apt/apt.conf.d/999-no-sandbox
+    apt-get update && apt-get install -y --no-install-recommends \
+        libgl1 libglib2.0-0 libgomp1 && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+    pip install --upgrade pip setuptools wheel
+    # ultrack pulls numpy/scipy/scikit-image/higra/zarr/mip/gurobipy/sqlalchemy/numba.
+    # psycopg2-binary lets the tracking module read tiledata paths from the galaxy DB.
+    pip install ultrack psycopg2-binary imageio tifffile
+
+    # mountpoint for the runtime-bound Gurobi WLS license (SIF is read-only)
+    mkdir -p /opt/gurobi
+
+%environment
+    export GRB_LICENSE_FILE=/opt/gurobi/gurobi.lic
+    export NUMBA_CACHE_DIR=/tmp
+    export PYTHONUNBUFFERED=1
