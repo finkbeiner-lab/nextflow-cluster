@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime
 import glob
 import json
 import os
@@ -108,6 +109,55 @@ def place(canvas: np.ndarray, tile: np.ndarray, site: int, th: int, tw: int) -> 
     canvas[r * th:(r + 1) * th, c * tw:(c + 1) * tw] = tile
 
 
+def _read_tiles(paths: List[str]) -> List[np.ndarray]:
+    """Read tiles once as float32 (drop any trailing channel axis)."""
+    tiles = []
+    for p in paths:
+        raw = tifffile.imread(p).astype(np.float32)
+        if raw.ndim == 3:
+            raw = raw[..., 0]
+        tiles.append(raw)
+    return tiles
+
+
+def _montage_image01(tiles: List[np.ndarray], sites: List[int],
+                     flatten_size: int = 0) -> np.ndarray:
+    """Assemble the normalized [0,1] grayscale montage from raw tiles (no GPU).
+
+    Split out of :func:`build_montages` so the montage image can be rebuilt on a
+    cache hit (soma+prob restored from disk) to regenerate overlays without ever
+    touching Cellpose / the U-Net.
+    """
+    th, tw = tiles[0].shape
+    H, W = GRID * th, GRID * tw
+    # Neurite-image source: optional data-driven rolling-background flattening
+    # (vignetting / illumination correction) applied per tile BEFORE percentile
+    # normalization.
+    img_src = ([flatten_tile(t, flatten_size) for t in tiles]
+               if flatten_size > 0 else tiles)
+    # Empty-tile guard: percentile-normalizing a near-signal-free tile amplifies
+    # its noise into a fake bright band. Compare each tile's dynamic range to the
+    # montage-wide median range; if a tile has < EMPTY_FRAC of it, emit zeros.
+    EMPTY_FRAC = 0.15
+    ranges = np.array([np.percentile(t, 99.5) - np.percentile(t, 1) for t in img_src])
+    global_range = float(np.median(ranges))
+    image01 = np.zeros((H, W), np.float32)
+    for imgt, s in zip(img_src, sites):
+        lo, hi = np.percentile(imgt, 1), np.percentile(imgt, 99.5)
+        if global_range <= 0 or (hi - lo) < EMPTY_FRAC * global_range:
+            norm = np.zeros_like(imgt)  # empty/low-signal tile: do not amplify
+        else:
+            norm = np.clip((imgt - lo) / (hi - lo), 0, 1).astype(np.float32)
+        place(image01, norm, s, th, tw)
+    return image01
+
+
+def build_image01(paths: List[str], sites: List[int],
+                  flatten_size: int = 0) -> np.ndarray:
+    """CPU-only montage grayscale rebuild from raw tiles (for overlay regen)."""
+    return _montage_image01(_read_tiles(paths), sites, flatten_size)
+
+
 def build_montages(cp_model, paths: List[str], sites: List[int],
                    diameter: int, flow: float, cellprob: float, clean_k: float,
                    flatten_size: int = 0
@@ -124,41 +174,16 @@ def build_montages(cp_model, paths: List[str], sites: List[int],
         ``(image01, soma_labels)`` montages, both (GRID*th, GRID*tw).
     """
     # Read all 16 tiles once (16 x 2048^2 float32 ~= 256MB, fine).
-    tiles = []
-    for p in paths:
-        raw = tifffile.imread(p).astype(np.float32)
-        if raw.ndim == 3:
-            raw = raw[..., 0]
-        tiles.append(raw)
+    tiles = _read_tiles(paths)
     th, tw = tiles[0].shape
     H, W = GRID * th, GRID * tw
+    image01 = _montage_image01(tiles, sites, flatten_size)
 
-    # Neurite-image source: optional data-driven rolling-background flattening
-    # (vignetting / illumination correction) applied per tile BEFORE percentile
-    # normalization. Cellpose somas still run on the untouched raw below, so this
-    # only affects the neurite-segmentation input.
-    img_src = ([flatten_tile(t, flatten_size) for t in tiles]
-               if flatten_size > 0 else tiles)
-
-    # Empty-tile guard: percentile-normalizing a near-signal-free tile amplifies
-    # its noise into a fake bright band. Compare each tile's dynamic range to the
-    # montage-wide median range; if a tile has < EMPTY_FRAC of it, it carries no
-    # real signal -> emit zeros instead of stretching noise. Computed on the same
-    # domain (flattened or raw) that feeds the image montage.
-    EMPTY_FRAC = 0.15
-    ranges = np.array([np.percentile(t, 99.5) - np.percentile(t, 1) for t in img_src])
-    global_range = float(np.median(ranges))
-
-    image01 = np.zeros((H, W), np.float32)
+    # Cellpose somas run on the untouched raw tiles (not the flattened image), so
+    # flattening only affects the neurite-segmentation input, never the somas.
     soma = np.zeros((H, W), np.int32)
     offset = 0
-    for raw, imgt, s in zip(tiles, img_src, sites):
-        lo, hi = np.percentile(imgt, 1), np.percentile(imgt, 99.5)
-        if global_range <= 0 or (hi - lo) < EMPTY_FRAC * global_range:
-            norm = np.zeros_like(imgt)  # empty/low-signal tile: do not amplify
-        else:
-            norm = np.clip((imgt - lo) / (hi - lo), 0, 1).astype(np.float32)
-        place(image01, norm, s, th, tw)
+    for raw, s in zip(tiles, sites):
         labels = segment_somas(cp_model, raw, diameter, flow, cellprob, clean_k)
         if labels.max() > 0:
             lab = labels.copy()
@@ -244,6 +269,125 @@ def _max_path_from_soma(cell_skel: np.ndarray, soma: np.ndarray) -> float:
     return float(maxd)
 
 
+def _resolve_run_dir(out_dir: str, run_id: str, run_label: str,
+                     overwrite: bool) -> Tuple[str, str]:
+    """Create a fresh, non-clobbering per-run output dir under ``out_dir/runs``.
+
+    Each analyze pass writes to its own ``runs/<id>/`` so re-tuning
+    post-segmentation params never overwrites an earlier run's CSVs/overlays
+    (runs accumulate for comparison). The shared ``--cache-dir`` is separate and
+    is deliberately NOT versioned -- the expensive Cellpose/U-Net segmentations
+    are reused across runs. A convenience ``latest`` symlink points at the newest
+    run.
+
+    Args:
+        out_dir: Base output dir (holds ``runs/`` and ``latest``).
+        run_id: Explicit run id; if empty, a timestamp (+ label) is generated.
+        run_label: Optional human tag appended to a generated run id.
+        overwrite: Allow reusing a run dir that already has outputs.
+
+    Returns:
+        ``(run_dir, run_id)``.
+
+    Raises:
+        SystemExit: If the target run dir already holds a ``percell.csv`` and
+            ``overwrite`` is False (refuses to clobber a prior run).
+    """
+    runs_root = os.path.join(out_dir, "runs")
+    os.makedirs(runs_root, exist_ok=True)
+    if not run_id:
+        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        run_id = f"{ts}_{run_label}" if run_label else ts
+    run_dir = os.path.join(runs_root, run_id)
+    if os.path.exists(os.path.join(run_dir, "percell.csv")) and not overwrite:
+        raise SystemExit(
+            f"run dir already has outputs: {run_dir}\n"
+            "refusing to overwrite a prior run -- pass a new --run-label/--run-id, "
+            "or --overwrite to reuse this one.")
+    os.makedirs(run_dir, exist_ok=True)
+    latest = os.path.join(out_dir, "latest")
+    try:  # 'latest' is a convenience; non-fatal if the FS refuses symlinks
+        if os.path.islink(latest) or os.path.exists(latest):
+            if os.path.islink(latest):
+                os.unlink(latest)
+        os.symlink(os.path.join("runs", run_id), latest)
+    except OSError:
+        pass
+    return run_dir, run_id
+
+
+def _write_params(run_dir: str, args: argparse.Namespace, run_id: str,
+                  n_wells: int) -> None:
+    """Write ``params.json`` so each run is self-describing for comparison."""
+    keys = ["manifest", "raw_root", "out_dir", "cache_dir", "checkpoint",
+            "device", "threshold", "diameter", "flow", "cellprob", "clean_k",
+            "min_neurite", "seam_band", "flatten_size", "soma_dilation"]
+    meta = dict(run_id=run_id,
+                created=datetime.datetime.now().isoformat(timespec="seconds"),
+                n_wells=n_wells,
+                **{k: getattr(args, k) for k in keys})
+    with open(os.path.join(run_dir, "params.json"), "w") as fh:
+        json.dump(meta, fh, indent=2)
+
+
+def run_overlay_only(args: argparse.Namespace) -> None:
+    """(Re)build per-well overlay TIFs for an existing run -- CPU only, no GPU.
+
+    Restores soma+prob from ``--cache-dir`` and rebuilds the montage grayscale
+    from the raw tiles, then redraws the overlay. Thresholds are read from the
+    target run's ``params.json`` (falling back to CLI args) so overlays match
+    that run exactly. Wells with no cache entry are skipped (they need a GPU
+    analyze pass first).
+    """
+    if not args.cache_dir:
+        raise SystemExit("--overlay-only needs --cache-dir (overlays rebuild "
+                         "from cached soma+prob; no GPU).")
+    run_dir = (os.path.join(args.out_dir, "runs", args.run_id)
+               if args.run_id else os.path.join(args.out_dir, "latest"))
+    if not os.path.isdir(run_dir):
+        raise SystemExit(f"--overlay-only: run dir not found: {run_dir} "
+                         "(pass --run-id of an existing run).")
+    pf = os.path.join(run_dir, "params.json")
+    p = json.load(open(pf)) if os.path.exists(pf) else {}
+    threshold = p.get("threshold", args.threshold)
+    seam_band = p.get("seam_band", args.seam_band)
+    min_neurite = p.get("min_neurite", args.min_neurite)
+    flatten_size = p.get("flatten_size", args.flatten_size)
+
+    manifest = list(csv.DictReader(open(args.manifest)))
+    n = 0
+    for row in manifest:
+        exp, well, tp = row["experiment"], row["well"], row["timepoint"]
+        cache_path = os.path.join(args.cache_dir, f"{exp}_{well}_{tp}.npz")
+        if not os.path.exists(cache_path):
+            print(f"{exp}/{well}: no cache -> skip (run a GPU analyze pass first)")
+            continue
+        welldir = os.path.join(args.raw_root,
+                               (row.get("raw_folder") or f"{exp}-RGEDI"), well)
+        paths, sites = well_tiles(welldir, well, tp)
+        if len(paths) != 16:
+            print(f"{exp}/{well}: found {len(paths)} tiles (need 16) -> skip")
+            continue
+        z = np.load(cache_path)
+        soma = z["soma_labels"].astype(np.int32)
+        prob = z["neurite_prob"].astype(np.float32) / 255.0
+        image01 = build_image01(paths, sites, flatten_size)
+        raw_mask = prob >= threshold
+        th_m, tw_m = soma.shape[0] // GRID, soma.shape[1] // GRID
+        if seam_band > 0:
+            for kk in range(1, GRID):
+                raw_mask[kk * th_m - seam_band:kk * th_m + seam_band, :] = False
+                raw_mask[:, kk * tw_m - seam_band:kk * tw_m + seam_band] = False
+        neurite_mask = remove_small_objects(raw_mask, min_neurite)
+        owner, skel = attribute(soma, neurite_mask)
+        tifffile.imwrite(
+            os.path.join(run_dir, f"{exp}_{well}_{tp}_percell.tif"),
+            colorize(image01, soma, owner, skel)[::4, ::4])
+        n += 1
+        print(f"{exp}/{well}: overlay rebuilt")
+    print(f"\nDONE. {n} overlays (re)built in {run_dir} (no GPU).")
+
+
 def main() -> None:
     """CLI entry point."""
     ap = argparse.ArgumentParser(description=__doc__)
@@ -276,12 +420,32 @@ def main() -> None:
                          "neurite_prob(uint8), meta} .npz here and reuse it on "
                          "re-run so metrics recompute on CPU with NO Cellpose / "
                          "U-Net -- enables resume and later re-thresholding "
-                         "without the GPU")
+                         "without the GPU. SHARED across runs (not versioned).")
+    ap.add_argument("--run-label", default="",
+                    help="human tag appended to the auto-timestamped run id; "
+                         "outputs land in <out-dir>/runs/<timestamp>[_label]/")
+    ap.add_argument("--run-id", default="",
+                    help="explicit run id (overrides the timestamp); also "
+                         "selects the target run for --overlay-only")
+    ap.add_argument("--overwrite", action="store_true",
+                    help="allow writing into a run dir that already has outputs "
+                         "(default: refuse, to protect earlier runs)")
+    ap.add_argument("--overlay-only", action="store_true",
+                    help="do not analyze; (re)build overlay TIFs for an existing "
+                         "run from --cache-dir + raw tiles (CPU only, no GPU). "
+                         "Targets --run-id, else <out-dir>/latest.")
     args = ap.parse_args()
+
+    if args.overlay_only:
+        run_overlay_only(args)
+        return
 
     os.makedirs(args.out_dir, exist_ok=True)
     if args.cache_dir:
         os.makedirs(args.cache_dir, exist_ok=True)
+    # Per-run output dir (never clobbers an earlier run); cache stays shared.
+    run_dir, run_id = _resolve_run_dir(args.out_dir, args.run_id, args.run_label,
+                                       args.overwrite)
     device = torch.device(args.device)
 
     # Lazy model init: Cellpose + the U-Net are built only when a well actually
@@ -298,15 +462,17 @@ def main() -> None:
 
     manifest = list(csv.DictReader(open(args.manifest)))
     print(f"manifest: {len(manifest)} wells")
+    _write_params(run_dir, args, run_id, len(manifest))
+    print(f"run: {run_id} -> {run_dir}")
 
-    cell_fh = open(os.path.join(args.out_dir, "percell.csv"), "w", newline="")
+    cell_fh = open(os.path.join(run_dir, "percell.csv"), "w", newline="")
     cfields = ["experiment", "well", "cell_line", "genotype", "soma_id",
                "area_px", "cy", "cx", "neurite_len_px", "skel_px",
                "n_branch_points", "n_end_points", "n_primary_neurites",
                "max_branch_length"]
     cwriter = csv.DictWriter(cell_fh, fieldnames=cfields)
     cwriter.writeheader()
-    well_fh = open(os.path.join(args.out_dir, "perwell.csv"), "w", newline="")
+    well_fh = open(os.path.join(run_dir, "perwell.csv"), "w", newline="")
     wfields = ["experiment", "well", "cell_line", "genotype", "n_somas",
                "n_somas_with_neurite", "total_len_px", "mean_len_per_soma",
                "median_len_per_soma", "mean_branch_points", "mean_tips",
@@ -432,13 +598,14 @@ def main() -> None:
             tag = " (cache)" if from_cache else ""
             print(f"{exp+'/'+well:18}{line:10}{geno:>5}{n:7d}{(total/max(n,1)):10.1f}{tag}")
             if image01 is not None:  # overlay only on a fresh compute (image not cached)
-                tifffile.imwrite(os.path.join(args.out_dir, f"{exp}_{well}_{tp}_percell.tif"),
+                tifffile.imwrite(os.path.join(run_dir, f"{exp}_{well}_{tp}_percell.tif"),
                                  colorize(image01, soma, owner, skel)[::4, ::4])
         except Exception as exc:  # noqa: BLE001 - keep the batch alive
             print(f"{exp}/{well}  FAILED: {type(exc).__name__}: {exc}", flush=True)
             continue
     cell_fh.close(); well_fh.close()
-    print(f"\nDONE. per-cell + per-well tables in {args.out_dir}")
+    print(f"\nDONE. per-cell + per-well tables in {run_dir}")
+    print(f"      (latest -> runs/{run_id}; cache shared at {args.cache_dir or 'none'})")
 
 
 if __name__ == "__main__":
