@@ -21,6 +21,35 @@ pipeline:
 | **Data filesystem** | `/gladstone/finkbeiner` NAS | NFS-mounted from the same NAS |
 | **Database** | Postgres `galaxy` @ `fb-postgres01` | Same DB, reached over the network |
 
+### Your machine (from ScreenConnect)
+
+| | |
+|---|---|
+| **Hostname** | `DDLUFB07224` (domain `gladstone.internal`) |
+| **OS** | Rocky/RHEL 8 (kernel 4.18.0.513) — matches this guide |
+| **CPU** | Intel Xeon E5-1630 v4 @ 3.70 GHz — **8 virtual CPUs (4 cores / 8 threads)** |
+| **RAM** | ~64 GB (63,798 MB) |
+| **IP** | `10.1.12.58` (wired) — give this to IT for the NFS/Postgres allow-lists |
+| **Model** | Dell Precision Tower 5810 |
+| **Login** | `root` (you have full admin) |
+| **Timezone** | America/Los_Angeles (already set) |
+
+> **Reality check on capacity.** 8 vCPUs and 64 GB is solid for a *queued,
+> mostly-serial* personal cruncher, but it is much smaller than a cluster node.
+> Two consequences, both handled in this guide:
+> 1. Several pipeline processes request **`cpus 20`** (and one `cpus 9`) in
+>    `modules.nf` — more than this box has. Left alone, those tasks would sit
+>    `PENDING` forever. Stage 10 clamps every request to fit via Nextflow's
+>    `resourceLimits`.
+> 2. With ~64 GB and a 15–20 GB/task footprint, expect roughly **one heavy task
+>    at a time** — everything else queues. That's the intended behavior for your
+>    multi-project use, just don't expect wide parallelism.
+>
+> **GPU note:** the ScreenConnect panel doesn't list a GPU. Confirm one is
+> physically present (`lspci | grep -i nvidia` in Stage 1) before doing the
+> NVIDIA/`--nv` steps. If there's no card, drop `--nv` and skip Cellpose/CNN —
+> the core montage→segmentation→tracking→overlay workflow is CPU-only and runs fine.
+
 **Why single-node Slurm instead of the `local` executor?** You said you'll send
 jobs from several projects and want a queue. The `local` executor only queues
 tasks *within one* `nextflow run`; two pipelines launched at once would both
@@ -293,13 +322,14 @@ Let Slurm detect the exact CPU/memory line for this box:
 slurmd -C            # prints:  NodeName=... CPUs=.. Boards=.. ... RealMemory=..
 ```
 
-Create `/etc/slurm/slurm.conf` (replace `HOSTNAME` with `hostname -s`, and paste
-the `CPUs=`/`RealMemory=` numbers from `slurmd -C`; set `RealMemory` a bit below
-physical RAM so the OS keeps headroom):
+Create `/etc/slurm/slurm.conf`. For this box the hostname is `DDLUFB07224`,
+CPUs is `8`, and RAM is ~64 GB — set `RealMemory=58000` to leave the OS headroom.
+(Always cross-check against `slurmd -C`; use its `CPUs=`/`RealMemory=` if they
+differ.)
 
 ```ini
 ClusterName=cruncher
-SlurmctldHost=HOSTNAME
+SlurmctldHost=DDLUFB07224
 
 AuthType=auth/munge
 SlurmUser=slurm
@@ -317,20 +347,23 @@ SelectType=select/cons_tres
 SelectTypeParameters=CR_Core_Memory
 ReturnToService=2
 
-# --- GPU as a schedulable resource (needed for Cellpose/CNN) ---
+# --- GPU as a schedulable resource (KEEP only if a GPU is present) ---
 GresTypes=gpu
 
-# --- This machine (paste CPUs/RealMemory from `slurmd -C`) ---
-NodeName=HOSTNAME CPUs=XX RealMemory=XXXXX Gres=gpu:1 State=UNKNOWN
+# --- This machine ---
+NodeName=DDLUFB07224 CPUs=8 RealMemory=58000 Gres=gpu:1 State=UNKNOWN
 
 # --- One queue named to match nextflow.config ---
 PartitionName=galaxy Nodes=ALL Default=YES MaxTime=INFINITE State=UP
 ```
 
-Tell Slurm about the GPU device in `/etc/slurm/gres.conf`:
+> **No GPU?** Remove the `GresTypes=gpu` line and the `Gres=gpu:1` token from
+> the `NodeName` line, and skip the `gres.conf` file below.
+
+Tell Slurm about the GPU device in `/etc/slurm/gres.conf` (GPU boxes only):
 
 ```ini
-NodeName=HOSTNAME Name=gpu File=/dev/nvidia0
+NodeName=DDLUFB07224 Name=gpu File=/dev/nvidia0
 ```
 
 ### 8d. Permissions, service start
@@ -403,21 +436,36 @@ Your current `process` block requests `executor = 'slurm'`, `queue = 'galaxy'`
 — **keep both**, they match the Slurm you just built. Adjust only what's
 machine-specific:
 
+- **⭐ `resourceLimits` — the important one.** Several processes hard-code
+  `cpus 20` / `cpus 9`, which exceed this box's 8 CPUs and would never schedule.
+  Add this line inside the `process { ... }` block to clamp *every* request down
+  to what the box has (Nextflow 24.04 supports `resourceLimits`):
+  ```groovy
+  process {
+      // ...existing settings...
+      resourceLimits = [ cpus: 7, memory: 58.GB, time: 7.d ]
+  }
+  ```
+  This caps any `cpus 20` task at 7 CPUs and any oversized memory request at
+  58 GB, so tasks actually run instead of hanging in `PENDING`. (7, not 8,
+  leaves a core for the OS + Nextflow head process.)
 - **`workDir`** (line ~25): currently a cluster path. Point it at fast local
   storage (falls back to NAS if you have no big local disk):
   ```groovy
   workDir = '/data/nf-work'          // create it: sudo mkdir -p /data/nf-work && sudo chown $USER /data/nf-work
   ```
-- **`maxForks`** (line ~88): cap concurrency to your core count. On one box,
-  something like `maxForks = <cores / cpus-per-task>` (e.g. 8 on a 32-core box
-  with 4-CPU tasks). Start conservative.
-- **`memory` / `cpus`**: leave the per-task defaults, but make sure
-  `maxForks × memory` stays under the box's RAM, or Slurm will hold jobs
-  (which is exactly the queueing you want, but keep it intentional).
+- **`maxForks`** (line ~88): with only 8 CPUs and ~64 GB, keep this low —
+  `maxForks = 2` is a sane start. Heavy tasks (7 CPUs / up to 20 GB each) will
+  effectively run one or two at a time; the rest queue. That's the intended
+  behavior for juggling multiple projects.
+- **`memory` / `cpus`**: the defaults are fine now that `resourceLimits` clamps
+  the outliers. Just keep `maxForks × per-task memory` under ~58 GB or Slurm
+  will hold the extras (again, that's the queue working as intended).
 - **`executor.queueSize`** (line ~71): fine as-is; it just caps how many tasks
   Nextflow keeps in the Slurm queue.
-- The `--nv` bind flag stays (you have a GPU). Keep the
-  `--bind /gladstone/finkbeiner:/gladstone/finkbeiner:rw`.
+- **`--nv`** in `containerOptions`: keep it **only if Stage 5 confirmed a GPU**.
+  If there's no card, delete `--nv` from both branches of `containerOptions`.
+  Either way keep `--bind /gladstone/finkbeiner:/gladstone/finkbeiner:rw`.
 
 ### 10b. `run.sh` — install dir and (optional) DB overrides
 
@@ -501,7 +549,8 @@ Useful controls:
 | `mkdir ... NXF_HOME ... Permission denied` | Point it somewhere writable: `export NXF_HOME=$HOME/.nxf` (or set in `run.sh`). |
 | `Database credentials file not found: .../pass.csv` | NAS not mounted or export missing that dir. Re-check Stage 6 (`mount -a`, `ls .../GALAXY_INFO/pass.csv`). |
 | DB connect hangs/refused | Firewall / `pg_hba.conf` not opened for this host. Re-run `nc -vz fb-postgres01... 5432`; send IT your IP (Stage 7). |
-| Node shows `down`/`drain` in `sinfo` | `sudo scontrol update NodeName=<host> State=RESUME`; check `/var/log/slurmd.log`. |
+| Task stuck `PENDING` forever, reason `(Resources)` or `(PartitionNodeLimit)` | It's requesting more CPUs/RAM than the box has (the `cpus 20` processes). Confirm `resourceLimits = [cpus:7, memory:58.GB, ...]` is in the `process` block (Stage 10a). |
+| Node shows `down`/`drain` in `sinfo` | `sudo scontrol update NodeName=DDLUFB07224 State=RESUME`; check `/var/log/slurmd.log`. |
 | munge `STATUS: ...` not Success | Key perms/ownership: `sudo chown -R munge:munge /etc/munge /var/lib/munge /var/log/munge`, then `systemctl restart munge`. |
 | GPU tasks fail / not visible | `nvidia-smi` on host, then `apptainer exec --nv ... nvidia-smi`; confirm `gres.conf` device path matches `/dev/nvidia0`. |
 | Files owned by `nobody`, writes fail on NAS | NFS idmap/squash mismatch — IT must align the export with cluster UID/GID for your host. |
