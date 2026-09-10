@@ -291,7 +291,7 @@ def main() -> None:
     _models = {}
     def ensure_models():
         if "cp" not in _models:
-            cp_model = models.CellposeModel(gpu=(args.device == "cuda"))
+            cp_model = models.CellposeModel(gpu=(args.device == "cuda"), pretrained_model="cpsam", use_bfloat16=False)
             _models["cp"] = cp_model
             _models["unet"] = load_model(args.checkpoint, device)
         return _models["cp"], _models["unet"]
@@ -317,7 +317,7 @@ def main() -> None:
     print(f"{'experiment/well':18}{'line':10}{'geno':>5}{'somas':>7}{'len/soma':>10}")
     for row in manifest:
         exp, well, tp = row["experiment"], row["well"], row["timepoint"]
-        welldir = os.path.join(args.raw_root, f"{exp}-RGEDI", well)
+        welldir = os.path.join(args.raw_root, (row.get("raw_folder") or f"{exp}-RGEDI"), well)
         paths, sites = well_tiles(welldir, well, tp)
         if len(paths) != 16:
             print(f"{exp}/{well:14}  SKIP: found {len(paths)} FITC tiles (need 16)")
