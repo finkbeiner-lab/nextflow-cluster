@@ -24,18 +24,27 @@ else
 fi
 cd "${USER_DIR}" || exit 1
 
-# Parse optional -c flag for custom config path
+# Parse the -c (config) and -p (pipeline script) flags.
+#
+# -p exists for the visual editor. When the editor's DAG does not match one
+# of the bundled presets it renders a bespoke pipeline-<runid>.nf next to the
+# generated config; without -p that file was written and then ignored, and
+# the run silently fell back to the bundled pipeline.nf driven only by the
+# DO_* flags in the config. Humans running `sbatch run.sh -c my.config` omit
+# -p and keep the bundled pipeline.
 CONFIG_FILE=""
-while getopts "c:" opt 2>/dev/null; do
+PIPELINE_FILE=""
+while getopts "c:p:" opt 2>/dev/null; do
     case $opt in
         c) CONFIG_FILE="$OPTARG" ;;
+        p) PIPELINE_FILE="$OPTARG" ;;
     esac
 done
 
 # Require -c flag — no default config
 if [ -z "${CONFIG_FILE}" ]; then
     echo "ERROR: No config file specified."
-    echo "Usage: sbatch ${INSTALL_DIR}/run.sh -c <your_config.config>"
+    echo "Usage: sbatch ${INSTALL_DIR}/run.sh -c <your_config.config> [-p <pipeline.nf>]"
     echo ""
     echo "To get started, create a config from the template:"
     echo "  cp ${INSTALL_DIR}/finkbeiner.config.template ./finkbeiner.config"
@@ -45,6 +54,12 @@ fi
 # Resolve relative paths against USER_DIR
 if [[ "${CONFIG_FILE}" != /* ]]; then
     CONFIG_FILE="${USER_DIR}/${CONFIG_FILE}"
+fi
+
+# -p defaults to the bundled pipeline so existing invocations are unchanged.
+PIPELINE_FILE="${PIPELINE_FILE:-${INSTALL_DIR}/pipeline.nf}"
+if [[ "${PIPELINE_FILE}" != /* ]]; then
+    PIPELINE_FILE="${USER_DIR}/${PIPELINE_FILE}"
 fi
 
 # Extract experiment name from config for the log filename
@@ -65,6 +80,7 @@ echo "Starting job on node: $(hostname)"
 echo "Install directory: ${INSTALL_DIR}"
 echo "User directory:    ${USER_DIR}"
 echo "Config file:       ${CONFIG_FILE}"
+echo "Pipeline script:   ${PIPELINE_FILE}"
 
 if command -v nvidia-smi &> /dev/null; then
     nvidia-smi
@@ -90,6 +106,14 @@ if [ ! -f "${CONFIG_FILE}" ]; then
     echo ""
     echo "To get started, copy the template config to your directory:"
     echo "  cp ${INSTALL_DIR}/finkbeiner.config.template ${USER_DIR}/finkbeiner.config"
+    exit 1
+fi
+
+# Check if the pipeline script exists. A missing bespoke pipeline means the
+# editor wrote the artifact somewhere the compute node cannot see it; fail
+# loudly here rather than letting Nextflow report a confusing script error.
+if [ ! -f "${PIPELINE_FILE}" ]; then
+    echo "ERROR: Pipeline script not found: ${PIPELINE_FILE}"
     exit 1
 fi
 
@@ -200,9 +224,18 @@ else
     exit 1
 fi
 
-# Run Nextflow — pipeline.nf is in INSTALL_DIR, config + all output in USER_DIR
-"${NEXTFLOW}" run "${INSTALL_DIR}/pipeline.nf" \
+# Run Nextflow — config + all output in USER_DIR.
+#
+# nextflow.config is passed explicitly rather than relying on Nextflow's
+# implicit "$baseDir/nextflow.config" pickup. That pickup only fires for the
+# bundled pipeline, whose baseDir IS ${INSTALL_DIR}. A bespoke -p script
+# lives in the run's work dir, so without this the whole cluster profile —
+# Slurm executor, container binds, per-process resources — would be silently
+# dropped and every task would run locally on the submit node. Listing it
+# first keeps the run config authoritative: later -c files win on conflict.
+"${NEXTFLOW}" run "${PIPELINE_FILE}" \
   -with-apptainer "${CONTAINER}" \
+  -c "${INSTALL_DIR}/nextflow.config" \
   -c "${CONFIG_FILE}" \
   -work-dir "${USER_DIR}/work_${SLURM_JOB_ID:-$$}" \
   --process.echo true \

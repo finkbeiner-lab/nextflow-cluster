@@ -121,9 +121,13 @@ class Ops:
         Db = Database()
 
         exp_uuid = Db.get_table_uuid('experimentdata', dict(experiment=self.experiment))
+        print(f'Experiment UUID: {exp_uuid}')
         welldata_df = Db.get_df_from_query('welldata', dict(experimentdata_id=exp_uuid))
+        print(f'welldata UUID: {welldata_df["id"].iloc[0] if not welldata_df.empty else None}')
         channeldata_df = Db.get_df_from_query('channeldata', dict(experimentdata_id=exp_uuid))
+        print(f'channeldata UUID: {channeldata_df["id"].iloc[0] if not channeldata_df.empty else None}')
         tiledata_df = Db.get_df_from_query('tiledata', dict(experimentdata_id=exp_uuid))
+        print(f'tiledata UUID: {tiledata_df["id"].iloc[0] if not tiledata_df.empty else None}')
         # Join well names onto tiledata for downstream convenience
         tiledata_df = pd.merge(tiledata_df, welldata_df[['id', 'well', 'celltype']], left_on='welldata_id', right_on='id', how='left', suffixes=[None, '_dontuse'])
 
