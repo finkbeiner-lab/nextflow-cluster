@@ -1,0 +1,40 @@
+# Files copied from the (slow, ~0.5 MB/s) SMB share to the local cache, in this order.
+# key -> source path. Large per-cell files first in the order the analysis needs them.
+# Copied once by steps/00_stage.py with a streaming sha256; never modified locally.
+share_root: /Volumes/Finkbeiner-Kaye/XDP
+large:
+  XDP5_cache:      MRID-rework/XDP5/ratio_SArecover/mrid_celldata_ratio.csv   # all wells, T1-T9
+  XDP10_rerun_raw: XDP10/GXYTMP/rerun-ExtraCellInfo/cell_data.csv            # complete re-extract (Mar 2025)
+  XDP10_trunc_raw: XDP10/GXYTMP/cell_data.csv                                 # truncated original (verification only)
+  XDP8_raw:        XDP8/GXYTMP/cell_data.csv                                  # for the R reproduction test
+  XDP8_cache:      MRID-rework/XDP8/ratio/mrid_celldata_ratio.csv            # T1,T3-T5 (T2 removed by Sept config)
+  XDP3_cache:      MRID-rework/XDP3/ratio/mrid_celldata_ratio.csv            # complete (Sept removal was a no-op)
+  XDP11_cache:     MRID-rework/XDP11/ratio_SArecover/mrid_celldata_ratio.csv # all wells, T1-T13
+  XDP1_cache:      MRID-rework/XDP1/ratio_SArecover/mrid_celldata_ratio.csv  # all wells, T1-T14
+small:
+  - MRID-rework/platemaps/XDP1-RGEDI-platelayout.csv
+  - MRID-rework/platemaps/XDP3-RGEDI-platelayout.csv
+  - MRID-rework/platemaps/XDP5-RGEDI-platelayout.csv
+  - MRID-rework/platemaps/XDP8-RGEDI-platelayout.csv
+  - MRID-rework/platemaps/XDP10-RGEDI-platelayout.csv
+  - MRID-rework/platemaps/XDP11-RGEDI-platelayout.csv
+  - XDP10/XDP10-RGEDI-platemap.csv
+  - MRID-rework/timepoints/XDP1-RGEDI_timepoints.csv
+  - MRID-rework/timepoints/XDP3-RGEDI_timepoints.csv
+  - MRID-rework/timepoints/XDP5-RGEDI_timepoints.csv
+  - MRID-rework/timepoints/XDP8-RGEDI_timepoints.csv
+  - MRID-rework/timepoints/XDP10-RGEDI_timepoints.csv
+  - MRID-rework/timepoints/XDP11-RGEDI_timepoints.csv
+  - MRID-rework/XDP1/ratio_SArecover/cell_count_well.csv
+  - MRID-rework/XDP3/ratio/cell_count_well.csv
+  - MRID-rework/XDP5/ratio_SArecover/cell_count_well.csv
+  - MRID-rework/XDP8/ratio/cell_count_well.csv
+  - MRID-rework/XDP10/ratio/cell_count_well.csv
+  - MRID-rework/XDP11/ratio_SArecover/cell_count_well.csv
+  - MRID-rework/audit/threshold_audit_ALL.csv
+  - MRID-rework/sa-control/sa_control_summary.csv
+  - MRID-rework/sa-control/xdp1_wholeplate_death.csv
+  - MRID-rework/MRID-code/MRID_Ratio_Functions.R
+  - MRID-rework/MRID-code/rework/mrid_config.R
+  - MRID-rework/MRID-code/rework/mrid_percellline_functions.R
+  - XDP-experiments-info.xlsx

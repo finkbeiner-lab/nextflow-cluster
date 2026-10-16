@@ -1,0 +1,87 @@
+# Pre-registered analysis parameters (checkpoint CP0, approved with the plan on 2026-10-13).
+# Changing any value after a fit has been seen requires a new entry in decisions.yaml.
+
+seed: 20261013
+
+cutoff_rule:            # D02
+  scale: log10
+  k_sd: 2.5             # dead = mu_L + k*sd_L ; live = mu_D - k*sd_D ; inner gap if they cross
+  sensitivity_k_sd: [2.0, 3.0]
+
+mixture:
+  n_components: 2
+  sensitivity_components: [1, 3]
+  n_init: 20
+  init_params: kmeans
+  reg_covar: 1.0e-6
+  tol: 1.0e-8
+  max_iter: 2000
+  trim_sd: 5.0          # two-pass trim: drop x < mu_L - 5 sd_L and x > mu_D + 5 sd_D, refit
+  gmm1d_crosscheck_tol: 0.01
+  per_well_min_cells: 150
+
+bootstrap:
+  B_fit: 1000           # well-cluster bootstrap of the fit
+  B_prepost: 2000       # well bootstrap for pre/post medians and DiD
+  B_tau: 1000           # well bootstrap for the dose-timepoint change-point
+  B_transfer: 2000
+  B_k3: 200
+  n_perm: 10000
+
+usability:              # R4 - failing any -> transfer (never drop)
+  min_cells: 500
+  min_wells: 2
+  min_cells_per_component: 50
+  min_dbic_12: 10
+  min_ashman_d: 2.0
+  min_sa_dead_excess: 0.10
+
+validity:               # R5
+  live_match_pass_z: 0.25
+  live_match_pass_r: [0.8, 1.25]
+  live_match_warn_z: 0.75
+  drift_stable_sd: 0.5
+  drift_major_sd: 1.0
+  edge_flag_sd: 0.25
+  sd_inflation_flag: 1.25
+  ks_flag: 0.05
+
+dose_timing:            # R2
+  outcomes: [median_log, q90_log, log_count]
+  accept_boot_mode_frac: 0.90
+  accept_effect_ratio: 3.0
+  xdp1_exclude_intervals: [[6, 7], [7, 8]]
+
+transfer:               # R7
+  loeo_tolerance_log10: 0.10
+
+figures:
+  dpi: 110
+  max_doc_mb: 16
+
+counts:                 # D26 - count-aware death evaluation (Steps 14-17); frozen before the formal fits
+  primary_sets: [D_sd, B]
+  min_baseline_live: 50
+  dip_fraction: 0.5     # detected count below 0.5 x both neighbours and recovering -> missing
+  capture_tps: {XDP3: 10, XDP5: 9, XDP10: 10, XDP11: 13}
+  capture_sensitivity_tps: {XDP10: [9]}
+  min_killed_frac: 0.10
+  B_capture: 2000
+  invariance_alpha: 0.05
+  B_j1: 500
+  j1_alpha: 0.05
+  n_sim: 200
+
+analysis:               # D28 (run 2): which threshold set is primary throughout Steps 11-17 and the documents
+  primary_set: W90
+  count_sets: [W90, D_sd]        # Steps 14-17: primary + the run-1 primary for comparison
+  set_labels:
+    W90: "rule D centre with 90% window (primary)"
+    W95: "rule D centre with 95% window"
+    D_sd: "rule D single cutoff (run 1 primary)"
+    D_abs: "rule D single cutoff, absolute transfer"
+    C_sd: "rule C"
+    C_abs: "rule C, absolute transfer"
+    B: "rule B (2.5 SD both sides)"
+    D_sd_drift: "rule D single cutoff, time-anchored drift"
+    W90_shared: "90% window, experiments with all four lines (XDP5, XDP10, XDP11)"

@@ -1,0 +1,190 @@
+# Ground truth for the XDP RGEDI S.A.-threshold rework. Every well role, timepoint role and
+# dosing fact used anywhere in the analysis comes from THIS file (never from a cache's Drug column).
+# Each fact carries a provenance tag: verified (checked against data or notebook), inferred
+# (derived from data by a pre-registered rule), or choice (an analysis decision, see decisions.yaml).
+#
+# Well blocks are {rows: "A-B" or "A,B", cols: "1-3" or "2,4,5"}; wells are zero-padded (C02).
+
+schema_version: 1
+
+lines_in_scope:
+  CTR-33114.C:  {short: 14C, genotype: CTR}
+  CTR-33113.2I: {short: 13I, genotype: CTR}
+  XDP-33109.2B: {short: 09B, genotype: XDP}
+  XDP-33363.D:  {short: 63D, genotype: XDP, alias_note: "written '33363.C' in the 2026-10-13 request; D06"}
+lines_out_of_scope:
+  CTR-33362.C: "out of scope by design (D07), not because of any result"
+
+sources:
+  # Per-cell caches written by MRID mrid_ratio() during the Sept 2026 rework (one RFP row per cell,
+  # GFP mean merged in, ratio = RFP mean / GFP mean). XDP10 is rebuilt in step 02 instead.
+  cache_note: "MRID-rework/<EXP>/ratio[_SArecover]/mrid_celldata_ratio.csv"
+
+experiments:
+
+  XDP1:
+    expt_name: XDP1-RGEDI
+    source: {kind: cache, key: XDP1_cache}
+    platemap: MRID-rework/platemaps/XDP1-RGEDI-platelayout.csv
+    timepoints: MRID-rework/timepoints/XDP1-RGEDI_timepoints.csv
+    lines:
+      CTR-33114.C:  {rows: B-H, cols: 2-8}
+      XDP-33109.2B: {rows: B-H, cols: 9-15}
+      XDP-33363.D:  {rows: B-H, cols: 16-22}
+    conditions:
+      untreated: []                       # whole plate dosed -> no untreated reference
+      sirna: {}
+      sa: [{rows: B-H, cols: 2-22}]
+    sa:
+      design: whole_plate
+      doses:
+        - {after_tp: 10, before_tp: 11, note: "AM after T10 imaging; T11 PM"}
+        - {after_tp: 12, before_tp: 13, note: "AM after T12 imaging; T13 PM"}
+      pre_tp: 10
+      post_tps: [11, 12, 13, 14]
+      fit_tps: [13, 14]          # D14: dead population appears only after the second dose
+      provenance: verified
+      evidence: "XDP-carDIFFs.xlsx sheet XDP1 C26/C27 ('SA dose 1 all wells', 'SA dose 2 all wells'); info workbook AB3"
+    flagged_tps:
+      7: "plate-wide death spike in Sept outputs, looks like an imaging artefact"
+      12: "cell counts rise ~13% (14C) and ~34% (63D) after dose 1 - unexplained"
+    notes: "12 h imaging interval (T1-T14 = 0-156 h). No 13I line."
+
+  XDP3:
+    expt_name: XDP3-RGEDI
+    source: {kind: cache, key: XDP3_cache}
+    platemap: MRID-rework/platemaps/XDP3-RGEDI-platelayout.csv
+    timepoints: MRID-rework/timepoints/XDP3-RGEDI_timepoints.csv
+    lines:
+      CTR-33114.C:  {rows: C-F, cols: 2-23}
+      XDP-33109.2B: {rows: G-J, cols: 2-23}
+      XDP-33363.D:  {rows: K-N, cols: 2-23}
+    conditions:
+      untreated: [{rows: C-N, cols: 6-23}]
+      sirna: {"CTR siRNA (0.5/1.0 uM)": [{rows: C-N, cols: "3"}]}
+      sa: [{rows: C-N, cols: "2,4,5"}]
+    sa:
+      design: wells
+      doses: [{after_tp: null, before_tp: null, note: "timing not recorded in the notebook"}]
+      pre_tp: 9                 # D12: onset inferred at T10 (step 04)
+      post_tps: [10]
+      fit_tps: [10]
+      expected_tau: 10
+      provenance: inferred
+      evidence: "info workbook AB22 'unknown intertimepoint period'; notebook XDP3 AG39 'SA treatment' legend + AG43 'ALSO DOSE COLUMN 5'; counts diverge only at T10"
+    notes: "Timepoint file lists T1 = 24 h (notebook grid says T1 = 0 h); file kept as-is. Sept well_removal for cols 2-5 never ran (padding bug)."
+
+  XDP5:
+    expt_name: XDP5-RGEDI
+    source: {kind: cache, key: XDP5_cache}
+    platemap: MRID-rework/platemaps/XDP5-RGEDI-platelayout.csv
+    timepoints: MRID-rework/timepoints/XDP5-RGEDI_timepoints.csv
+    lines:
+      CTR-33114.C:  {rows: C-E, cols: 3-22}
+      CTR-33113.2I: {rows: F-H, cols: 3-22}
+      XDP-33109.2B: {rows: I-K, cols: 3-22}
+      XDP-33363.D:  {rows: L-N, cols: 3-22}
+    conditions:
+      untreated: [{rows: C-N, cols: 3-8}]
+      sirna:
+        "CTR siRNA 0.5":  [{rows: C-N, cols: 11-14}]
+        "FAT1 siRNA 0.5": [{rows: C-N, cols: 15-18}]
+        "NNAT siRNA 0.5": [{rows: C-N, cols: 19-22}]
+      sa: [{rows: C-N, cols: 9-10}]
+    sa:
+      design: wells
+      doses: [{after_tp: 7, before_tp: 8, note: "200 uM, dosed 1 h before T8 imaging"}]
+      pre_tp: 7
+      alt_pre_tp: 6             # sensitivity: T7 is a plate-wide high-ratio artefact day (step 03)
+      transitional_tps: [8]     # 1 h post-dose: shown, never fitted
+      post_tps: [8, 9]
+      fit_tps: [9]
+      provenance: verified
+      evidence: "XDP-carDIFFs.xlsx sheet XDP5 D48/F48/F49; info workbook AB42"
+    notes: "C06 has no cells at T4-T6."
+
+  XDP8:
+    expt_name: XDP8-RGEDI
+    source: {kind: rebuild, raw_key: XDP8_raw}      # D16: rebuilt from raw with T2 restored
+    platemap: MRID-rework/platemaps/XDP8-RGEDI-platelayout.csv
+    timepoints: MRID-rework/timepoints/XDP8-RGEDI_timepoints.csv
+    lines:
+      CTR-33114.C:  {rows: C-F, cols: 3-22}
+      XDP-33109.2B: {rows: G-J, cols: 3-22}
+      XDP-33363.D:  {rows: K-N, cols: 3-22}
+    conditions:
+      untreated: [{rows: C-N, cols: 9-22}]
+      sirna:
+        "CTR siRNA":  [{rows: C-N, cols: 3-4}]
+        "FAT1 siRNA": [{rows: C-N, cols: 5-6}]
+        "NNAT siRNA": [{rows: C-N, cols: 7-8}]
+      sa: []
+    sa:
+      design: none_imaged
+      doses: [{after_tp: 5, before_tp: null, note: "'SA kill dosing' 2024-12-18; imaging skipped (IXM downtime); plate tossed"}]
+      pre_tp: null
+      post_tps: []
+      fit_tps: []
+      transfer_target_tp: 5     # own live population for the transfer rule (R7); T1 as sensitivity
+      provenance: verified
+      evidence: "XDP-carDIFFs.xlsx sheet XDP8 D48-D51; info workbook block labelled 'XDP10-RGEDI' (labels swapped)"
+    notes: "T2 restored from raw data (D16; the Sept config had removed it without a recorded reason). Hours 0,24,48,120,144."
+
+  XDP10:
+    expt_name: XDP10-RGEDI
+    source: {kind: rebuild, raw_key: XDP10_rerun_raw, verify_key: XDP10_trunc_raw}
+    platemap: MRID-rework/platemaps/XDP10-RGEDI-platelayout.csv
+    platemap_patches:
+      - {op: keep_rows, first: 1, last: 210, reason: "data rows 211-240 (file lines 212-241) are an appended block that re-lists I20-N20, C21-N21, C22-N22 with line labels shifted one row; it duplicates 25 wells"}
+      - {op: set_drug, block: {rows: D-M, cols: "22"}, value: SA, reason: "true S.A. wells (column 22, rows D-M) with first-block line labels"}
+    timepoints: MRID-rework/timepoints/XDP10-RGEDI_timepoints.csv
+    lines:
+      CTR-33114.C:  {rows: D-E, cols: 2-22}
+      CTR-33113.2I: {rows: F-G, cols: 2-22}
+      CTR-33362.C:  {rows: H-I, cols: 2-22}
+      XDP-33109.2B: {rows: J-K, cols: 2-22}
+      XDP-33363.D:  {rows: L-M, cols: 2-22}
+    conditions:
+      untreated: [{rows: D-M, cols: 8-21}]
+      sirna:
+        "CTR siRNA":  [{rows: D-M, cols: 2-3}]
+        "FAT1 siRNA": [{rows: D-M, cols: 4-5}]
+        "NNAT siRNA": [{rows: D-M, cols: 6-7}]
+      sa: [{rows: D-M, cols: "22"}]
+    sa:
+      design: wells
+      doses: [{after_tp: 8, before_tp: 9, note: "'SA dose / FIX ICC PLATE' on T8 day"}]
+      pre_tp: 8
+      post_tps: [9, 10]
+      fit_tps: [9, 10]
+      edge_column: 22
+      provenance: verified
+      evidence: "XDP-carDIFFs.xlsx sheet XDP10 D40; info workbook block labelled 'XDP8-RGEDI' (labels swapped) AB80"
+    notes: "Sept cell_data.csv truncated mid-row (row M missing, L22 T1 only); rebuilt from rerun-ExtraCellInfo."
+
+  XDP11:
+    expt_name: XDP11-RGEDI
+    source: {kind: cache, key: XDP11_cache}
+    platemap: MRID-rework/platemaps/XDP11-RGEDI-platelayout.csv
+    timepoints: MRID-rework/timepoints/XDP11-RGEDI_timepoints.csv
+    lines:
+      CTR-33114.C:  {rows: D-E, cols: 2-22}
+      CTR-33113.2I: {rows: F-G, cols: 2-22}
+      CTR-33362.C:  {rows: H-I, cols: 2-22}
+      XDP-33109.2B: {rows: J-K, cols: 2-22}
+      XDP-33363.D:  {rows: L-M, cols: 2-22}
+    conditions:
+      untreated: [{rows: D-M, cols: 2-16}]
+      sirna: {}
+      sa: [{rows: D-M, cols: 17-22}]
+    sa:
+      design: wells
+      doses: [{after_tp: 12, before_tp: 13, note: "SA added 15:30 after T12 imaging"}]
+      pre_tp: 12
+      alt_pre_tp: 11            # sensitivity: T12 has a plate-wide high-ratio spike and count drop (step 03)
+      post_tps: [13]
+      fit_tps: [13]
+      edge_column: 22
+      provenance: verified
+      evidence: "XDP-carDIFFs.xlsx sheet XDP11 H46; info workbook AB99"
+    notes: "Platemap Drug column was patched in place on 2026-09-21 (fix_xdp11_sa.R); original not kept. Weekend gap after T3 (48 h -> 120 h). Plate-wide drop in detected cells T11->T12 before the dose (see step 03 ledger)."

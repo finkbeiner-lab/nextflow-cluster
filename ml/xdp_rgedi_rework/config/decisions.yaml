@@ -1,0 +1,513 @@
+- id: D01
+  date: 2026-10-13
+  step: scope
+  question: Which per-cell data should the reanalysis use?
+  options:
+  - label: Original Galaxy segmentation
+    pros: same data behind every MRID output Julia has seen; only thresholds and labels change
+    cons: FITC-threshold segmentation can miss dying GFP-dim cells
+  - label: Cellpose + EGFP gate re-segmentation
+    pros: detects more cells, splits touching cells
+    cons: needs a full GPU re-run of all 6 experiments first
+  decision: Original Galaxy segmentation; XDP10 from the verified complete re-extract.
+  rationale: Keeps any change in results attributable to the thresholds and label corrections alone.
+  status: approved_austin
+  approved_by: Austin
+  approved_date: 2026-10-13
+- id: D02
+  date: 2026-10-13
+  step: thresholds
+  question: How should S.A. evidence be turned into a live and a dead cutoff?
+  options:
+  - label: Mixture + 2.5 SD (two cutoffs)
+    pros: Julia's established SD convention; S.A. provides a clean live and dead population
+    cons: live cutoff can drop low if the dead population is broad (flagged)
+  - label: Mixture + 2.5 SD (single cutoff)
+    pros: no cells dropped
+    cons: no ambiguous zone
+  - label: Mixture posterior 9x likelihood
+    pros: symmetric
+    cons: 9x is an arbitrary convention nobody in the lab uses
+  decision: On log10(ratio), fit a 2-component mixture to post-dose S.A.-well cells per line x experiment. Dead cutoff = live
+    mean + 2.5 SD; live cutoff = dead mean - 2.5 SD; cells between are dropped; if the two cross, use the inner gap. [Superseded
+    at review point A by D18 (only the S.A. dead component is used) and D20 (rules B, C, D computed; live side from untreated
+    wells).]
+  rationale: Julia suggested SD-from-mean at ~2.5x. On the log scale each population is roughly symmetric, so 2.5 SD means
+    ~0.6% of a population falls past the other's cutoff. The mixture measures the live SD from live cells only, which a raw
+    SD of a mixed well cannot.
+  status: superseded
+  approved_by: Austin
+  approved_date: 2026-10-13
+- id: D03
+  date: 2026-10-13
+  step: transfer
+  question: How are cutoffs set where there is no usable S.A. readout (XDP8, or a case failing the usability rules)?
+  options:
+  - label: Transfer S.A. offset in live-SD units
+    pros: uses the target's own live population plus S.A. evidence
+    cons: assumes the offset is stable across experiments (tested by leave-one-experiment-out)
+  - label: Borrow absolute values
+    pros: simple
+    cons: ignores the target's own ratio level
+  - label: Exclude
+    pros: none needed
+    cons: loses XDP8
+  decision: Transfer the S.A.-derived offset expressed in live-SD units; a line is never dropped.
+  status: approved_austin
+  approved_by: Austin
+  approved_date: 2026-10-13
+- id: D04
+  date: 2026-10-13
+  step: prepost
+  question: Include Julia's pre- vs post-S.A. comparison?
+  decision: Yes - ratio distributions, medians (with a difference-in-differences against untreated wells) and cell totals,
+    per line per experiment, computed before any threshold.
+  status: approved_austin
+  approved_by: Austin
+  approved_date: 2026-10-13
+- id: D05
+  date: 2026-10-13
+  step: odds_ratios
+  question: Which odds-ratio figures does Julia want (later phase)?
+  decision: (a) each line vs a control line over time with 95% CI on one panel; (b) pairwise line x line heatmap per timepoint;
+    (c) per-experiment forest plot.
+  status: approved_austin
+  approved_by: Austin
+  approved_date: 2026-10-13
+- id: D06
+  date: 2026-10-13
+  step: scope
+  question: The request named '33363.C'; the data and notebooks name XDP-33363.D.
+  decision: 33363.C is a typo for XDP-33363.D.
+  status: approved_austin
+  approved_by: Austin
+  approved_date: 2026-10-13
+- id: D07
+  date: 2026-10-13
+  step: scope
+  question: Which lines are analysed?
+  decision: CTR-33114.C, CTR-33113.2I, XDP-33109.2B, XDP-33363.D. CTR-33362.C is out of scope by design (not because of any
+    result).
+  status: approved_austin
+  approved_by: Austin
+  approved_date: 2026-10-13
+- id: D08
+  date: 2026-10-13
+  step: rules
+  question: Freeze the analysis rules (well roles, fit timepoints, usability, validity tiers, transfer, sensitivity set) before
+    any fit is seen?
+  decision: Yes - rules R1-R8 of the approved plan and config/params.yaml, frozen as checkpoint CP0.
+  rationale: Answers the 'picked by eye' and 'post-hoc line drop' criticisms of earlier runs.
+  status: approved_austin
+  approved_by: Austin
+  approved_date: 2026-10-13
+- id: D09
+  date: 2026-10-13
+  step: data_integrity
+  question: XDP10 per-cell source - the original cell_data.csv is truncated; use the complete re-extract?
+  decision: Use rerun-ExtraCellInfo/cell_data.csv if it is identical to the original on every overlapping well x timepoint
+    x channel group (step 02); otherwise stop and use verified rows only.
+  status: approved_austin
+  decider: Austin (records)
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D10
+  date: 2026-10-13
+  step: data_integrity
+  question: XDP10 platemap has an appended duplicate block; how to correct it?
+  decision: Keep the first block only (data rows 1-210) and mark column 22 rows D-M as S.A.
+  status: approved_austin
+  decider: Austin (records)
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D11
+  date: 2026-10-13
+  step: data_integrity
+  question: The new info workbook's XDP8 and XDP10 blocks - which is which?
+  decision: 'Their labels are swapped. The block labelled XDP8 is XDP10 (5 lines, S.A. column 22, T8->T9) and vice versa (XDP8:
+    S.A. dosed but never imaged).'
+  rationale: Matches the lab notebook (XDP-carDIFFs.xlsx) cell-line lists and imaging logs and the wells/timepoints present
+    in the data.
+  status: approved_austin
+  decider: Austin (records)
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D12
+  date: 2026-10-13
+  step: dose_timing
+  question: When did S.A. take effect in XDP3 (timing not recorded)?
+  options:
+  - label: Onset T10 (pre-dose T9)
+    pros: the onset scan gives T10 on all three outcomes (90th pct, median, cell count) and the S.A. and untreated wells track
+      each other through T9
+    cons: T10 is the last imaged timepoint, so the scan cannot place the onset later, and there is only one post-dose image
+  - label: Treat XDP3 T10 as transitional (like XDP5 T8)
+    pros: the T10 change is a near-uniform shift of the whole distribution with no distinct dead population, as XDP5 looked
+      1 h after dosing
+    cons: no post-dose readout left
+  decision: 'Proposed: onset T10, tagged [Inferred]. This only affects the before/after numbers in Step 4: XDP3 has no distinct
+    S.A.-dead population at T10, so its thresholds come from transfer under either option.'
+  evidence:
+  - Step 3 onset table
+  - Step 4 shift-function pattern
+  - Step 5.1 model check
+  status: approved_austin
+  decider: Austin, shown to Julia (method)
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D13
+  date: 2026-10-13
+  step: dose_timing
+  question: XDP5 T8 was imaged 1 h after dosing - pre, post or neither?
+  decision: Transitional - shown in the pre/post figures, excluded from fits; pre = T7, fit = T9.
+  status: approved_austin
+  approved_by: Austin (plan R1)
+  approved_date: 2026-10-13
+- id: D14
+  date: 2026-10-13
+  step: dose_timing
+  question: XDP1 (whole plate, two doses) - which post-dose timepoints define the S.A. dead population?
+  decision: 'Proposed: T13-T14. XDP1 also fails its own advance check for the dose-1 effect (Step 4), so XDP1 is used for
+    thresholds only where a dead population is clearly present, and its untreated reference is its own pre-dose T10 cells.'
+  status: approved_austin
+  decider: Austin, shown to Julia (method)
+  options:
+  - label: T13-T14 (after the second dose)
+    pros: a distinct dead population appears only after dose 2 (14C ~16%, 63D ~5% of cells); dose 1 produced no dead population
+      in any line
+    cons: changes the plan (which pooled T11-T14)
+  - label: T11-T14 pooled (as planned)
+    pros: as pre-specified
+    cons: dilutes the dead population with dose-1 survivors; a dead population is then found only in 14C
+  evidence:
+  - Step 5.2 cutoff preview (XDP1 panel)
+  - Step 4 XDP1 rows
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D15
+  date: 2026-10-13
+  step: rules
+  question: Do siRNA wells enter threshold fits or the untreated reference?
+  decision: No. Untreated = Drug blank/NA wells only.
+  status: approved_austin
+  approved_by: Austin (plan R1)
+  approved_date: 2026-10-13
+- id: D16
+  date: 2026-10-13
+  step: data_integrity
+  question: XDP8 T2 was removed by the Sept config without a recorded reason - keep removed or restore from raw?
+  decision: 'Restore XDP8 T2: rebuild XDP8 per-cell ratios from raw data with no timepoint removed (only matters for the later
+    MRID run).'
+  status: approved_austin
+  decider: Austin (records)
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D17
+  date: 2026-10-13
+  step: thresholds
+  question: What if the live cutoff falls below the live median (LIVE_BELOW_MEDIAN)?
+  decision: Keep the D02 rule as primary and flag it; also carry the pre-registered alternative (live cutoff floored at the
+    live-component mean). Austin resolves at review point B. [Applies to track 2 (rule B) only; tracks with a single cutoff
+    have no ambiguous zone.]
+  status: approved_austin
+  approved_by: Austin (plan R5)
+  approved_date: 2026-10-13
+- id: D18
+  date: 2026-10-13
+  step: thresholds
+  question: The planned 2-component mixture does not isolate the live population in 7 of 18 S.A. cases. How should the S.A.
+    dead population be found?
+  options:
+  - label: 3 components; use only the DEAD component from S.A. wells
+    pros: the dead component is narrow and sits at a similar ratio in every experiment; it is the only part of the S.A. fit
+      the cutoffs need if the live side comes from untreated wells (D20)
+    cons: deviation from the planned 2 components
+  - label: Keep 2 components
+    pros: as planned
+    cons: in 7 cases the 'live' component is a broad low-ratio component, giving nonsensical cutoffs
+  decision: 'Proposed: fit 3 components to post-dose S.A. cells and take the dead population from the highest component (weight
+    at least 5%). The other two components are NOT interpreted: the review showed the extra component is a broad spread of
+    live-range cells (centres at ratio 0.02-0.07), often sitting near the untreated peak, not a dim-RFP artefact as first
+    described. The live population is taken from untreated wells instead (D20).'
+  rationale: Only the S.A.-dead population needs the mixture; the live population is better measured where there is no S.A.
+    stress.
+  evidence:
+  - Step 5.1 model check
+  - Step 5.2 cutoff preview
+  status: approved_austin
+  decider: Austin, shown to Julia (method)
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D19
+  date: 2026-10-13
+  step: dose_timing
+  question: The planned onset acceptance rule (effect > 3x the largest pre-dose change in every line) rejects even the experiments
+    whose dosing is recorded. What should count as evidence of an onset?
+  options:
+  - label: 'Proposed rule: 90th-pct onset with bootstrap support >= 0.90 and a positive effect in every line'
+    pros: recovers the recorded timing in XDP10 (T9) and XDP11 (T13); finds no onset in any pre-dose-only window (negative
+      control)
+    cons: replaces a rule after seeing it fail; does not recover XDP5 (T7 artefact day)
+  - label: Keep the 3x rule
+    pros: as planned
+    cons: compares one post-dose effect with the maximum of 7-11 noisy pre-dose estimates, so it fails on the positive controls
+      and cannot discriminate
+  decision: 'Proposed: retire the 3x rule as miscalibrated and use the proposed rule, reported with its validation (2 of 3
+    recorded experiments recovered on the 90th pct; XDP5 explained by the T7 artefact; no false onsets in pre-dose windows).'
+  evidence:
+  - Step 3 onset table and negative control
+  status: approved_austin
+  decider: Austin, shown to Julia (method)
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D20
+  date: '2026-10-13'
+  step: thresholds
+  decider: Julia and Austin (method)
+  question: 'Applying 2.5 SD on both sides does not fit these data: the untreated live population is broad on the log scale,
+    so ''live mean + 2.5 SD'' lands at or above the centre of the S.A.-killed population in several cases, and it drifts upward
+    late in a run. Which cutoff rule should be used?'
+  options:
+  - label: 'D: single cutoff at the equal-density boundary between untreated live and S.A. dead'
+    pros: set by the S.A.-dead population and the untreated live population; calls almost all of the S.A.-dead population
+      dead (Step 6); less sensitive to late drift of living cells than C
+    cons: not literally an SD rule
+  - label: 'C: single cutoff at S.A.-dead mean - 2.5 SD'
+    pros: Julia's 2.5 SD applied to the population S.A. reveals; <= 0.6% of S.A.-dead cells called live
+    cons: counts living cells that drift upward late in a run as dead (untreated death up to ~26% in XDP11 by T11)
+  - label: 'B: two cutoffs, live side from untreated wells (2.5 SD each side)'
+    pros: keeps the two-cutoff scheme; low untreated death
+    cons: dead cutoff above the dead-population centre in several cases; leaves a large share of S.A.-dead cells uncalled
+      (Step 6, most in XDP11)
+  - label: 'A: D02 as written (live side from S.A.-well survivors)'
+    pros: as planned
+    cons: S.A. survivors are stressed and spread out, pushing the dead cutoff highest; misses the most S.A.-dead cells
+  decision: 'Compute two tracks separately and compare them: track 1 = rule D (equal-density boundary between untreated live
+    and S.A. dead) with rule C (S.A.-dead mean - 2.5 SD) as its sensitivity analysis; track 2 = rule B (2.5 SD on both sides,
+    live side from untreated wells, ambiguous cells dropped). The choice between tracks is made after comparing their outputs.'
+  evidence:
+  - Step 5.2 cutoff preview
+  - Step 5.3 drift over time
+  status: approved_austin
+  approved_by: Austin (review point A)
+  approved_date: '2026-10-13'
+- id: D21
+  date: '2026-10-13'
+  step: transfer
+  decider: Austin, shown to Julia (method)
+  question: Transferred cutoffs (10 of 21 cases) depend on how the offset is carried over. For rules D and C the planned live-SD
+    units predict held-out experiments less accurately than absolute log offsets (Step 8); rule B's dead cutoff transfers
+    exactly in live-SD units by construction. Which form should be used for D and C?
+  options:
+  - label: Absolute log offset (cutoff = live peak x fixed fold per line)
+    pros: smaller leave-one-experiment-out error; matches the finding that the S.A.-dead population sits at a similar ratio
+      everywhere
+    cons: deviation from the planned live-SD units (D03)
+  - label: Live-SD units (as planned)
+    pros: as planned; scales with each experiment's live spread
+    cons: larger prediction error; experiments with a narrow live population (XDP3) get low cutoffs
+  decision: 'Report both: transferred rule D and rule C cutoffs are computed with the planned live-SD offsets (primary) and
+    with absolute log offsets (sensitivity); both are carried into the MRID comparison.'
+  evidence:
+  - Step 8
+  status: approved_austin
+  approved_by: Austin (review point B)
+  approved_date: '2026-10-14'
+- id: D22
+  date: '2026-10-13'
+  step: validity
+  decider: Julia and Austin (method)
+  question: In some cases the untreated live peak drifts by more than 1 live SD over the run (Step 7). One fixed cutoff per
+    line x experiment then turns drift into apparent death or survival. How should those cases be handled?
+  options:
+  - label: Keep fixed cutoffs; report time-anchored cutoffs as a sensitivity
+    pros: MRID unchanged; drift effect shown
+    cons: drifting cases may bias the log-odds
+  - label: Time-anchored cutoffs for drifting cases (cutoff moves with the live peak)
+    pros: removes drift
+    cons: could also remove real, population-wide biology
+  decision: Keep one fixed cutoff per line x experiment; add a time-anchored sensitivity (the cutoff moves with the untreated
+    live peak at each timepoint) for the drifting cases (MODERATE or MAJOR tier in Step 7).
+  evidence:
+  - Step 7
+  status: approved_austin
+  approved_by: Austin (review point B)
+  approved_date: '2026-10-14'
+- id: D23
+  date: '2026-10-13'
+  step: odds_ratios
+  decider: Austin
+  question: Both tracks (rule D with C as sensitivity; rule B) are computed. Next step?
+  options:
+  - label: Run MRID log-odds for track 1 (D), its sensitivity (C) and track 2 (B) and compare the odds ratios
+    pros: compares the tracks on the actual endpoint
+    cons: three MRID runs
+  decision: 'Run MRID log-odds (nonlinear cell-line model, all experiments combined) for each threshold set and compare odds
+    ratios of every line against BOTH control lines (CTR-33114.C and CTR-33113.2I). Sets: rule D (live-SD transfer; track
+    1 primary), rule D (absolute transfer), rule C (live-SD and absolute transfer), rule B (track 2), and rule D time-anchored
+    for drifting cases. Exclusions: S.A. wells, XDP1 after T10 (whole plate dosed), siRNA wells, CTR-33362.C.'
+  status: approved_austin
+  approved_by: Austin (review point B)
+  approved_date: '2026-10-14'
+- id: D24
+  date: '2026-10-14'
+  step: odds_ratios
+  decider: Julia and Austin
+  question: Which threshold track becomes the primary analysis, and how should the XDP-vs-control result be reported given
+    that it depends on the control line and varies between experiments (Step 13)?
+  options:
+  - label: Track 1 (rule D) primary, others as sensitivity
+    pros: calls almost all S.A.-killed cells dead; tight intervals; less affected by drift than rule C
+    cons: single cutoff (no ambiguous zone)
+  - label: Track 2 (rule B) primary
+    pros: closest to Julia's 2.5 SD on both sides and MRID's two-cutoff scheme
+    cons: leaves a large share of S.A.-killed cells uncalled (most in XDP11)
+  - label: Report both side by side
+    pros: shows the dependence on the threshold choice
+    cons: no single headline number
+  decision: Superseded by D28 (Austin, 2026-10-15) - the cutoff becomes the rule D centre with a confidence window.
+  evidence:
+  - Step 13 (13.3, 13.4)
+  - Step 6
+  status: superseded
+- id: D25
+  date: '2026-10-14'
+  step: odds_ratios
+  decider: Julia and Austin
+  question: MRID's combined model treats each line difference as identical in every experiment, but per-experiment differences
+    vary far more than that (I2 89-99%). Should the combined analysis include a line-by-experiment random effect (or a random-effects
+    meta-analysis across experiments)?
+  options:
+  - label: Yes - include line x experiment variation
+    pros: intervals reflect how reproducible the difference is across experiments; the honest basis for a claim about XDP
+      vs control
+    cons: wider intervals; departs from MRID as published
+  - label: No - keep MRID as is
+    pros: unchanged method
+    cons: intervals overstate certainty; p-values far too small
+  decision: Pending - for discussion with Julia.
+  evidence:
+  - Step 13 (13.3, 13.4)
+  status: proposed
+- id: D26
+  date: '2026-10-14'
+  step: counts
+  decider: Austin
+  question: MRID scores dead cells only among cells still detected, and dying cells lose GFP and drop out of detection. Should
+    cell counts over time be added to the death evaluation, and how?
+  options:
+  - label: S.A.-calibrated visibility check and correction (primary), live-cell retention model with a calibration test
+      (cross-check)
+    pros: uses the S.A. wells as a within-line calibration experiment; every assumption is testable; runs in minutes
+    cons: two new analyses next to MRID; S.A. (acute) death may stay visible differently from spontaneous death
+  - label: Single-cell survival on tracks
+    pros: per-cell hazards
+    cons: most cells lose identity within days (object turnover 15-38% per interval, line-dependent)
+  - label: Joint multi-state model
+    pros: complete on paper
+    cons: entries vs death and unseen death vs non-death loss are not identified from these data
+  decision: 'Option 1, rules frozen before any formal fit (pilot numbers had been seen). Counts per well x timepoint use
+    the Step 11 live/dead call (lib/livedead.py) and include S.A. wells. QC: a well x timepoint with no cells, or whose
+    detected count falls below half of both neighbours and then recovers, is missing; wells with fewer than 50 live cells
+    at the baseline are dropped. Capture fraction c = excess visible dead / live cells removed by S.A., per line x
+    experiment at the last post-dose fit timepoint (XDP3 T10, XDP5 T9, XDP10 T10, XDP11 T13; XDP10 T9 and the alternative
+    pre-dose timepoints as sensitivity), with the expected no-dose counts taken from untreated wells of the same line
+    (difference in differences). Usable if the removed fraction is at least 0.10 with bootstrap lower bound above 0.
+    Well bootstrap (B = 2000); XDP10 (2 S.A. wells per line) resamples its S.A. counts as Poisson draws and is flagged
+    FEW_WELLS. Lines are called equally visible within an experiment if every pairwise 95% CI of log(c_A/c_B) includes 0
+    and the heterogeneity Q test has p >= 0.05. If all usable experiments pass, the MRID odds ratios stand as death-rate
+    ratios; otherwise the S.A.-corrected odds ratios (log OR + log(c_ref/c_cmp)) become the primary comparison, shown next
+    to the uncorrected ones. Corrected odds ratios are computed in every case. Retention window starts at k0 = the
+    timepoint in the first half of the run where the pooled untreated detected count (all in-scope lines) peaks; T1 and
+    k0+1 as sensitivity. The calibration test (live-cell loss explained by GEDI odds) passes in an experiment if the
+    coefficient on cumulative odds is negative with 95% CI excluding 0 and the robust Wald test for remaining line
+    differences has p >= 0.05; only then is a dropout-corrected cumulative death reported for that experiment.'
+  evidence:
+  - Steps 14-17
+  status: approved_austin
+  approved_by: Austin (plan approval)
+  approved_date: '2026-10-14'
+- id: D27
+  date: '2026-10-14'
+  step: counts
+  decider: Austin and Julia
+  question: After review, should the S.A. capture fractions pass a validity gate, and should the S.A.-corrected odds ratios
+    be the primary comparison (the D26 outcome) or a sensitivity range next to the MRID odds ratios?
+  options:
+  - label: Gate the capture fractions; MRID odds ratios stay primary; corrected odds ratios shown as a sensitivity range
+      across readouts (recommended)
+    pros: removes capture fractions that cannot be capture (XDP5, c > 1 with no loss of detected cells); does not let a
+      readout-dependent factor replace the measured odds ratios; the range shows how much dropout could move them
+    cons: departs from the D26 rule frozen before the fits
+  - label: Gate the capture fractions; corrected odds ratios primary (D26 outcome with the gate)
+    pros: keeps the D26 logic
+    cons: the correction depends on the readout timepoint (XDP10 T9 vs T10 reverse the line ranking) and on when each
+      line's cells died after dosing, which the simulation shows can create a bias that was not there
+  - label: Keep D26 exactly as frozen
+    pros: no deviation from the frozen rule
+    cons: uses XDP5 capture fractions above 1, which are not capture fractions
+  decision: Pending - for discussion with Julia. Both D26 as frozen and the gated versions are computed and shown (Step 17).
+  rationale: 'Adversarial review (2026-10-14) found: under a single cutoff c > 1 is only possible if the S.A. wells kept more
+    detected cells than the no-dose counterfactual (XDP5: detected cells did not fall); c measured at one readout is not a
+    stable property of a line (XDP10 T9 vs T10); the equal-visibility rule calls differences often even when there are
+    none (six pairwise tests plus Q); with 3-6 experiments, pooled intervals need small-sample (Hartung-Knapp) intervals.
+    Validity gate: a capture fraction is used only if the S.A. wells lost detected cells against the pooled
+    detected-cell counterfactual N_SA(pre) x N_UT(post) / N_UT(pre) (95% upper bound of the ratio below 1; this
+    approximately bounds c, which exceeds 1 only when detected cells exceed Lhat + Dhat) and fewer than 2.5% of bootstrap
+    replicates have c <= 0. With or without the gate the frozen D26 rule makes the corrected odds ratios primary (XDP11
+    differs); the recommended option overrides that rule after the results were seen. No option changes the track-1
+    conclusion (every XDP-vs-control interval includes 1).'
+  evidence:
+  - Steps 15-17
+  status: proposed
+- id: D28
+  date: '2026-10-15'
+  step: thresholds
+  decider: Austin
+  question: Rule D uses one cutoff, so every cell is called live or dead. The original approach used two cutoffs with a
+    buffer zone between them. How should a buffer zone be built around the rule D centre?
+  options:
+  - label: Confidence window around the rule D centre
+    pros: same fitted live and dead populations as the centre; width adapts to how well the two populations separate in
+      each line x experiment; the edges have a plain meaning (90% or 95% sure)
+    cons: the confidence level is a choice; drops cells near the centre
+  - label: Centre plus or minus k live-SD
+    pros: SD language Julia already uses
+    cons: which SD and which k are arbitrary; ignores how far apart live and dead sit
+  - label: Fixed fold window
+    pros: simplest to explain
+    cons: width is a pure choice and does not adapt per line
+  decision: 'Confidence window, run as a new analysis run (run 2; run 1 = rule D single cutoff, kept unchanged). A cell is
+    live if the dead/live density ratio is at most 1/N and dead if it is at least N (equal priors, so the centre is rule
+    D); cells in between are dropped. N = 9 (90%, set W90) is primary and N = 19 (95%, set W95) a sensitivity. Edges are
+    transferred like the other cutoffs (live-SD offsets). Where the dead edge never reaches the target confidence it is
+    capped at the centre of the S.A.-dead population and flagged (XDP11 63D at 95%).'
+  evidence:
+  - Step 6b
+  status: approved_austin
+  approved_by: Austin
+  approved_date: '2026-10-15'
+- id: D29
+  date: '2026-10-15'
+  step: segmentation (run 3)
+  decider: Austin
+  question: The neurite analysis (Cellpose-SAM + clean gate) finds many more somas than the Galaxy segmentation used in
+    runs 1-2 (D01). Does the MRID result change if XDP10 is segmented that way instead?
+  options:
+  - label: Neurite soma recipe on raw tiles, intensities from Galaxy background-corrected tiles
+    pros: exactly the neurite-run masks (same code version, same gate); the gate works as designed on raw tiles; raw and
+      BG tiles share one pixel grid, so no montage or alignment step is needed
+    cons: GPU time (about 70 GPU-hours for XDP10); a cell cut by a tile edge is measured as two pieces (as in the
+      neurite run)
+  - label: Same recipe on the Galaxy BG-corrected montages
+    pros: one image source
+    cons: background is clipped to 0 (about half of each montage), so the clean gate's background MAD is 0 and the gate
+      removes nothing
+  decision: 'Raw-tile recipe, as a new run 3 that changes only XDP10''s input (120 wells: 4 in-scope lines, untreated
+    cols 8-21 + S.A. col 22, T1-T10; siRNA and 33362.C excluded). Neurite T7 cached masks reused. Runs 1-2 and D01 are
+    unchanged. Code: ml/xdp_rgedi_rework/cpsam/; override: config/overrides/run3_cpsam_xdp10.yaml.'
+  evidence:
+  - cpsam-seg/XDP10/qc (preflight, pilot cache compare, counts vs Galaxy)
+  status: approved_austin
+  approved_by: Austin
+  approved_date: '2026-10-15'
