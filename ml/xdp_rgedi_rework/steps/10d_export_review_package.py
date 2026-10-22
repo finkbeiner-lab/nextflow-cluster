@@ -1,15 +1,14 @@
 """Step 10d: export a self-contained review package (for an independent check of the run-2 W90 result).
 
-Writes into DEST (default: Austin's Dropbox data-for-reuben folder):
-  all_cells/<EXP>_cells.csv.gz          every in-scope cell, with the W90 cutoffs and its call
-  our_MRID_output/                      MRID's own outputs for set W90 (step 12)
-  extra_models/                         the models added on top of MRID (step 12b, step 13 pooling)
-  plate_maps_and_timepoints/            original plate maps and timepoint files, corrected well roles, S.A. design
-  source_files.csv                      the per-cell source file of each experiment (share + cluster path, sha256)
-  thresholds_full.csv                   every cutoff and fit parameter from step 10a
-  code/                                 snapshot of ml/xdp_rgedi_rework and the MRID R functions, environment
-  RGEDI_SA_thresholds_evidence_*.html   the evidence document
+Writes into DEST (default: Austin's Dropbox data-for-reuben folder; layout described in review/README_package.txt):
+  README.txt                            review/README_package.txt
+  1_results/                            evidence document, MRID's own outputs (step 12), extra models (12b, 13)
+  2_live_dead_calls/                    cutoffs, MRID input files, every cell with its call (all_cells/)
+  3_experiment_info/                    plate maps, timepoints, corrected well roles, S.A. design, source files
+  4_method/                             review/METHOD.md (the cutoff rule, for an independent re-implementation)
+  5_rerun/                              review/HOW_TO_RERUN.txt, code/ (repo layout), environment.txt
 The check at the end requires all_cells to reproduce the MRID input files exactly.
+Old top-level items from the first package layout are removed.
 Usage: python -I steps/10d_export_review_package.py [DEST]
 """
 
@@ -33,6 +32,10 @@ DEST = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(
     "/Users/aholub/Library/CloudStorage/Dropbox-Gladstone/Austin Holub/other/Austin/data-for-reuben")
 SHARE_MAC, SHARE_CLUSTER = "/Volumes/Finkbeiner-Kaye", "/gladstone/finkbeiner/kaye"
 RUN1 = LOCAL_OUT.parent / "run1_ruleD-single-cutoff_20261014"
+REVIEW = PKG_ROOT / "review"
+OLD_LAYOUT = ["MRID_input", "all_cells", "our_MRID_output", "extra_models", "plate_maps_and_timepoints", "code",
+              "source_files.csv", "thresholds_full.csv", "live_dead_cutoffs_per_line.csv", "export_checks.json",
+              "RGEDI_SA_thresholds_evidence_20261015_R2.html"]
 
 
 def sha256(path: Path) -> str:
@@ -83,9 +86,22 @@ def export_cells(out: Path) -> list:
     return checks
 
 
+def export_calls(dest: Path) -> None:
+    """Cutoff tables and the MRID input files of the primary set."""
+    dest.mkdir(parents=True, exist_ok=True)
+    full = pd.read_csv(LOCAL_OUT / "10a_final_tables" / "thresholds" / "thresholds_all.csv")
+    full.to_csv(dest / "cutoffs_all_parameters.csv", index=False)
+    slim = full[["exp", "line", "source", f"{SET}_live", f"{SET}_dead", "firstrun_live", "firstrun_dead"]].rename(
+        columns={f"{SET}_live": "live_if_ratio_below", f"{SET}_dead": "dead_if_ratio_above", "source": "cutoff_source"})
+    slim.to_csv(dest / "cutoffs_per_line.csv", index=False)
+    if (dest / "MRID_input").exists():
+        shutil.rmtree(dest / "MRID_input")
+    shutil.copytree(LOCAL_OUT / "11_mrid_inputs" / "input" / SET, dest / "MRID_input")
+
+
 def export_tables(dest: Path) -> None:
     lo = LOCAL_OUT / "12_logodds" / SET
-    a = dest / "our_MRID_output"
+    a = dest / "MRID_output"
     a.mkdir(parents=True, exist_ok=True)
     for f in ["Data.csv", "OR_all_pairs.csv", "experiments_per_hour.csv", "time_index_hours.csv", "warnings.csv",
               "mrid_log.txt", "sessionInfo.txt"]:
@@ -97,13 +113,12 @@ def export_tables(dest: Path) -> None:
         shutil.copy2(lo / f, b / f)
     p = pd.read_csv(LOCAL_OUT / "13_or_figures" / "pooled_or_by_set.csv")
     p[p.set == SET].to_csv(b / "pooled_or_summary.csv", index=False)
-    shutil.copy2(LOCAL_OUT / "10a_final_tables" / "thresholds" / "thresholds_all.csv", dest / "thresholds_full.csv")
     docs = sorted((LOCAL_OUT / "docs").glob("RGEDI_SA_thresholds_evidence_*.html"))
     shutil.copy2(docs[-1], dest / docs[-1].name)
 
 
 def export_layout(dest: Path) -> None:
-    out = dest / "plate_maps_and_timepoints"
+    out = dest
     for sub in ("original_platemaps", "original_timepoints", "corrected_well_roles"):
         (out / sub).mkdir(parents=True, exist_ok=True)
     design = []
@@ -156,15 +171,18 @@ def export_sources(dest: Path) -> None:
 
 
 def export_code(dest: Path) -> None:
+    """The code in the repo layout (code/ml/xdp_rgedi_rework + code/bin), so lib/paths.py finds bin/ as in the repo."""
+    dest.mkdir(parents=True, exist_ok=True)
     out = dest / "code"
     if out.exists():
         shutil.rmtree(out)
-    shutil.copytree(PKG_ROOT, out / "xdp_rgedi_rework",
+    shutil.copytree(PKG_ROOT, out / "ml" / "xdp_rgedi_rework",
                     ignore=shutil.ignore_patterns("__pycache__", ".DS_Store", "*.pyc"))
-    shutil.copytree(REPO_BIN / "mrid_R", out / "mrid_R", ignore=shutil.ignore_patterns(".DS_Store"))
+    shutil.copytree(REPO_BIN / "mrid_R", out / "bin" / "mrid_R", ignore=shutil.ignore_patterns(".DS_Store"))
     for f in ("gmm1d.py", "sa_qc_ratio.py"):
         if (REPO_BIN / f).exists():
-            shutil.copy2(REPO_BIN / f, out / f)
+            shutil.copy2(REPO_BIN / f, out / "bin" / f)
+    shutil.copy2(REVIEW / "HOW_TO_RERUN.txt", dest / "HOW_TO_RERUN.txt")
     import matplotlib, scipy, sklearn, statsmodels, yaml  # noqa: E401
     head = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
     status = subprocess.run(["git", "-C", str(REPO_ROOT), "status", "--short", "--", str(PKG_ROOT)],
@@ -173,20 +191,32 @@ def export_code(dest: Path) -> None:
     lines = [f"python {platform.python_version()}", f"numpy {np.__version__}", f"pandas {pd.__version__}",
              f"scipy {scipy.__version__}", f"scikit-learn {sklearn.__version__}", f"statsmodels {statsmodels.__version__}",
              f"matplotlib {matplotlib.__version__}", f"pyyaml {yaml.__version__}", (r.stdout or r.stderr).strip(),
-             "R packages: see our_MRID_output/sessionInfo.txt",
+             "R packages: plyr dplyr tidyr stringr readr rlang ggplot2 xtable knitr lme4 "
+             "(versions: 1_results/MRID_output/sessionInfo.txt)",
              f"repo nextflow-cluster HEAD {head} (branch austin/master)",
              f"ml/xdp_rgedi_rework git status: {status or 'clean'}"]
-    (out / "environment.txt").write_text("\n".join(lines) + "\n")
+    (dest / "environment.txt").write_text("\n".join(lines) + "\n")
 
 
 def main() -> None:
     DEST.mkdir(parents=True, exist_ok=True)
-    checks = export_cells(DEST / "all_cells")
-    export_tables(DEST)
-    export_layout(DEST)
-    export_sources(DEST)
-    export_code(DEST)
-    (DEST / "export_checks.json").write_text(json.dumps(checks, indent=2))
+    for name in OLD_LAYOUT:
+        p = DEST / name
+        if p.is_dir():
+            shutil.rmtree(p)
+        elif p.exists():
+            p.unlink()
+    calls = DEST / "2_live_dead_calls"
+    checks = export_cells(calls / "all_cells")
+    export_calls(calls)
+    export_tables(DEST / "1_results")
+    export_layout(DEST / "3_experiment_info")
+    export_sources(DEST / "3_experiment_info")
+    (DEST / "4_method").mkdir(exist_ok=True)
+    shutil.copy2(REVIEW / "METHOD.md", DEST / "4_method" / "METHOD.md")
+    export_code(DEST / "5_rerun")
+    shutil.copy2(REVIEW / "README_package.txt", DEST / "README.txt")
+    (calls / "export_checks.json").write_text(json.dumps(checks, indent=2))
     bad = [c["exp"] for c in checks if not c["matches_MRID_input"]]
     print("ALL MATCH" if not bad else f"MISMATCH: {bad}")
 

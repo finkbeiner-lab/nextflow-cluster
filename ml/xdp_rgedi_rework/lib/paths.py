@@ -17,7 +17,9 @@ SHARE = Path("/Volumes/Finkbeiner-Kaye/XDP")
 MRID_REWORK = SHARE / "MRID-rework"
 OUT_ROOT = SHARE / "RGEDI-full-rework"
 
-CACHE = Path("/Users/aholub/xdp_rgedi_cache")
+# XDP_RGEDI_CACHE moves the whole data cache (raw/, parquet/, out/, logs/), for example to a cache built from the
+# review package by review/setup_from_package.py; unset = Austin's local cache.
+CACHE = Path(os.environ.get("XDP_RGEDI_CACHE", "/Users/aholub/xdp_rgedi_cache"))
 RAW_CACHE = CACHE / "raw"
 # Shared per-cell extracts. XDP_RGEDI_PARQUET points a run at its own folder (run 3 swaps XDP10's input
 # and must not overwrite the parquet runs 1-2 read); unset = the shared folder.
@@ -27,8 +29,8 @@ RUN = os.environ.get("XDP_RGEDI_RUN", "run2_ruleD-window_20261015")
 LOCAL_OUT = CACHE / "out" / RUN    # steps write here first, then sync to OUT_ROOT / RUN
 LOGS = CACHE / "logs" / RUN
 
-PYTHON = "/Users/aholub/anaconda3/bin/python3"
-RSCRIPT = "/usr/local/bin/Rscript"
+PYTHON = os.environ.get("XDP_RGEDI_PYTHON", "/Users/aholub/anaconda3/bin/python3")
+RSCRIPT = os.environ.get("XDP_RGEDI_RSCRIPT", "/usr/local/bin/Rscript")
 
 for _p in (str(REPO_BIN), str(PKG_ROOT)):
     if _p not in sys.path:

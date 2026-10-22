@@ -28,7 +28,7 @@ def git_state() -> Dict[str, Any]:
         try:
             return subprocess.run(["git", "-C", str(REPO_ROOT), *args], capture_output=True,
                                   text=True, check=True).stdout.strip()
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, OSError):   # no git, or not a repository (review package)
             return ""
 
     rel = str(PKG_ROOT.relative_to(REPO_ROOT))
