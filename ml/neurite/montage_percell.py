@@ -40,6 +40,7 @@ import torch
 from cellpose import models
 from scipy import ndimage
 from skimage.measure import regionprops
+from skimage.filters import apply_hysteresis_threshold
 from skimage.morphology import remove_small_objects
 
 from percell_integrate import (attribute, colorize, load_model, parse_name,
@@ -93,6 +94,85 @@ def flatten_tile(raw: np.ndarray, size: int) -> np.ndarray:
     bg = ndimage.zoom(bg, (raw.shape[0] / bg.shape[0], raw.shape[1] / bg.shape[1]),
                       order=1)
     return np.clip(raw - bg, 0, None).astype(np.float32)
+
+
+def neurite_mask_from_prob(prob: np.ndarray, threshold: float, thr_low: float,
+                           seam_band: int, min_neurite: int) -> np.ndarray:
+    """Binary neurite mask from the U-Net probability montage.
+
+    Args:
+        prob: Neurite probability montage (H, W) in [0, 1].
+        threshold: Seed threshold; a component must reach this to be kept.
+        thr_low: Hysteresis low threshold. Pixels >= ``thr_low`` join the mask
+            only when connected to a seed, so a trace whose probability dips
+            below ``threshold`` stays one piece instead of fragmenting. Values
+            >= ``threshold`` disable hysteresis (plain ``prob >= threshold``).
+        seam_band: Zero this many px either side of each interior tile seam.
+        min_neurite: Drop connected components smaller than this (px).
+
+    Returns:
+        Boolean neurite mask (H, W).
+    """
+    if thr_low < threshold:
+        mask = apply_hysteresis_threshold(prob, thr_low, threshold)
+    else:
+        mask = prob >= threshold
+    # Seam suppression: the per-tile normalization step at each interior tile
+    # boundary reads as a straight edge that the ridge-sensitive U-Net fires on
+    # (false long straight neurites). Zero a thin band at each interior seam;
+    # real neurites crossing a seam lose only ~2*band px (negligible for length).
+    # Applied after hysteresis so a seam line can never seed a real trace.
+    th_m, tw_m = prob.shape[0] // GRID, prob.shape[1] // GRID
+    if seam_band > 0:
+        for kk in range(1, GRID):
+            mask[kk * th_m - seam_band:kk * th_m + seam_band, :] = False
+            mask[:, kk * tw_m - seam_band:kk * tw_m + seam_band] = False
+    return remove_small_objects(mask, min_neurite)
+
+
+def cache_params(args: argparse.Namespace) -> Dict[str, object]:
+    """Params that determine the cached soma labels + neurite prob.
+
+    The cache file name is only ``<exp>_<well>_<tp>``, so these are recorded in
+    each cache's meta and checked on reuse (:func:`check_cache`).
+    """
+    return dict(flatten_size=args.flatten_size, diameter=args.diameter, flow=args.flow,
+                cellprob=args.cellprob, clean_k=args.clean_k,
+                soma_flatten=args.soma_flatten, soma_floor_px=args.soma_floor_px,
+                soma_min_width=args.soma_min_width,
+                checkpoint=os.path.basename(os.path.dirname(os.path.abspath(args.checkpoint)))
+                + "/" + os.path.basename(args.checkpoint))
+
+
+_WARNED_CKPT = []
+
+
+def check_cache(z, args: argparse.Namespace, cache_path: str) -> None:
+    """Raise if a cache entry was built with different segmentation params.
+
+    Guards the silent-reuse trap: pointing a run with a new checkpoint or soma
+    recipe at an old ``--cache-dir`` would otherwise reuse the old soma/prob.
+    Caches predating a param are treated as having its default (soma_* = 0);
+    caches predating ``checkpoint`` can't be verified and only warn.
+
+    Raises:
+        ValueError: On any mismatch (the per-well handler logs and skips the well).
+    """
+    meta = json.loads(str(z["meta"])) if "meta" in z.files else {}
+    bad = []
+    for k, v in cache_params(args).items():
+        if k in meta:
+            if meta[k] != v:
+                bad.append(f"{k}: cache={meta[k]} run={v}")
+        elif k.startswith("soma_") and v != 0:
+            bad.append(f"{k}: cache=0 (pre-dates option) run={v}")
+        elif k == "checkpoint" and not _WARNED_CKPT:
+            _WARNED_CKPT.append(1)
+            print(f"WARN: cache {os.path.basename(cache_path)} predates checkpoint tracking; "
+                  f"cannot verify it was built with {v}", flush=True)
+    if bad:
+        raise ValueError(f"cache {cache_path} built with different params ({'; '.join(bad)}); "
+                         "use a fresh --cache-dir")
 
 
 def place(canvas: np.ndarray, tile: np.ndarray, site: int, th: int, tw: int) -> None:
@@ -160,7 +240,8 @@ def build_image01(paths: List[str], sites: List[int],
 
 def build_montages(cp_model, paths: List[str], sites: List[int],
                    diameter: int, flow: float, cellprob: float, clean_k: float,
-                   flatten_size: int = 0
+                   flatten_size: int = 0, soma_flatten: int = 0,
+                   soma_floor_px: float = 0.0, soma_min_width: float = 0.0
                    ) -> Tuple[np.ndarray, np.ndarray]:
     """Build the (normalized image, soma-label) montages for one well.
 
@@ -169,6 +250,10 @@ def build_montages(cp_model, paths: List[str], sites: List[int],
         paths: Tile paths ordered by site.
         sites: Site indices matching ``paths``.
         diameter/flow/cellprob/clean_k: Cellpose soma-recipe params.
+        flatten_size: Rolling-background footprint for the NEURITE image.
+        soma_flatten: Rolling-background footprint for the SOMA image (Cellpose
+            input + intensity cleanup); ``0`` = untouched raw tiles.
+        soma_floor_px/soma_min_width: see :func:`segment_somas`.
 
     Returns:
         ``(image01, soma_labels)`` montages, both (GRID*th, GRID*tw).
@@ -179,12 +264,16 @@ def build_montages(cp_model, paths: List[str], sites: List[int],
     H, W = GRID * th, GRID * tw
     image01 = _montage_image01(tiles, sites, flatten_size)
 
-    # Cellpose somas run on the untouched raw tiles (not the flattened image), so
-    # flattening only affects the neurite-segmentation input, never the somas.
+    # Somas run on the raw tiles unless --soma-flatten is set, in which case
+    # Cellpose and its intensity cleanup see a flat-fielded copy (vignetting
+    # otherwise hides dim/clumped cells). Independent of the neurite flatten.
     soma = np.zeros((H, W), np.int32)
     offset = 0
     for raw, s in zip(tiles, sites):
-        labels = segment_somas(cp_model, raw, diameter, flow, cellprob, clean_k)
+        seg = flatten_tile(raw, soma_flatten) if soma_flatten > 0 else None
+        labels = segment_somas(cp_model, raw, diameter, flow, cellprob, clean_k,
+                               seg_image=seg, floor_px=soma_floor_px,
+                               min_width=soma_min_width)
         if labels.max() > 0:
             lab = labels.copy()
             lab[labels > 0] += offset
@@ -321,7 +410,8 @@ def _write_params(run_dir: str, args: argparse.Namespace, run_id: str,
     """Write ``params.json`` so each run is self-describing for comparison."""
     keys = ["manifest", "raw_root", "out_dir", "cache_dir", "checkpoint",
             "device", "threshold", "diameter", "flow", "cellprob", "clean_k",
-            "min_neurite", "seam_band", "flatten_size", "soma_dilation"]
+            "min_neurite", "seam_band", "flatten_size", "soma_dilation",
+            "thr_low", "attach_px", "soma_flatten", "soma_floor_px", "soma_min_width"]
     meta = dict(run_id=run_id,
                 created=datetime.datetime.now().isoformat(timespec="seconds"),
                 n_wells=n_wells,
@@ -353,6 +443,9 @@ def run_overlay_only(args: argparse.Namespace) -> None:
     seam_band = p.get("seam_band", args.seam_band)
     min_neurite = p.get("min_neurite", args.min_neurite)
     flatten_size = p.get("flatten_size", args.flatten_size)
+    # Runs predating these knobs had neither: default = off (their exact behaviour).
+    thr_low = p.get("thr_low", threshold if "threshold" in p else args.thr_low)
+    attach_px = p.get("attach_px", 0 if p else args.attach_px)
 
     manifest = list(csv.DictReader(open(args.manifest)))
     n = 0
@@ -372,14 +465,9 @@ def run_overlay_only(args: argparse.Namespace) -> None:
         soma = z["soma_labels"].astype(np.int32)
         prob = z["neurite_prob"].astype(np.float32) / 255.0
         image01 = build_image01(paths, sites, flatten_size)
-        raw_mask = prob >= threshold
-        th_m, tw_m = soma.shape[0] // GRID, soma.shape[1] // GRID
-        if seam_band > 0:
-            for kk in range(1, GRID):
-                raw_mask[kk * th_m - seam_band:kk * th_m + seam_band, :] = False
-                raw_mask[:, kk * tw_m - seam_band:kk * tw_m + seam_band] = False
-        neurite_mask = remove_small_objects(raw_mask, min_neurite)
-        owner, skel = attribute(soma, neurite_mask)
+        neurite_mask = neurite_mask_from_prob(prob, threshold, thr_low, seam_band,
+                                              min_neurite)
+        owner, skel = attribute(soma, neurite_mask, attach_px)
         tifffile.imwrite(
             os.path.join(run_dir, f"{exp}_{well}_{tp}_percell.tif"),
             colorize(image01, soma, owner, skel)[::4, ::4])
@@ -399,10 +487,29 @@ def main() -> None:
     ap.add_argument("--checkpoint", required=True)
     ap.add_argument("--device", default="cuda")
     ap.add_argument("--threshold", type=float, default=0.5)
+    ap.add_argument("--thr-low", type=float, default=None,
+                    help="hysteresis low threshold: pixels >= this join a trace "
+                         "connected to a >= --threshold seed, so traces whose "
+                         "probability dips don't fragment (default: = --threshold, "
+                         "i.e. off). Post-segmentation knob: safe to retune off cache.")
+    ap.add_argument("--attach-px", type=int, default=0,
+                    help="grow somas by this many px for neurite attribution only, "
+                         "so traces stopping just short of the cell body still count "
+                         "(default 0 = off). Post-segmentation knob: safe off cache.")
     ap.add_argument("--diameter", type=int, default=25)
     ap.add_argument("--flow", type=float, default=0.6)
     ap.add_argument("--cellprob", type=float, default=-1.0)
     ap.add_argument("--clean-k", type=float, default=2.0)
+    ap.add_argument("--soma-flatten", type=int, default=0,
+                    help="rolling-background footprint (px) for the SOMA image: Cellpose and "
+                         "its intensity cleanup run on a flat-fielded copy of each tile "
+                         "(0 = untouched raw, the original behaviour; ~128 for vignetted data)")
+    ap.add_argument("--soma-floor-px", type=float, default=0,
+                    help="fixed minimum soma area in px (0 = size-dependent floor "
+                         "max(300, 0.6*median), the original behaviour)")
+    ap.add_argument("--soma-min-width", type=float, default=0,
+                    help="drop somas whose minor axis is below this many px, e.g. slices "
+                         "along thick neurites (0 = off)")
     ap.add_argument("--min-neurite", type=int, default=25)
     ap.add_argument("--seam-band", type=int, default=6,
                     help="zero neurite detections within this many px of each "
@@ -435,6 +542,8 @@ def main() -> None:
                          "run from --cache-dir + raw tiles (CPU only, no GPU). "
                          "Targets --run-id, else <out-dir>/latest.")
     args = ap.parse_args()
+    if args.thr_low is None:
+        args.thr_low = args.threshold
 
     if args.overlay_only:
         run_overlay_only(args)
@@ -466,14 +575,14 @@ def main() -> None:
     print(f"run: {run_id} -> {run_dir}")
 
     cell_fh = open(os.path.join(run_dir, "percell.csv"), "w", newline="")
-    cfields = ["experiment", "well", "cell_line", "genotype", "soma_id",
+    cfields = ["experiment", "well", "timepoint", "cell_line", "genotype", "soma_id",
                "area_px", "cy", "cx", "neurite_len_px", "skel_px",
                "n_branch_points", "n_end_points", "n_primary_neurites",
                "max_branch_length"]
     cwriter = csv.DictWriter(cell_fh, fieldnames=cfields)
     cwriter.writeheader()
     well_fh = open(os.path.join(run_dir, "perwell.csv"), "w", newline="")
-    wfields = ["experiment", "well", "cell_line", "genotype", "n_somas",
+    wfields = ["experiment", "well", "timepoint", "cell_line", "genotype", "n_somas",
                "n_somas_with_neurite", "total_len_px", "mean_len_per_soma",
                "median_len_per_soma", "mean_branch_points", "mean_tips",
                "mean_primary_neurites", "mean_max_branch_len", "frac_branched"]
@@ -498,6 +607,7 @@ def main() -> None:
                 # Reuse saved intermediates -> recompute metrics on CPU (no
                 # Cellpose / U-Net). Overlays are not regenerated (image not cached).
                 z = np.load(cache_path)
+                check_cache(z, args, cache_path)  # refuse a cache built with other seg params
                 soma = z["soma_labels"].astype(np.int32)
                 prob = z["neurite_prob"].astype(np.float32) / 255.0
                 image01, from_cache = None, True
@@ -505,7 +615,10 @@ def main() -> None:
                 cp_model, unet = ensure_models()
                 image01, soma = build_montages(cp_model, paths, sites, args.diameter,
                                                args.flow, args.cellprob, args.clean_k,
-                                               flatten_size=args.flatten_size)
+                                               flatten_size=args.flatten_size,
+                                               soma_flatten=args.soma_flatten,
+                                               soma_floor_px=args.soma_floor_px,
+                                               soma_min_width=args.soma_min_width)
                 prob = predict_tiled(unet, image01, device)
                 from_cache = False
                 if cache_path:  # write once, atomically (temp then rename)
@@ -518,24 +631,11 @@ def main() -> None:
                             cell_line=row.get("cell_line", "?"),
                             genotype=row.get("genotype", "?"), grid=GRID,
                             threshold=args.threshold, seam_band=args.seam_band,
-                            min_neurite=args.min_neurite, flatten_size=args.flatten_size,
-                            diameter=args.diameter, flow=args.flow,
-                            cellprob=args.cellprob, clean_k=args.clean_k))))
+                            min_neurite=args.min_neurite, **cache_params(args)))))
                     os.replace(tmp, cache_path)
-            raw_mask = prob >= args.threshold
-            # Seam suppression: the per-tile normalization step at each interior
-            # tile boundary reads as a straight edge that the ridge-sensitive
-            # U-Net fires on (false long straight neurites). Zero a thin band at
-            # each interior seam; real neurites crossing a seam lose only ~2*band
-            # px (negligible for length). Outer edges are untouched.
-            th_m, tw_m = soma.shape[0] // GRID, soma.shape[1] // GRID
-            band = args.seam_band
-            if band > 0:
-                for kk in range(1, GRID):
-                    raw_mask[kk * th_m - band:kk * th_m + band, :] = False
-                    raw_mask[:, kk * tw_m - band:kk * tw_m + band] = False
-            neurite_mask = remove_small_objects(raw_mask, args.min_neurite)
-            owner, skel = attribute(soma, neurite_mask)
+            neurite_mask = neurite_mask_from_prob(prob, args.threshold, args.thr_low,
+                                                  args.seam_band, args.min_neurite)
+            owner, skel = attribute(soma, neurite_mask, args.attach_px)
             lengths = per_soma_lengths(owner, skel, soma)
             props = {p.label: p for p in regionprops(soma)}
 
@@ -569,7 +669,7 @@ def main() -> None:
                     continue
                 cy, cx = p.centroid
                 nb, ne, npri, mx = cell_arbor(lab, skpx)
-                cwriter.writerow(dict(experiment=exp, well=well, cell_line=line,
+                cwriter.writerow(dict(experiment=exp, well=well, timepoint=tp, cell_line=line,
                                       genotype=geno, soma_id=lab, area_px=int(p.area),
                                       cy=round(cy, 1), cx=round(cx, 1),
                                       neurite_len_px=round(length, 1), skel_px=skpx,
@@ -584,7 +684,7 @@ def main() -> None:
             nwith = int(np.sum(np.array(percell_lens) > 0))
             total = float(np.sum(percell_lens))
             amean = lambda v: round(float(np.mean(v)), 2) if v else 0.0
-            wwriter.writerow(dict(experiment=exp, well=well, cell_line=line, genotype=geno,
+            wwriter.writerow(dict(experiment=exp, well=well, timepoint=tp, cell_line=line, genotype=geno,
                                   n_somas=n, n_somas_with_neurite=nwith,
                                   total_len_px=round(total, 1),
                                   mean_len_per_soma=round(total / max(n, 1), 1),

@@ -169,7 +169,18 @@ def train(args: argparse.Namespace) -> None:
     )
     loader = DataLoader(train_ds, batch_size=args.batch, shuffle=True, num_workers=0)
 
+    init = None
+    if args.init:
+        # Fine-tune: architecture comes from the checkpoint so weights always fit.
+        init = torch.load(args.init, map_location="cpu")
+        cfg = init.get("config", {})
+        args.depth = cfg.get("depth", args.depth)
+        args.base = cfg.get("base_channels", args.base)
     model = build_model(depth=args.depth, base_channels=args.base).to(device)
+    if init is not None:
+        model.load_state_dict(init["model_state"])
+        print(f"init: {args.init} (epoch {init.get('epoch')}, "
+              f"val_F1 {init.get('val_f1', float('nan')):.3f} on its own val set)")
     n_params = sum(p.numel() for p in model.parameters())
     print(f"model: UNet depth={args.depth} base={args.base} params={n_params:,} "
           f"device={device}")
@@ -181,7 +192,32 @@ def train(args: argparse.Namespace) -> None:
 
     best_f1 = -1.0
     best_path = os.path.join(args.out, "best.pt")
+
+    def save_best(epoch: int, val_f1: float, val_thr: float) -> None:
+        torch.save(
+            {
+                "model_state": model.state_dict(),
+                "config": {
+                    "depth": args.depth,
+                    "base_channels": args.base,
+                    "in_channels": 1,
+                },
+                "epoch": epoch,
+                "val_f1": val_f1,
+                "threshold": val_thr,
+                "init": args.init or None,
+            },
+            best_path,
+        )
+
     print(f"{'epoch':>5} {'train_loss':>11} {'val_F1':>8} {'thr':>5}")
+    if init is not None:
+        # Epoch 0 = the starting checkpoint scored on THIS val set: the
+        # before/after baseline. Saved as best so fine-tuning can only keep or
+        # improve it, never ship a worse model.
+        best_f1, val_thr = evaluate(model, val_pairs, device)
+        save_best(0, best_f1, val_thr)
+        print(f"{0:5d} {'(init)':>11} {best_f1:8.3f} {val_thr:5.2f}  *best")
     for epoch in range(1, args.epochs + 1):
         model.train()
         losses = []
@@ -199,20 +235,7 @@ def train(args: argparse.Namespace) -> None:
         flag = ""
         if val_f1 > best_f1:
             best_f1 = val_f1
-            torch.save(
-                {
-                    "model_state": model.state_dict(),
-                    "config": {
-                        "depth": args.depth,
-                        "base_channels": args.base,
-                        "in_channels": 1,
-                    },
-                    "epoch": epoch,
-                    "val_f1": val_f1,
-                    "threshold": val_thr,
-                },
-                best_path,
-            )
+            save_best(epoch, val_f1, val_thr)
             flag = "  *best"
         print(f"{epoch:5d} {train_loss:11.4f} {val_f1:8.3f} {val_thr:5.2f}{flag}")
 
@@ -252,6 +275,10 @@ def build_argparser() -> argparse.ArgumentParser:
                     help="comma-separated substrings naming val fields "
                          "(e.g. 'H15,I07'); overrides --val-frac when set")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--init", default="",
+                    help="fine-tune: start from this checkpoint's weights (its "
+                         "depth/base override --depth/--base); epoch 0 scores it "
+                         "on the val set as the baseline")
     ap.add_argument(
         "--dry-run",
         action="store_true",

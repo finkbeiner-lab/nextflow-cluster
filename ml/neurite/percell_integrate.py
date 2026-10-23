@@ -46,7 +46,7 @@ from scipy.ndimage import convolve
 from skimage.measure import regionprops
 from skimage.morphology import (binary_dilation, disk, remove_small_objects,
                                 skeletonize)
-from skimage.segmentation import find_boundaries, watershed
+from skimage.segmentation import expand_labels, find_boundaries, watershed
 
 from model import build_model
 
@@ -81,10 +81,50 @@ def clean_masks(raw: np.ndarray, masks: np.ndarray, k: float) -> np.ndarray:
     return np.where(keep[masks], masks, 0)
 
 
+def filter_somas(masks: np.ndarray, clean_img: np.ndarray, clean_k: float,
+                 floor_px: float = 0.0, min_width: float = 0.0) -> np.ndarray:
+    """Post-filter raw Cellpose masks: intensity cleanup, debris floor, width.
+
+    Args:
+        masks: Raw Cellpose integer label image (H, W).
+        clean_img: Image the intensity cleanup is measured on (see
+            :func:`clean_masks`).
+        clean_k: Intensity cleanup strength.
+        floor_px: Fixed minimum soma area in px. ``0`` = the original
+            size-dependent floor, ``max(300, 0.6 * median area)``.
+        min_width: Drop masks whose minor axis is below this (px), e.g. thin
+            slices along thick neurites. ``0`` = off.
+
+    Returns:
+        Relabeled soma image (1..N).
+    """
+    masks = clean_masks(clean_img, masks, clean_k)
+    if masks.max() == 0:
+        return masks.astype(np.int32)
+    # Areas via bincount; debris floor; relabel with a LUT (O(image), no
+    # per-label Python loop except the optional width test).
+    counts = np.bincount(masks.ravel())
+    counts[0] = 0
+    nonzero = counts[counts > 0]
+    if floor_px > 0:
+        floor = float(floor_px)
+    else:
+        floor = max(300.0, 0.6 * float(np.median(nonzero))) if nonzero.size else 300.0
+    keep = (counts >= floor) & (counts > 0)
+    if min_width > 0:
+        for p in regionprops(masks):
+            if keep[p.label] and p.minor_axis_length < min_width:
+                keep[p.label] = False
+    remap = np.zeros(counts.size, dtype=np.int32)
+    remap[keep] = np.arange(1, int(keep.sum()) + 1, dtype=np.int32)
+    return remap[masks]
+
+
 def segment_somas(model: "models.CellposeModel", raw: np.ndarray,
                   diameter: int, flow: float, cellprob: float,
-                  clean_k: float) -> np.ndarray:
-    """Cellpose-SAM somas with cleanup + size-dependent debris floor.
+                  clean_k: float, seg_image: np.ndarray = None,
+                  floor_px: float = 0.0, min_width: float = 0.0) -> np.ndarray:
+    """Cellpose-SAM somas with cleanup + debris floor (+ optional width filter).
 
     Args:
         model: A ``CellposeModel``.
@@ -93,28 +133,22 @@ def segment_somas(model: "models.CellposeModel", raw: np.ndarray,
         flow: Flow threshold.
         cellprob: Cell-probability threshold.
         clean_k: Intensity cleanup strength (see :func:`clean_masks`).
+        seg_image: Image to run Cellpose AND the intensity cleanup on, e.g. a
+            flat-fielded copy of ``raw`` so vignetting doesn't hide dim or
+            clumped cells. ``None`` = ``raw`` (original behaviour).
+        floor_px: Fixed debris floor (px); ``0`` = size-dependent floor.
+        min_width: Minimum soma minor axis (px); ``0`` = off.
 
     Returns:
         Relabeled soma image (1..N), debris removed.
     """
-    lo, hi = np.percentile(raw, 1), np.percentile(raw, 99.5)
-    norm = np.clip((raw - lo) / (hi - lo + 1e-9), 0, 1) * 255.0 if hi > lo \
-        else np.zeros_like(raw)
+    img = raw if seg_image is None else seg_image
+    lo, hi = np.percentile(img, 1), np.percentile(img, 99.5)
+    norm = np.clip((img - lo) / (hi - lo + 1e-9), 0, 1) * 255.0 if hi > lo \
+        else np.zeros_like(img)
     masks = model.eval(norm, diameter=diameter, flow_threshold=flow,
                        cellprob_threshold=cellprob)[0]
-    masks = clean_masks(raw, masks, clean_k)
-    if masks.max() == 0:
-        return masks.astype(np.int32)
-    # Areas via bincount; size-dependent debris floor; relabel with a LUT
-    # (all O(image), no per-label Python loop).
-    counts = np.bincount(masks.ravel())
-    counts[0] = 0
-    nonzero = counts[counts > 0]
-    floor = max(300.0, 0.6 * float(np.median(nonzero))) if nonzero.size else 300.0
-    keep = counts >= floor
-    remap = np.zeros(counts.size, dtype=np.int32)
-    remap[keep] = np.arange(1, int(keep.sum()) + 1, dtype=np.int32)
-    return remap[masks]
+    return filter_somas(masks, img, clean_k, floor_px, min_width)
 
 
 # ----------------------------- neurites ------------------------------------
@@ -184,8 +218,8 @@ def diaglen(sk: np.ndarray) -> float:
     return float(o.sum() / 2 + (d.sum() / 2) * np.sqrt(2))
 
 
-def attribute(soma_labels: np.ndarray, neurite_mask: np.ndarray
-              ) -> Tuple[np.ndarray, np.ndarray]:
+def attribute(soma_labels: np.ndarray, neurite_mask: np.ndarray,
+              attach_px: int = 0) -> Tuple[np.ndarray, np.ndarray]:
     """Assign each neurite skeleton pixel to the soma it connects to.
 
     Geodesic ownership: a watershed seeded from soma labels, constrained to
@@ -195,17 +229,22 @@ def attribute(soma_labels: np.ndarray, neurite_mask: np.ndarray
     Args:
         soma_labels: Integer soma image (H, W), 0=background.
         neurite_mask: Boolean neurite mask (H, W).
+        attach_px: Grow each soma by this many px (without merging neighbours)
+            before seeding, so a neurite whose trace stops just short of its
+            cell body still attaches. Only the attachment seed grows: skeleton
+            is still dropped only inside the original soma. 0 = off.
 
     Returns:
         ``(owner, skel_neurite)``: ``owner`` is the soma id owning each fg pixel
         (0 where unreachable from any soma), ``skel_neurite`` is the attributed
         neurite skeleton (bool, soma interiors removed).
     """
-    fg = neurite_mask | (soma_labels > 0)
+    seeds = expand_labels(soma_labels, attach_px) if attach_px > 0 else soma_labels
+    fg = neurite_mask | (seeds > 0)
     # Flat landscape -> watershed distributes fg by geodesic distance to the
     # nearest soma marker WITHIN the connected mask; unreached fg stays 0.
     owner = watershed(np.zeros_like(soma_labels, dtype=np.uint8),
-                      markers=soma_labels, mask=fg)
+                      markers=seeds, mask=fg)
     skel = skeletonize(neurite_mask)
     skel_neurite = skel & (soma_labels == 0)
     return owner, skel_neurite
