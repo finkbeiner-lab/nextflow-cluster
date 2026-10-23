@@ -56,7 +56,7 @@ def job(args):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default="/gladstone/finkbeiner/home/aholub/rgedi_tile/cp_cells/hevo-pmsG-1")
+    ap.add_argument("--out", default="/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/hevo-pmsG-1_GXYTMP/rgedi_tile/cp_cells/hevo-pmsG-1")
     ap.add_argument("--workers", type=int, default=12)
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)

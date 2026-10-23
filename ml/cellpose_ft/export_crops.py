@@ -37,7 +37,7 @@ from scipy import ndimage
 from skimage.filters import gaussian, threshold_triangle
 from skimage.segmentation import find_boundaries, relabel_sequential
 
-OUT = "/gladstone/finkbeiner/home/aholub/cp_finetune/round1_export"
+OUT = "/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/hevo-pmsG-1_GXYTMP/cp_finetune/round1_export"
 RAW = {
     "hevo-pmsG-1": "/gladstone/finkbeiner/robodata/Robo4Images/hevo-pmsG-1",
     "hevo-pmsG-2": "/gladstone/finkbeiner/robodata/Robo4Images/hevo-pmsG-2",

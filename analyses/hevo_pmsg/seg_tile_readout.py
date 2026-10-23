@@ -344,7 +344,7 @@ def collect(out):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--exp", required=True, choices=list(RAW))
-    ap.add_argument("--out", default="/gladstone/finkbeiner/home/aholub/rgedi_tile")
+    ap.add_argument("--out", default="/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/hevo-pmsG-1_GXYTMP/rgedi_tile")
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--wells", default="all")
     ap.add_argument("--tps", default="all")
