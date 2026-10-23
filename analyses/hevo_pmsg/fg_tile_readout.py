@@ -8,7 +8,7 @@ For every raw GFP tile:
        the other tiles of that well+timepoint, then of that timepoint plate-wide)
     3. background = gaussian(GFP, SMOOTH) <= LEVEL * s * P   (+ k * noise, k = 0 here)
     4. foreground = NOT background, minus 4-connected specks < MIN_SPECK px (no hole filling)
-Settings were tuned by eye on the tuning page (ml/rgedi_tile/make_tuning_page.py).
+Settings were tuned by eye on the tuning page (analyses/hevo_pmsg/make_tuning_page.py).
 
 Outputs (OUT/<exp>/):
     tiles.csv   one row per well x timepoint x tile: background fit, fg fraction, mean/median of

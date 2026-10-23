@@ -3,7 +3,7 @@
 Run 3 = run 2 with only XDP10's per-cell input replaced (decision D29). Run on the Mac. The share must be mounted.
 
 ```bash
-cd ~/Desktop/nextflow-cluster-master/ml/xdp_rgedi_rework
+cd ~/Desktop/nextflow-cluster/analyses/xdp_rgedi_rework
 export XDP_RGEDI_RUN=run3_cpsam-xdp10_<YYYYMMDD>
 export XDP_RGEDI_EXP_OVERRIDE=overrides/run3_cpsam_xdp10.yaml
 export XDP_RGEDI_PARQUET=/Users/aholub/xdp_rgedi_cache/parquet_$XDP_RGEDI_RUN

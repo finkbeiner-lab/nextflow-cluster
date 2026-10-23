@@ -1980,7 +1980,7 @@ or method validations that did not hold, discussed in Steps 3–5.</p>
                   f"<td class='mono'>{v['sha256'][:16]}…</td></tr>" for k, v in staging.items() if v["bytes"] > 1_000_000)
     cfg_sha = {n: sha256_file(CONFIG_DIR / n)[:16] for n in ("experiments.yaml", "params.yaml", "decisions.yaml")}
     out.append(f"""<section class="step" id="provenance"><h2>Provenance</h2>
-<p class="meta">Code: <code>ml/xdp_rgedi_rework/</code> in nextflow-cluster, branch <code>{E(g['branch'])}</code>, HEAD
+<p class="meta">Code: <code>analyses/xdp_rgedi_rework/</code> in nextflow-cluster, branch <code>{E(g['branch'])}</code>, HEAD
 <code>{E(g['head'][:10])}</code>, package content hash <code>{g['package_content_sha256'][:12]}</code>
 ({'uncommitted changes' if g['package_dirty'] else 'clean'}). Config hashes: {', '.join(f'{k} {v}' for k, v in cfg_sha.items())}.
 Python {E(versions()['python'])}, pandas {E(versions()['pandas'])}, scikit-learn {E(versions()['sklearn'])}, statsmodels

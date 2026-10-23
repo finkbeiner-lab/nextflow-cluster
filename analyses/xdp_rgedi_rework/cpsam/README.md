@@ -4,7 +4,7 @@ The neurite analysis found many more somas than the original Galaxy segmentation
 Cellpose-SAM plus an intensity clean gate, but the neurite run saved masks for only one timepoint per experiment.
 MRID needs every timepoint. This folder holds XDP10 segmented at **all 10 timepoints** with the same recipe, written
 as a Galaxy-format `cell_data.csv`. It is meant to be run through the S.A.-threshold MRID pipeline
-(`ml/xdp_rgedi_rework`, run 3).
+(`analyses/xdp_rgedi_rework`, run 3).
 
 ## Method
 
@@ -47,4 +47,4 @@ as a Galaxy-format `cell_data.csv`. It is meant to be run through the S.A.-thres
 | `pilot/` | pilot (D08, D22) cell_data and QC |
 | `provenance/` | one JSON per job: git commit, code sha256, container versions |
 
-Code: `ml/xdp_rgedi_rework/cpsam/` (`cpsam_tiles.py`, `build_celldata.py`, `build_sbatch.py`).
+Code: `analyses/xdp_rgedi_rework/cpsam/` (`cpsam_tiles.py`, `build_celldata.py`, `build_sbatch.py`).

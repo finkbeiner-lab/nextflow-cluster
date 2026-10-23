@@ -505,7 +505,7 @@
       removes nothing
   decision: 'Raw-tile recipe, as a new run 3 that changes only XDP10''s input (120 wells: 4 in-scope lines, untreated
     cols 8-21 + S.A. col 22, T1-T10; siRNA and 33362.C excluded). Neurite T7 cached masks reused. Runs 1-2 and D01 are
-    unchanged. Code: ml/xdp_rgedi_rework/cpsam/; override: config/overrides/run3_cpsam_xdp10.yaml.'
+    unchanged. Code: analyses/xdp_rgedi_rework/cpsam/; override: config/overrides/run3_cpsam_xdp10.yaml.'
   evidence:
   - cpsam-seg/XDP10/qc (preflight, pilot cache compare, counts vs Galaxy)
   status: approved_austin

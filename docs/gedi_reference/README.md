@@ -17,7 +17,7 @@ The reference is written for Jeremy's **single-tile** MASKTRACKED environment. T
 1. **Analysis** (`gedi_v3_final.py` + `resilience_final.py`) — portable and self-contained; it
    consumes a `gedi_cells.csv`. We port this faithfully as the new death-quant, **replacing** the
    montage-based `bin/minisog.py` (T0-percentile threshold + persistence/switch-confirmation are
-   dropped — see `MINISOG_HISTORY.md`).
+   dropped — see `../MINISOG_HISTORY.md`).
 2. **Measurement front-end** (produces `gedi_cells.csv`) — the part that needs re-architecting to
    **single tiles**: per-tile Cellpose segmentation → per-tile persistent-label tracking →
    MASKTRACKED → largest-connected-component measurement per (well, tile, timepoint, track_id).

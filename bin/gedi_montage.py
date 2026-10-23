@@ -1,6 +1,6 @@
 """GEDI2 (Jeremy v3) on MONTAGED data — measurement + Plot 1 (threshold-setting).
 
-Faithful to gedi_reference/: per-tile per-timepoint background, but the 'tile' is the
+Faithful to docs/gedi_reference/: per-tile per-timepoint background, but the 'tile' is the
 source 3x3 sub-tile recovered from each cell's montage centroid (PER-OBSERVATION), and
 rfp/gfp are re-measured as the LARGEST CONNECTED COMPONENT of each tracked cell's seg
 label. Produces gedi_cells.csv (well,tile,timepoint,track_id,area,rfp_mean,gfp_mean) +

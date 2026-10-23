@@ -132,7 +132,7 @@ HEADER = """#!/bin/bash
 # Somas: neurite recipe (Cellpose-SAM d25/flow0.6/cellprob-1, MAD clean k2.0, size floor) on RAW
 # FITC tiles ({raw}); per-cell FITC/RFP measured on Galaxy BG-corrected tiles ({bg}).
 # Output: {out}
-# Built {built} by ml/xdp_rgedi_rework/cpsam/build_sbatch.py (git {sha}).
+# Built {built} by analyses/xdp_rgedi_rework/cpsam/build_sbatch.py (git {sha}).
 set -euo pipefail
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

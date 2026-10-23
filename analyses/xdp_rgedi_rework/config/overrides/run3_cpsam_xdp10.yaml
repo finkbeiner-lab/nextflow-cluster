@@ -1,6 +1,6 @@
 # Run 3 (XDP_RGEDI_EXP_OVERRIDE=overrides/run3_cpsam_xdp10.yaml): XDP10 per-cell input replaced by the
 # neurite-recipe Cellpose-SAM segmentation (raw tiles) measured on Galaxy background-corrected tiles
-# (ml/xdp_rgedi_rework/cpsam/, decision D29). Every other experiment and setting is unchanged from run 2.
+# (analyses/xdp_rgedi_rework/cpsam/, decision D29). Every other experiment and setting is unchanged from run 2.
 experiments:
   XDP10:
     source: {kind: rebuild, raw_key: XDP10_cpsam_raw}

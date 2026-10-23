@@ -461,7 +461,7 @@ sits; whether spontaneously dying cells drop out at the same rate is not known.<
 logged as decisions (D18-D20 for the cutoff rules, D27 for the dropout correction).</li>
 </ul></section>""")
     out.append(f'<footer>Built {time.strftime("%Y-%m-%d %H:%M")} from the step outputs of the XDP RGEDI rework '
-               f'(ml/xdp_rgedi_rework, analysis run {RUN}). Full detail, checks and decision log: '
+               f'(analyses/xdp_rgedi_rework, analysis run {RUN}). Full detail, checks and decision log: '
                f'<a href="{EVIDENCE_URL}">XDP RGEDI Threshold Evidence</a>.</footer></main>')
     return "\n".join(out)
 

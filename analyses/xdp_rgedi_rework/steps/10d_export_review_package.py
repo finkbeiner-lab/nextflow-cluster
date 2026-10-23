@@ -171,12 +171,12 @@ def export_sources(dest: Path) -> None:
 
 
 def export_code(dest: Path) -> None:
-    """The code in the repo layout (code/ml/xdp_rgedi_rework + code/bin), so lib/paths.py finds bin/ as in the repo."""
+    """The code in the repo layout (code/analyses/xdp_rgedi_rework + code/bin), so lib/paths.py finds bin/ as in the repo."""
     dest.mkdir(parents=True, exist_ok=True)
     out = dest / "code"
     if out.exists():
         shutil.rmtree(out)
-    shutil.copytree(PKG_ROOT, out / "ml" / "xdp_rgedi_rework",
+    shutil.copytree(PKG_ROOT, out / "analyses" / "xdp_rgedi_rework",
                     ignore=shutil.ignore_patterns("__pycache__", ".DS_Store", "*.pyc"))
     shutil.copytree(REPO_BIN / "mrid_R", out / "bin" / "mrid_R", ignore=shutil.ignore_patterns(".DS_Store"))
     for f in ("gmm1d.py", "sa_qc_ratio.py"):
@@ -194,7 +194,7 @@ def export_code(dest: Path) -> None:
              "R packages: plyr dplyr tidyr stringr readr rlang ggplot2 xtable knitr lme4 "
              "(versions: 1_results/MRID_output/sessionInfo.txt)",
              f"repo nextflow-cluster HEAD {head} (branch austin/master)",
-             f"ml/xdp_rgedi_rework git status: {status or 'clean'}"]
+             f"analyses/xdp_rgedi_rework git status: {status or 'clean'}"]
     (dest / "environment.txt").write_text("\n".join(lines) + "\n")
 
 

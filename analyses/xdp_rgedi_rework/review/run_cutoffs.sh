@@ -10,7 +10,7 @@ PKG=$(cd "${1:?package dir}" && pwd)
 mkdir -p "${2:?new cache dir}"; CACHE=$(cd "$2" && pwd)
 B=${3:-50}
 if [ "$B" = full ]; then B=""; fi               # empty = the B of config/params.yaml
-HERE=$(cd "$(dirname "$0")/.." && pwd)          # .../ml/xdp_rgedi_rework
+HERE=$(cd "$(dirname "$0")/.." && pwd)          # .../analyses/xdp_rgedi_rework
 BIN=$(cd "$HERE/../../bin" && pwd)              # .../bin (MRID R functions)
 export XDP_RGEDI_PYTHON=${XDP_RGEDI_PYTHON:-$(command -v python3)}
 export XDP_RGEDI_RSCRIPT=${XDP_RGEDI_RSCRIPT:-$(command -v Rscript)}

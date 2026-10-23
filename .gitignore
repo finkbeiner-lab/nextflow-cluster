@@ -21,3 +21,6 @@ core.*
 # deepcell is a separate git repo (github.com/finkbeiner-lab/deepcell) —
 # never track/commit it from this parent repo.
 deepcell/
+
+# Experiment outputs live in Dropbox, not git
+analyses/*/results/

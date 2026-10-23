@@ -2,7 +2,7 @@
 """Grow Cellpose masks into the GFP foreground mask (rescue dim tails + dim missed cells).
 
 Cellpose-SAM misses the thin dim tails of RGEDI fibroblasts and many dim-but-above-background
-cells. The per-tile foreground mask from ml/rgedi_tile/fg_tile_readout.py (bg = LEVEL * s * P)
+cells. The per-tile foreground mask from analyses/hevo_pmsg/fg_tile_readout.py (bg = LEVEL * s * P)
 does see them, so for each export crop:
     1. foreground montage: per-tile background fit + foreground() exactly as fg_tile_readout.py,
        stitched like export_crops.montage (10% overlap, later tiles overwrite), then cropped
@@ -31,7 +31,7 @@ import tifffile
 from scipy import ndimage
 from skimage.segmentation import relabel_sequential, watershed
 
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "rgedi_tile"))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "analyses", "hevo_pmsg"))
 import fg_tile_readout as fgr  # noqa: E402
 
 TILE_POS = {1: (0, 0), 2: (0, 1), 3: (0, 2), 4: (1, 2), 5: (1, 1), 6: (1, 0),

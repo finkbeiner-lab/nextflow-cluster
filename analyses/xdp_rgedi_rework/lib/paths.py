@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-PKG_ROOT = Path(__file__).resolve().parents[1]          # ml/xdp_rgedi_rework
+PKG_ROOT = Path(__file__).resolve().parents[1]          # analyses/xdp_rgedi_rework
 REPO_ROOT = PKG_ROOT.parents[1]                          # nextflow-cluster-master
 REPO_BIN = REPO_ROOT / "bin"
 
