@@ -20,7 +20,7 @@ import pandas as pd
 import tifffile
 from scipy import ndimage
 
-ADIR = "/gladstone/finkbeiner/home/aholub/GXYTMPS/GXYTMP-hevo-pmsG-1"
+ADIR = "/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/hevo-pmsG-1_GXYTMP"
 GFP, RFP = "Epi-GFP16", "Epi-RFP16"
 STRIDE, SIDE = 1080, 3
 GRID = np.array([[1, 2, 3], [6, 5, 4], [7, 8, 9]], dtype=np.uint8)

@@ -19,7 +19,7 @@ Usage:
     tracking_ultrack.py --experiment hevo-pmsG-1 --wells C6,F6 \
         --max_distance 450 --appear_weight -1.0 --disappear_weight -1.0 \
         --min_area 250 --max_area 40000 --solver '' \
-        --work_dir /gladstone/finkbeiner/home/aholub/GXYTMPS/ULTRACK_WORK
+        --work_dir /gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/ultrack_GXYTMP/ULTRACK_WORK
 """
 import argparse
 import csv
@@ -142,7 +142,7 @@ def main() -> None:
     p.add_argument('--appear_weight', type=float, default=-1.0, help='Penalty for a track appearing (more negative = fewer new tracks / less fragmentation).')
     p.add_argument('--disappear_weight', type=float, default=-1.0, help='Penalty for a track disappearing (more negative = fewer track ends).')
     p.add_argument('--solver', default='', help="'' (auto: Gurobi if licensed else CBC) | 'GUROBI' | 'CBC'.")
-    p.add_argument('--work_dir', default='/gladstone/finkbeiner/home/aholub/GXYTMPS/ULTRACK_WORK')
+    p.add_argument('--work_dir', default='/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/ultrack_GXYTMP/ULTRACK_WORK')
     p.add_argument('--out_csv', default='')
     args = p.parse_args()
 

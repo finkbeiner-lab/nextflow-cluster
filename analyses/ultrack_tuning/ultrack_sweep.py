@@ -9,7 +9,7 @@ from ultrack import MainConfig, Tracker
 from ultrack.utils import labels_to_contours
 
 EXP='hevo-pmsG-1'; WELL='F6'; CH='Epi-GFP16'; TMAX=18
-WORK='/gladstone/finkbeiner/home/aholub/GXYTMPS/ULTRACK_SWEEP'
+WORK='/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/ultrack_GXYTMP/ULTRACK_SWEEP'
 pw=None
 for r in csv.DictReader(open('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')):
     if 'pw' in r: pw=r['pw'].strip(); break

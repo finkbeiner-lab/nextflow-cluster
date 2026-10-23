@@ -6,7 +6,7 @@ import imageio.v3 as iio
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
 from sqlalchemy import create_engine, text
 EXP='hevo-pmsG-1'; WELL='F6'; CH='Epi-GFP16'; BG_TP=9
-D='/gladstone/finkbeiner/home/aholub/GXYTMPS/GXYTMP-hevo-pmsG-1'
+D='/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/hevo-pmsG-1_GXYTMP'
 pw=None
 for r in csv.DictReader(open('/gladstone/finkbeiner/lab/GALAXY_INFO/pass.csv')):
     if 'pw' in r: pw=r['pw'].strip(); break

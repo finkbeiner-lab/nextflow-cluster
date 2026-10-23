@@ -2,7 +2,7 @@
 track length / dropout (fraction of T0 cells tracked to the last frame). Read-only."""
 import numpy as np, pandas as pd
 import matplotlib; matplotlib.use('Agg'); import matplotlib.pyplot as plt
-D='/gladstone/finkbeiner/home/aholub/GXYTMPS/GXYTMP-hevo-pmsG-1'
+D='/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/hevo-pmsG-1_GXYTMP'
 WELL='F6'; TMAX=18
 
 # Ultrack tracks

@@ -51,7 +51,7 @@ RAW = {
     "hevo-pmsG-1": "/gladstone/finkbeiner/robodata/Robo4Images/hevo-pmsG-1",
     "hevo-pmsG-2": "/gladstone/finkbeiner/robodata/Robo4Images/hevo-pmsG-2",
 }
-ANALYSIS = {"hevo-pmsG-1": "/gladstone/finkbeiner/home/aholub/GXYTMPS/GXYTMP-hevo-pmsG-1"}
+ANALYSIS = {"hevo-pmsG-1": "/gladstone/finkbeiner/steve/Austin/Robo5-Hevolution/hevo-pmsG-1_GXYTMP"}
 GFP = "Epi-GFP16"
 # primary red first; pmsG-1 primary = post-stim read (-2), pre-stim kept for comparison
 REDS = {
