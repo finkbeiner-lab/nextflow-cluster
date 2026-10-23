@@ -37,6 +37,11 @@ logger.addHandler(logging.FileHandler(os.path.join(_fink_log_dir, f'OverlayMonta
 from experiment_logger import attach_experiment_log  # noqa: E402
 attach_experiment_log(logger, os.environ.get('NEXTFLOW_OUTPUT_PATH', ''), 'OVERLAY_MONTAGE')
 
+# Summary columns actually read by run() / overlay_single_timepoint().
+# Everything else (channel, area, intensity, Blob* duplicates, ...) is
+# dead weight that gets pickled into every per-timepoint worker task.
+OVERLAY_COLUMNS = ['experiment', 'well', 'tracked_id', 'timepoint', 'centroid_x', 'centroid_y']
+
 
 class OverlayBatch:
     """Batch overlay of tracked cell IDs onto montaged microscopy images.
@@ -116,7 +121,18 @@ class OverlayBatch:
             print(f"[WARN] Dropped {n_dropped} malformed row(s) from tracking summary "
                   f"(non-numeric tracked_id/timepoint) — likely column-shift corruption")
         print(f"[INFO] Loaded tracking summary: {summary_path} ({len(self.df)} rows)")
-        
+
+        # If STABLE_CELL_FILTER has already produced a stable-IDs CSV in
+        # params.output_path, leave the summary untouched. Otherwise keep
+        # only the columns the overlay needs.
+        stable_ids_path = self.stable_ids_path()
+        if os.path.isfile(stable_ids_path):
+            print(f"[INFO] Stable IDs CSV found: {stable_ids_path} — keeping full tracking summary")
+        else:
+            self.df = self.keep_overlay_columns(self.df)
+            print(f"[INFO] Stable IDs CSV not found: {stable_ids_path} — kept columns "
+                  f"{OVERLAY_COLUMNS} ({len(self.df)} rows)")
+
         # Bounded worker count: each ForkPool child duplicates the full-well
         # montage (~75 MB) + DataFrame + PIL draw buffers. At cpu_count()*0.75
         # on a 32-core node this used to hit MemoryError (see modules.nf
@@ -230,6 +246,46 @@ class OverlayBatch:
         # Final completion logging
         total_time = time() - self.start_time
         print(f'Overlay Montage completed in {total_time:.1f} seconds ({total_time/60:.1f} min)')
+
+    def stable_ids_path(self) -> str:
+        """Return the expected stable-IDs CSV path under params.output_path.
+
+        ``params.output_path`` reaches this script as the
+        ``NEXTFLOW_OUTPUT_PATH`` env var (see nextflow.config beforeScript);
+        falls back to the experiment's analysisdir when run outside Nextflow.
+
+        Returns:
+            Path to ``<output_path>/<experiment>_tracked_montage_summary_stable_ids.csv``.
+        """
+        output_path = os.environ.get('NEXTFLOW_OUTPUT_PATH', '').strip() or self.experiment_root
+        return os.path.join(
+            output_path.rstrip('/'),
+            f"{self.experiment_name}_tracked_montage_summary_stable_ids.csv"
+        )
+
+    @staticmethod
+    def keep_overlay_columns(df: pd.DataFrame) -> pd.DataFrame:
+        """Reduce the tracking summary to the columns the overlay reads.
+
+        The summary has one row per channel for each cell/timepoint with
+        identical centroids, so rows are de-duplicated after the column
+        cut to avoid drawing every label once per channel.
+
+        Args:
+            df: Full tracking summary DataFrame.
+
+        Returns:
+            DataFrame restricted to ``OVERLAY_COLUMNS``, de-duplicated.
+
+        Raises:
+            ValueError: If any of ``OVERLAY_COLUMNS`` is missing.
+        """
+        missing = [c for c in OVERLAY_COLUMNS if c not in df.columns]
+        if missing:
+            raise ValueError(
+                f"Tracking summary is missing required columns {missing}; got {list(df.columns)}"
+            )
+        return df[OVERLAY_COLUMNS].drop_duplicates().reset_index(drop=True)
 
     def extract_timepoint(self, filename: str) -> int:
         """Parse the integer timepoint from a montage filename.
