@@ -70,6 +70,7 @@ EXP_NAME="${EXP_NAME:-unknown}"
 LOG_FILE="${USER_DIR}/$(whoami)_$(date +%Y%m%d_%H%M%S)_${SLURM_JOB_ID:-local}_${EXP_NAME}.out"
 exec > "${LOG_FILE}" 2>&1
 echo "Log file: ${LOG_FILE}"
+JOB_START=$(date +%s)
 
 # Disable color output in Nextflow
 export NXF_CLI_COLOR=false
@@ -173,6 +174,46 @@ fi
 echo "Nextflow launcher: ${NEXTFLOW}"
 
 # ---------------------------------------------------------------------------
+# Resolve a Java 17+ runtime for the Nextflow driver.
+#
+# Nextflow itself runs on the host (only tasks run inside the container), so
+# it needs Java >= 17 on whichever node Slurm picks. fb-galaxy-cpu09/10 ship
+# only Java 8 as /usr/bin/java, and the run dies with "Cannot find Java or
+# it's a wrong version" before a single task is scheduled. Prefer a system
+# Java 17+, else fall back to the Temurin JDK bundled at ${INSTALL_DIR}/jdk-17
+# so the driver runs on every node in the partition.
+#
+# Set JAVA_HOME before sbatch to override.
+# ---------------------------------------------------------------------------
+java_major() {  # prints the major version of a java binary, e.g. 8, 17
+    "$1" -version 2>&1 | awk -F'"' '/version/ {split($2, v, "."); print (v[1] == "1") ? v[2] : v[1]; exit}'
+}
+
+JAVA_BIN=""
+for candidate in \
+    "${JAVA_HOME:+${JAVA_HOME}/bin/java}" \
+    "$(command -v java 2>/dev/null)" \
+    /usr/lib/jvm/java-21*/bin/java \
+    /usr/lib/jvm/java-17*/bin/java \
+    "${INSTALL_DIR}/jdk-17/bin/java"
+do
+    if [ -n "${candidate}" ] && [ -x "${candidate}" ] && \
+       [ "$(java_major "${candidate}")" -ge 17 ] 2>/dev/null; then
+        JAVA_BIN="${candidate}"
+        break
+    fi
+done
+
+if [ -z "${JAVA_BIN}" ]; then
+    echo "ERROR: no Java 17+ found on $(hostname)."
+    echo "  Expected the bundled JDK at ${INSTALL_DIR}/jdk-17"
+    exit 1
+fi
+export JAVA_HOME="$(dirname "$(dirname "$(readlink -f "${JAVA_BIN}")")")"
+export JAVA_CMD="${JAVA_HOME}/bin/java"
+echo "Java:              ${JAVA_CMD} (version $(java_major "${JAVA_CMD}"))"
+
+# ---------------------------------------------------------------------------
 # Pin the Nextflow release the pipeline is developed and tested against.
 #
 # The launcher script selects (and downloads) whatever version NXF_VER names.
@@ -247,10 +288,13 @@ if [ $NF_EXIT -ne 0 ]; then
     echo "================================="
     echo "Nextflow failed (exit $NF_EXIT). Last 100 lines of .nextflow.log:"
     echo "================================="
-    if [ -f "${USER_DIR}/.nextflow.log" ]; then
+    # A .nextflow.log older than this job belongs to a previous run: Nextflow
+    # died before writing its own, so the tail would be misleading.
+    if [ -f "${USER_DIR}/.nextflow.log" ] && \
+       [ "$(stat -c %Y "${USER_DIR}/.nextflow.log")" -ge "${JOB_START}" ]; then
         tail -100 "${USER_DIR}/.nextflow.log"
     else
-        echo "(No .nextflow.log found)"
+        echo "(No .nextflow.log from this run -- Nextflow failed before starting; see the error above)"
     fi
     echo "================================="
     exit $NF_EXIT
