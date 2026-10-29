@@ -507,15 +507,15 @@ def main() -> None:
                          "soma bodies). Overrides --attach-px. Post-segmentation knob: safe off cache.")
     ap.add_argument("--min-radial", type=float, default=0.8,
                     help="minimum contact radiality (0..~1.4) to root, with --root-px. "
-                         "0.8 = where contacts at real somas start to outnumber contacts "
-                         "at randomly placed pseudo-somas beyond the density baseline "
-                         "(XDP8/XDP11 spot-check, 2026-10-28); 6 is the matching --root-px.")
+                         "Tune against a pseudo-soma null (real soma masks moved to random "
+                         "spots): pick the value where contacts at real somas start to "
+                         "outnumber contacts at pseudo-somas beyond the density baseline.")
     ap.add_argument("--cross-cos", type=float, default=None,
                     help="with --root-px: drop pairs of root contacts that point in "
                          "opposite directions (cosine < this) and are joined by the "
                          "neurite mask through the soma -- one neurite crossing over "
-                         "the cell body, not two roots. Default off; -0.7 validated on "
-                         "the XDP8/XDP11 spot-check (2026-10-28).")
+                         "the cell body, not two roots. Default off; ~-0.7 is a "
+                         "reasonable starting value.")
     ap.add_argument("--diameter", type=int, default=25)
     ap.add_argument("--flow", type=float, default=0.6)
     ap.add_argument("--cellprob", type=float, default=-1.0)
