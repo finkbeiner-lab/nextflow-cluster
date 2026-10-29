@@ -13,7 +13,9 @@ into the actual biological readout:
    (a watershed seeded from the somas, constrained to the neurite foreground).
    Neurites in a component that contains no soma get owner 0 and are dropped:
    this enforces Austin's "a neurite must root in a labelled soma" rule and
-   rejects background texture / unlabelled-cell ghosting for free.
+   rejects background texture / unlabelled-cell ghosting for free. Optional
+   root-contact mode (``root_px``) seeds only from traces that leave a soma
+   outward, so a neighbour's neurite passing by is not credited to it.
 4. **Length** — geometric skeleton length (orthogonal + sqrt(2)*diagonal steps)
    of each soma's attributed neurite skeleton, excluding pixels inside soma
    bodies.
@@ -35,7 +37,7 @@ import argparse
 import csv
 import glob
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import tifffile
@@ -218,13 +220,117 @@ def diaglen(sk: np.ndarray) -> float:
     return float(o.sum() / 2 + (d.sum() / 2) * np.sqrt(2))
 
 
+ROOT_CLIP_PX = 12  # radiality is measured over a contact clipped to root_px + this
+
+
+def root_markers(soma_labels: np.ndarray, skel_neurite: np.ndarray,
+                 root_px: int, min_radial: float,
+                 neurite_mask: Optional[np.ndarray] = None,
+                 cross_cos: Optional[float] = None) -> np.ndarray:
+    """Seed image of the skeleton pieces that *root* in a soma.
+
+    A contact is a skeleton piece (8-connected, split by nearest soma) that comes
+    within ``root_px`` of a soma, clipped to ``root_px + ROOT_CLIP_PX`` px from
+    it. Its radiality is ``(d_max - d_min) / n_px`` over that clipped piece,
+    where ``d`` is distance to the soma: ~1 for a trace leaving the soma
+    outward, ~0 for a trace running along the soma edge (a neighbour's neurite
+    passing by). Contacts with radiality >= ``min_radial`` become seeds for
+    their soma; a trace whose tip stops up to ``root_px`` short of its soma
+    still roots, because only distance to the soma is required, not contact.
+
+    Crossing test (``cross_cos`` set): two root contacts of the same soma that
+    point in roughly opposite directions (cosine of their outward directions
+    < ``cross_cos``) AND are joined by the neurite mask through that soma's
+    interior are one neurite crossing over the cell body, not two roots; both
+    stop seeding that soma.
+
+    Args:
+        soma_labels: Integer soma image (H, W), 0=background.
+        skel_neurite: Neurite skeleton with soma interiors removed (bool).
+        root_px: Max soma distance (px) at which a trace can root.
+        min_radial: Minimum contact radiality to root.
+        neurite_mask: Boolean neurite mask; required for the crossing test.
+        cross_cos: Crossing-test cosine threshold; None = off.
+
+    Returns:
+        Integer marker image: soma id on rooting contact pixels, else 0.
+    """
+    dist, (iy, ix) = ndimage.distance_transform_edt(soma_labels == 0,
+                                                    return_indices=True)
+    near = skel_neurite & (dist <= root_px + ROOT_CLIP_PX)
+    markers = np.zeros(soma_labels.shape, np.int32)
+    if not near.any():
+        return markers
+    comp, _ = ndimage.label(near, structure=np.ones((3, 3)))
+    ys, xs = np.nonzero(near)
+    soma_id = soma_labels[iy[ys, xs], ix[ys, xs]].astype(np.int64)
+    key = comp[ys, xs].astype(np.int64) * (int(soma_labels.max()) + 1) + soma_id
+    _, inv = np.unique(key, return_inverse=True)
+    idx = np.arange(1, inv.max() + 2)
+    d = dist[ys, xs]
+    dmin = np.asarray(ndimage.minimum(d, inv + 1, idx))
+    dmax = np.asarray(ndimage.maximum(d, inv + 1, idx))
+    radial = (dmax - dmin) / np.bincount(inv)
+    root = (dmin <= root_px) & (radial >= min_radial)
+    if cross_cos is not None and root.sum() > 1:
+        root &= ~_crossing_contacts(soma_labels, neurite_mask, dist, ys, xs, d,
+                                    inv, idx, soma_id, root, root_px, cross_cos)
+    roots = root[inv]
+    markers[ys[roots], xs[roots]] = soma_id[roots]
+    return markers
+
+
+def _crossing_contacts(soma_labels: np.ndarray, neurite_mask: np.ndarray,
+                       dist: np.ndarray, ys: np.ndarray, xs: np.ndarray,
+                       d: np.ndarray, inv: np.ndarray, idx: np.ndarray,
+                       soma_id: np.ndarray, root: np.ndarray, root_px: int,
+                       cross_cos: float) -> np.ndarray:
+    """Flag root contacts that pair up as one neurite crossing their soma.
+
+    Helper for :func:`root_markers`; arrays are its per-pixel / per-contact
+    intermediates. Returns a per-contact bool (True = part of a crossing).
+    """
+    n = len(root)
+    pmin = np.asarray(ndimage.minimum_position(d, inv + 1, idx)).astype(int).ravel()
+    pmax = np.asarray(ndimage.maximum_position(d, inv + 1, idx)).astype(int).ravel()
+    vec = np.stack([ys[pmax] - ys[pmin], xs[pmax] - xs[pmin]], 1).astype(float)
+    vec /= np.maximum(np.linalg.norm(vec, axis=1, keepdims=True), 1e-9)
+    ksoma = np.zeros(n, np.int64)
+    ksoma[inv] = soma_id
+    # mask connectivity through somas + their root annuli
+    region = neurite_mask & ((soma_labels > 0) | (dist <= root_px + ROOT_CLIP_PX))
+    cc, _ = ndimage.label(region, structure=np.ones((3, 3)))
+    kcc = cc[ys[pmin], xs[pmin]]
+    inside = neurite_mask & (soma_labels > 0)
+    through = set(zip(cc[inside].tolist(), soma_labels[inside].tolist()))
+    cross = np.zeros(n, bool)
+    r = np.where(root & (kcc > 0))[0]
+    r = r[np.argsort(ksoma[r], kind="stable")]
+    bounds = np.r_[0, np.flatnonzero(np.diff(ksoma[r])) + 1, len(r)]
+    for a, b in zip(bounds[:-1], bounds[1:]):
+        g = r[a:b]
+        for i in range(len(g)):
+            for j in range(i + 1, len(g)):
+                ki, kj = g[i], g[j]
+                if (kcc[ki] == kcc[kj] and (int(kcc[ki]), int(ksoma[ki])) in through
+                        and float(vec[ki] @ vec[kj]) < cross_cos):
+                    cross[ki] = cross[kj] = True
+    return cross
+
+
 def attribute(soma_labels: np.ndarray, neurite_mask: np.ndarray,
-              attach_px: int = 0) -> Tuple[np.ndarray, np.ndarray]:
+              attach_px: int = 0, root_px: int = 0, min_radial: float = 0.8,
+              cross_cos: Optional[float] = None) -> Tuple[np.ndarray, np.ndarray]:
     """Assign each neurite skeleton pixel to the soma it connects to.
 
     Geodesic ownership: a watershed seeded from soma labels, constrained to
     travel only through the neurite foreground (union with somas so processes
     reach their cell body). Skeleton pixels inside soma bodies are dropped.
+
+    With ``root_px > 0`` the watershed is seeded only from the skeleton pieces
+    that root in a soma (:func:`root_markers`) instead of from whole soma
+    bodies, so a neighbour's neurite that merely touches a soma is no longer
+    credited to it; it flows to the soma it actually roots in, or to none.
 
     Args:
         soma_labels: Integer soma image (H, W), 0=background.
@@ -232,21 +338,34 @@ def attribute(soma_labels: np.ndarray, neurite_mask: np.ndarray,
         attach_px: Grow each soma by this many px (without merging neighbours)
             before seeding, so a neurite whose trace stops just short of its
             cell body still attaches. Only the attachment seed grows: skeleton
-            is still dropped only inside the original soma. 0 = off.
+            is still dropped only inside the original soma. 0 = off. Ignored
+            when ``root_px > 0``.
+        root_px: Root-contact attribution (see above): max soma distance at
+            which a trace can root. 0 = off (seed from whole soma bodies).
+        min_radial: Minimum contact radiality to root (``root_px > 0`` only).
+        cross_cos: Crossing test for root contacts (see :func:`root_markers`);
+            None = off. ``root_px > 0`` only.
 
     Returns:
         ``(owner, skel_neurite)``: ``owner`` is the soma id owning each fg pixel
-        (0 where unreachable from any soma), ``skel_neurite`` is the attributed
-        neurite skeleton (bool, soma interiors removed).
+        (0 where unreachable from any soma; soma bodies always own themselves),
+        ``skel_neurite`` is the attributed neurite skeleton (bool, soma
+        interiors removed).
     """
-    seeds = expand_labels(soma_labels, attach_px) if attach_px > 0 else soma_labels
+    skel = skeletonize(neurite_mask)
+    skel_neurite = skel & (soma_labels == 0)
+    if root_px > 0:
+        seeds = root_markers(soma_labels, skel_neurite, root_px, min_radial,
+                             neurite_mask, cross_cos)
+    else:
+        seeds = expand_labels(soma_labels, attach_px) if attach_px > 0 else soma_labels
     fg = neurite_mask | (seeds > 0)
     # Flat landscape -> watershed distributes fg by geodesic distance to the
     # nearest soma marker WITHIN the connected mask; unreached fg stays 0.
     owner = watershed(np.zeros_like(soma_labels, dtype=np.uint8),
                       markers=seeds, mask=fg)
-    skel = skeletonize(neurite_mask)
-    skel_neurite = skel & (soma_labels == 0)
+    if root_px > 0:  # keep the convention that each soma body owns itself
+        owner[soma_labels > 0] = soma_labels[soma_labels > 0]
     return owner, skel_neurite
 
 

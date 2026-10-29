@@ -411,7 +411,7 @@ def _write_params(run_dir: str, args: argparse.Namespace, run_id: str,
     keys = ["manifest", "raw_root", "out_dir", "cache_dir", "checkpoint",
             "device", "threshold", "diameter", "flow", "cellprob", "clean_k",
             "min_neurite", "seam_band", "flatten_size", "soma_dilation",
-            "thr_low", "attach_px", "soma_flatten", "soma_floor_px", "soma_min_width"]
+            "thr_low", "attach_px", "root_px", "min_radial", "cross_cos", "soma_flatten", "soma_floor_px", "soma_min_width"]
     meta = dict(run_id=run_id,
                 created=datetime.datetime.now().isoformat(timespec="seconds"),
                 n_wells=n_wells,
@@ -446,6 +446,9 @@ def run_overlay_only(args: argparse.Namespace) -> None:
     # Runs predating these knobs had neither: default = off (their exact behaviour).
     thr_low = p.get("thr_low", threshold if "threshold" in p else args.thr_low)
     attach_px = p.get("attach_px", 0 if p else args.attach_px)
+    root_px = p.get("root_px", 0 if p else args.root_px)
+    min_radial = p.get("min_radial", args.min_radial)
+    cross_cos = p.get("cross_cos", None if p else args.cross_cos)
 
     manifest = list(csv.DictReader(open(args.manifest)))
     n = 0
@@ -467,7 +470,8 @@ def run_overlay_only(args: argparse.Namespace) -> None:
         image01 = build_image01(paths, sites, flatten_size)
         neurite_mask = neurite_mask_from_prob(prob, threshold, thr_low, seam_band,
                                               min_neurite)
-        owner, skel = attribute(soma, neurite_mask, attach_px)
+        owner, skel = attribute(soma, neurite_mask, attach_px, root_px, min_radial,
+                                cross_cos)
         tifffile.imwrite(
             os.path.join(run_dir, f"{exp}_{well}_{tp}_percell.tif"),
             colorize(image01, soma, owner, skel)[::4, ::4])
@@ -496,6 +500,22 @@ def main() -> None:
                     help="grow somas by this many px for neurite attribution only, "
                          "so traces stopping just short of the cell body still count "
                          "(default 0 = off). Post-segmentation knob: safe off cache.")
+    ap.add_argument("--root-px", type=int, default=0,
+                    help="root-contact attribution: credit a trace to a soma only if it "
+                         "leaves the soma outward within this many px (a neighbour's "
+                         "neurite passing by is not credited). 0 = off (seed from whole "
+                         "soma bodies). Overrides --attach-px. Post-segmentation knob: safe off cache.")
+    ap.add_argument("--min-radial", type=float, default=0.8,
+                    help="minimum contact radiality (0..~1.4) to root, with --root-px. "
+                         "Tune against a pseudo-soma null (real soma masks moved to random "
+                         "spots): pick the value where contacts at real somas start to "
+                         "outnumber contacts at pseudo-somas beyond the density baseline.")
+    ap.add_argument("--cross-cos", type=float, default=None,
+                    help="with --root-px: drop pairs of root contacts that point in "
+                         "opposite directions (cosine < this) and are joined by the "
+                         "neurite mask through the soma -- one neurite crossing over "
+                         "the cell body, not two roots. Default off; ~-0.7 is a "
+                         "reasonable starting value.")
     ap.add_argument("--diameter", type=int, default=25)
     ap.add_argument("--flow", type=float, default=0.6)
     ap.add_argument("--cellprob", type=float, default=-1.0)
@@ -635,7 +655,8 @@ def main() -> None:
                     os.replace(tmp, cache_path)
             neurite_mask = neurite_mask_from_prob(prob, args.threshold, args.thr_low,
                                                   args.seam_band, args.min_neurite)
-            owner, skel = attribute(soma, neurite_mask, args.attach_px)
+            owner, skel = attribute(soma, neurite_mask, args.attach_px,
+                                    args.root_px, args.min_radial, args.cross_cos)
             lengths = per_soma_lengths(owner, skel, soma)
             props = {p.label: p for p in regionprops(soma)}
 
