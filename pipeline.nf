@@ -320,9 +320,24 @@ workflow {
 
     if (params.DO_SEGMENTATION_MONTAGE) {
         register_flag = updatepaths_result.mix(register_result).collect()
-        seg_ch = SEGMENTATION_MONTAGE(register_flag, experiment_ch, morphology_ch, seg_ch, norm_ch, lower_ch, upper_ch, sd_ch,
-        proximity_radius_ch, well_ch, tp_ch, well_toggle_ch, tp_toggle_ch)
-        seg_ch.view { it }
+        // The process takes one tuple per well, so combine the inputs into one channel.
+        // collect() gives a list; map it to a single flag so combine() doesn't flatten it.
+        seg_montage_input_ch = register_flag.map { true }
+            .combine(experiment_ch)
+            .combine(morphology_ch)
+            .combine(seg_ch)
+            .combine(norm_ch)
+            .combine(lower_ch)
+            .combine(upper_ch)
+            .combine(sd_ch)
+            .combine(proximity_radius_ch)
+            .combine(well_ch)
+            .combine(tp_ch)
+            .combine(well_toggle_ch)
+            .combine(tp_toggle_ch)
+        // Separate name: seg_ch holds the segmentation method used by later steps.
+        seg_montage_ch = SEGMENTATION_MONTAGE(seg_montage_input_ch)
+        seg_montage_ch.view { it }
         seg_result = SEGMENTATION_MONTAGE.out
     }
     else {
@@ -364,8 +379,19 @@ workflow {
 
     if (params.DO_MONTAGE) {
         montage_flag = seg_result.mix(cellpose_result).mix(track_result).collect()
-        montage_ch = MONTAGE(montage_flag, experiment_ch, tiletype_ch, montage_pattern_ch, well_ch, tp_ch, channel_ch,
-        well_toggle_ch, tp_toggle_ch, channel_toggle_ch,image_overlap_ch)
+        // The process takes one tuple per well, so combine the inputs into one channel.
+        montage_input_ch = montage_flag.map { true }
+            .combine(experiment_ch)
+            .combine(tiletype_ch)
+            .combine(montage_pattern_ch)
+            .combine(well_ch)
+            .combine(tp_ch)
+            .combine(channel_ch)
+            .combine(well_toggle_ch)
+            .combine(tp_toggle_ch)
+            .combine(channel_toggle_ch)
+            .combine(image_overlap_ch)
+        montage_ch = MONTAGE(montage_input_ch)
         montage_result = MONTAGE.out
     }
 
@@ -398,19 +424,19 @@ workflow {
 
 if (params.DO_ALIGN_MONTAGE_DFT) {
     align_montage_ch = Channel.of(true)
-        align_montage_dft_ch = ALIGN_MONTAGE_DFT(
-            align_montage_ch,
-            experiment_ch,
-            morphology_ch,
-            well_ch,
-            tp_ch,
-            channel_ch,
-            well_toggle_ch,
-            tp_toggle_ch,
-            channel_toggle_ch,
-            tile_ch,
-            shift_dict_ch
-        )
+        // The process takes one tuple per well, so combine the inputs into one channel.
+        align_montage_input_ch = align_montage_ch
+            .combine(experiment_ch)
+            .combine(morphology_ch)
+            .combine(well_ch)
+            .combine(tp_ch)
+            .combine(channel_ch)
+            .combine(well_toggle_ch)
+            .combine(tp_toggle_ch)
+            .combine(channel_toggle_ch)
+            .combine(tile_ch)
+            .combine(shift_dict_ch)
+        align_montage_dft_ch = ALIGN_MONTAGE_DFT(align_montage_input_ch)
         align_montage_dft_ch.view { it }
         align_montage_dft_result = ALIGN_MONTAGE_DFT.out
 } else {
