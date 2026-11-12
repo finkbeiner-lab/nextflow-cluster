@@ -72,6 +72,21 @@ All executable Python scripts live in `bin/`. The bundled workflows (IXM and STD
 - **`update_path.py`** - Database path migration
 - **`mask_to_masktracked.py`** - Copies T0 masks to tracked mask paths
 
+#### Modules added on the `austin-claude` branch (Austin Holub, Aug-Nov 2026)
+Wired into `pipeline.nf` / `modules.nf` with `DO_*` flags:
+- **`minisog.py`** (`DO_MINISOG`) - Death readout for the miniSOG-RGEDI biosensor. Writes `minisogtrackdata` and `minisogcomparisondata`.
+- **`neurite.py`** (`DO_NEURITE`) - Per-cell neurite length and branching on tiles. Writes `neuritecelldata`.
+- **`neurite_montage.py`** (`DO_NEURITE_MONTAGE`) - Per-cell neurite measurements on whole-well montages (Cellpose-SAM somas + clDice). Uses `neurite_model.py` and the model code in `ml/neurite/` (baked at `/ml/neurite`, read through `NEURITE_ML_DIR`).
+
+Standalone scripts (run with `python` / `Rscript`, not wired into `pipeline.nf`):
+- **`gedi_montage.py`** - GEDI2 v3 death measurement on montages + the threshold-setting plot. Rules: `docs/gedi_reference/`.
+- **`cellpose_montage_rgedi.py`**, **`egfp_gate.py`**, **`gmm1d.py`**, **`track_cells.py`** - RGEDI path: Cellpose-SAM detection on aligned montages, EGFP-positive gate, CPU tracking.
+- **`ratio.py`**, **`ratio_threshold.py`**, **`plate_layout.py`**, **`mrid_logodds.R`**, **`mrid_R/`** - Command-line port of the MRID survival analysis. See `docs/mrid_pipeline_wiring.md`.
+- **`sa_qc_ratio.py`** - Sodium-arsenite positive-control QC for the Cellpose + EGFP-gate path.
+- **`timepoints_from_images.py`** - Timepoint to elapsed-hours table from raw image acquisition times.
+- **`tracking_ultrack.py`** - Ultrack (ILP, Gurobi) tracker. Needs the separate `ultrack.def` container.
+- **`ml/cellpose_ft/`** - Tools to label cells and export Cellpose fine-tuning sets.
+
 #### Code style conventions
 All core Python files follow these conventions:
 - **Docstrings**: Google style (`Args:`, `Returns:`, `Raises:`)
@@ -80,7 +95,9 @@ All core Python files follow these conventions:
 - **Logging**: Module-level logger with file handler writing to `./finkbeiner_logs/`
 
 ### Container
-- **`nextflow-cluster.def`** - Singularity definition file (Ubuntu 22.04, Python 3.9, OpenCV, Cellpose, Gurobi, R, Java 17).
+- **`nextflow-cluster.def`** - Singularity definition file (Ubuntu 22.04, Python 3.9, OpenCV, Cellpose, gurobipy, skan, Java 17). It does NOT contain R: the MRID R scripts run with the R installation on the cluster. Pipeline code is baked into the image at `/app` (from `bin/`) and `/ml`.
+- **`ultrack.def`** - Separate container for `tracking_ultrack.py`. The main container does not contain the `ultrack` package.
+- Gurobi needs a WLS `gurobi.lic` bound to `/opt/gurobi` at run time. WLS checks the license over the network, so the compute node needs network access.
 - **`Dockerfile`** - Docker equivalent (PyTorch base, used for local dev).
 - The built container is at `nextflow-cluster.sif` in the repo root.
 
@@ -97,9 +114,11 @@ Parameters use a toggle system:
 ## Container Bind Mounts
 
 The Singularity container binds:
-- `$HOME/nextflow-cluster/bin:/app` - Python scripts
 - `/gladstone/finkbeiner:/gladstone/finkbeiner:rw` - Data filesystem
 - `--nv` flag for GPU passthrough
+- `bin/` over `/app` ONLY in dev mode (`export DEEPCELL_DEV=1`). Otherwise the job uses the code baked into the SIF, and a `bin/` edit needs a SIF rebuild.
+
+`run.sh` reads `pipeline.nf`, `modules.nf`, and the SIF from `NEXTFLOW_INSTALL_DIR` (default: the shared install). To run your own checkout: `sbatch --export=NEXTFLOW_INSTALL_DIR=/path/to/checkout run.sh -c <config>` (the form documented in `run.sh`). Full details: `docs/DEVELOPMENT.md`.
 
 ## Slurm Configuration
 
@@ -107,3 +126,14 @@ The Singularity container binds:
 - Default: 1 CPU, 15GB RAM, 600h per task
 - Bundled workflows: 4-17 CPUs, 20GB RAM, 8h per well
 - `maxForks = 22` concurrent jobs
+
+## Working Rules for Claude
+
+- Never push to, merge into, or open a PR against `main`. `main` belongs to the whole lab. Work on a personal branch made from `austin-claude` or `main`.
+- Do not submit or cancel Slurm jobs (`sbatch`, `scancel`) unless the user tells you to. Write the sbatch script, then give the user the submit command.
+- Reach the cluster with `sft ssh --command '<command>' fb-galaxy-dev01`. This dev node has no GPU and is shared: do not run heavy compute on it.
+- Raw image data is read-only. Write outputs to the lab project folders on `/gladstone/finkbeiner`, not to the cluster home directory.
+- Keep experiment-specific scripts in `analyses/<project>/`. Commit only generic pipeline code. Do not commit results, credentials, or experiment names in help text.
+- Cellpose 4 on the V100 GPUs: always pass `use_bfloat16=False`. It is approximately ten times slower with `True`.
+- After editing `pipeline.nf` or `modules.nf`, run a Nextflow preview with only the changed `DO_*` flag on (`nextflow run pipeline.nf -preview -c <config>`).
+- Before a run, validate the config with `python bin/validate_config.py <config>`.
