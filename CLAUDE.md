@@ -40,6 +40,15 @@ The `run.sh` script validates the config via `bin/validate_config.py` before lau
 - `INTENSITY` uses `each` keyword to process target channels in parallel
 - Process dependencies are managed via `ready` flag channels (not file-based)
 
+### Repository Layout
+- Repo root: only the files the pipeline needs at run time or build time (`pipeline.nf`, `modules.nf`, `nextflow.config`, `finkbeiner.config(.template)`, `run.sh`, `setup-workspace.sh`, `install.sh`, `nextflow`, `nextflow-cluster.def`, `Dockerfile`). `run.sh` and `setup-workspace.sh` expect these at `INSTALL_DIR/`, so do not move them.
+- `bin/` - pipeline scripts (baked into the SIF at `/app`). `ml/` - model code (baked at `/ml`).
+- `configs/` - personal configs (`configs/austin/`) and old configs (`configs/archive/`).
+- `containers/` - extra container definitions (`ultrack.def`, `datastudy*.def`).
+- `docs/` - documentation. `tools/` - standalone helper scripts (DB channel checks, stable-track summaries, Streamlit config editor).
+- `legacy/` - early Nextflow experiments (`seg.nf`, `test.nf`, `copydb.nf`, `get_csvs.nf`, `params.nf`, `survival.R`). Not used by the pipeline.
+- `analyses/` - experiment-specific scripts. Results are not in the repo.
+
 ### Python Modules (`bin/`)
 All executable Python scripts live in `bin/`. The bundled workflows (IXM and STD) use only the **core 11 files** listed below. All other scripts in `bin/` are for standalone modules or legacy use.
 
@@ -84,7 +93,7 @@ Standalone scripts (run with `python` / `Rscript`, not wired into `pipeline.nf`)
 - **`ratio.py`**, **`ratio_threshold.py`**, **`plate_layout.py`**, **`mrid_logodds.R`**, **`mrid_R/`** - Command-line port of the MRID survival analysis. See `docs/mrid_pipeline_wiring.md`.
 - **`sa_qc_ratio.py`** - Sodium-arsenite positive-control QC for the Cellpose + EGFP-gate path.
 - **`timepoints_from_images.py`** - Timepoint to elapsed-hours table from raw image acquisition times.
-- **`tracking_ultrack.py`** - Ultrack (ILP, Gurobi) tracker. Needs the separate `ultrack.def` container.
+- **`tracking_ultrack.py`** - Ultrack (ILP, Gurobi) tracker. Needs the separate `containers/ultrack.def` container.
 - **`ml/cellpose_ft/`** - Tools to label cells and export Cellpose fine-tuning sets.
 
 #### Code style conventions
@@ -96,7 +105,7 @@ All core Python files follow these conventions:
 
 ### Container
 - **`nextflow-cluster.def`** - Singularity definition file (Ubuntu 22.04, Python 3.9, OpenCV, Cellpose, gurobipy, skan, Java 17). It does NOT contain R: the MRID R scripts run with the R installation on the cluster. Pipeline code is baked into the image at `/app` (from `bin/`) and `/ml`.
-- **`ultrack.def`** - Separate container for `tracking_ultrack.py`. The main container does not contain the `ultrack` package.
+- **`containers/ultrack.def`** - Separate container for `tracking_ultrack.py`. The main container does not contain the `ultrack` package.
 - Gurobi needs a WLS `gurobi.lic` bound to `/opt/gurobi` at run time. WLS checks the license over the network, so the compute node needs network access.
 - **`Dockerfile`** - Docker equivalent (PyTorch base, used for local dev).
 - The built container is at `nextflow-cluster.sif` in the repo root.

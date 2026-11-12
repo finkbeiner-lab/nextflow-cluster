@@ -12,7 +12,7 @@ From: python:3.11
 # (never baked in) exactly as for the main SIF. With solver_name='' Ultrack auto-
 # selects Gurobi if licensed, else the bundled open-source CBC solver.
 #
-# BUILD (fakeroot): apptainer build --fakeroot ultrack.sif ultrack.def
+# BUILD (fakeroot): apptainer build --fakeroot ultrack.sif containers/ultrack.def   (run from the repo root)
 # RUNTIME: bind the license -> apptainer exec -B ~/gurobi.lic:/opt/gurobi/gurobi.lic ...
 
 %post

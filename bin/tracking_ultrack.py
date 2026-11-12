@@ -4,7 +4,7 @@ the greedy proximity/overlap tracker (which drops ~34% of motile fibroblasts).
 
 Ultrack (royerlab/ultrack) solves tracking as an ILP over segmentation hypotheses,
 handling appear/disappear/division and crowded/ambiguous linking. It runs in a
-dedicated container (see ultrack.def) — NOT the main SIF.
+dedicated container (see containers/ultrack.def) — NOT the main SIF.
 
 Per well: stack the Cellpose seg-mask montages (alignedmontagemaskpath, morphology
 channel) into a (T, Y, X) label array, derive foreground+contours, solve, and write

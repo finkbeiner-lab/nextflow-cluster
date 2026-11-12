@@ -10,7 +10,7 @@ params.greeting = 'Hello world!'
 text_ch = Channel.of(params.text)
 greeting_ch = Channel.of(params.greeting)
 
-include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
+include { SPLITLETTERS; CONVERTTOUPPER } from '../modules.nf'
 
 
 params.outdir = "results"

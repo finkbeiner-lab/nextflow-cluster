@@ -32,7 +32,7 @@ The table gives the new modules. You turn on the first three with `DO_*` flags i
 | RGEDI segmentation | `bin/cellpose_montage_rgedi.py`, `bin/egfp_gate.py`, `bin/track_cells.py` | Cellpose-SAM cell detection, an EGFP-positive gate, and tracking without a GPU. |
 | MRID survival | `bin/ratio.py`, `bin/ratio_threshold.py`, `bin/plate_layout.py`, `bin/mrid_logodds.R`, `bin/mrid_R/` | A command-line port of the MRID survival analysis. |
 | Positive-control QC | `bin/sa_qc_ratio.py` | A quality check that uses sodium-arsenite wells. |
-| Ultrack tracking | `bin/tracking_ultrack.py`, `ultrack.def` | A tracker that loses fewer moving cells than the default tracker. |
+| Ultrack tracking | `bin/tracking_ultrack.py`, `containers/ultrack.def` | A tracker that loses fewer moving cells than the default tracker. |
 | Cellpose fine-tuning | `ml/cellpose_ft/` | Tools to label cells and to export training sets. |
 
 The branch also corrects three standalone modules that did not start on `main`: `DO_MONTAGE`, `DO_ALIGN_MONTAGE_DFT`, and `DO_SEGMENTATION_MONTAGE`. The `run.sh` script accepts `NEXTFLOW_INSTALL_DIR`, so you can run your own checkout.
@@ -40,7 +40,7 @@ The branch also corrects three standalone modules that did not start on `main`: 
 ### Known Limits
 
 - The main container does not contain R. The MRID R scripts run with the R installation on the cluster.
-- The main container does not contain the `ultrack` package. Build `ultrack.def` and use that container for Ultrack.
+- The main container does not contain the `ultrack` package. Build `containers/ultrack.def` and use that container for Ultrack.
 - Gurobi (for Ultrack) needs a WLS license file. When the job starts, bind the license file into the container.
 - Cellpose 4 is approximately ten times slower on the V100 GPUs with `use_bfloat16=True`. Use `use_bfloat16=False`.
 - The final branch passed a Nextflow preview test for each `DO_*` flag. Nobody did a full cluster run after the final merge.
@@ -54,6 +54,8 @@ The branch also corrects three standalone modules that did not start on `main`: 
 | miniSOG history | `docs/MINISOG_HISTORY.md` |
 | MRID connections to the pipeline | `docs/mrid_pipeline_wiring.md` |
 | GEDI rules | `docs/gedi_reference/` |
+
+The repository root contains only the files that the pipeline needs to run or to build. The branch moved other files into `docs/`, `tools/`, `containers/`, `configs/archive/`, and `legacy/`.
 
 The `analyses/` folder contains scripts for specific experiments. The repository does not contain results. Results are on the HIVE project folders and in Dropbox.
 

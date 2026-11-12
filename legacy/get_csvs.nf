@@ -9,7 +9,7 @@ params.greeting = 'Hello world!'
 experiment_ch = Channel.of(params.experiment)
 greeting_ch = Channel.of(params.greeting)
 
-include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
+include { SPLITLETTERS; CONVERTTOUPPER } from '../modules.nf'
 
 
 

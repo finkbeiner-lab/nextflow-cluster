@@ -23,7 +23,7 @@ well_ch = Channel.of(params.chosen_wells)
 tp_ch = Channel.of(params.chosen_timepoints)
 greeting_ch = Channel.of(params.greeting)
 
-include { SPLITLETTERS; CONVERTTOUPPER } from './modules.nf'
+include { SPLITLETTERS; CONVERTTOUPPER } from '../modules.nf'
 
 
 
