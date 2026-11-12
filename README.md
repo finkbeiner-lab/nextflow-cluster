@@ -7,10 +7,118 @@ A Nextflow Image Analysis Pipeline for HPC with Slurm and Docker.
 - Kaushik Sridhar
 - Monika Ahirwar
 - Josh Lamstein
+- Austin Holub
 
 ## About
 The main nextflow script, pipeline.nf, includes segmentation, tracking, puncta segmentation, survival analysis, and a CNN to analyze image data. 
 The modules read and write to and from a postgres database. The modules include python, R, and Java for ImageJ.
+
+## Handoff Notes: the `austin-claude` Branch
+
+Austin Holub wrote this branch between August and November 2026. The branch contains all of his work on this pipeline. Nobody merged this work into `main`.
+
+The branch also contains all of `main` up to commit `865a840` (25 October 2026). If `main` gets new commits, merge `main` into this branch to get them.
+
+### What This Branch Adds
+
+The table gives the new modules. You turn on the first three with `DO_*` flags in `finkbeiner.config`. The other modules are standalone scripts. You run them with `python` or `Rscript` inside the container.
+
+| Module | Files | Function |
+|---|---|---|
+| `DO_MINISOG` | `bin/minisog.py` | Death readout for the miniSOG-RGEDI biosensor. |
+| `DO_NEURITE` | `bin/neurite.py` | Neurite length and branching for each cell, on tiles. |
+| `DO_NEURITE_MONTAGE` | `bin/neurite_montage.py`, `ml/neurite/` | Neurite measurements for each cell, on whole-well montages. Uses Cellpose-SAM for the soma. |
+| GEDI2 v3 | `bin/gedi_montage.py` | GEDI death measurement on montages, with the plot that sets the threshold. |
+| RGEDI segmentation | `bin/cellpose_montage_rgedi.py`, `bin/egfp_gate.py`, `bin/track_cells.py` | Cellpose-SAM cell detection, an EGFP-positive gate, and tracking without a GPU. |
+| MRID survival | `bin/ratio.py`, `bin/ratio_threshold.py`, `bin/plate_layout.py`, `bin/mrid_logodds.R`, `bin/mrid_R/` | A command-line port of the MRID survival analysis. |
+| Positive-control QC | `bin/sa_qc_ratio.py` | A quality check that uses sodium-arsenite wells. |
+| Ultrack tracking | `bin/tracking_ultrack.py`, `ultrack.def` | A tracker that loses fewer moving cells than the default tracker. |
+| Cellpose fine-tuning | `ml/cellpose_ft/` | Tools to label cells and to export training sets. |
+
+The branch also corrects three standalone modules that did not start on `main`: `DO_MONTAGE`, `DO_ALIGN_MONTAGE_DFT`, and `DO_SEGMENTATION_MONTAGE`. The `run.sh` script accepts `NEXTFLOW_INSTALL_DIR`, so you can run your own checkout.
+
+### Known Limits
+
+- The main container does not contain R. The MRID R scripts run with the R installation on the cluster.
+- The main container does not contain the `ultrack` package. Build `ultrack.def` and use that container for Ultrack.
+- Gurobi (for Ultrack) needs a WLS license file. When the job starts, bind the license file into the container.
+- Cellpose 4 is approximately ten times slower on the V100 GPUs with `use_bfloat16=True`. Use `use_bfloat16=False`.
+- The final branch passed a Nextflow preview test for each `DO_*` flag. Nobody did a full cluster run after the final merge.
+
+### Where to Read More
+
+| Topic | File |
+|---|---|
+| How a code change gets to a Slurm job | `docs/DEVELOPMENT.md` |
+| Neurite methods | `docs/METHODS_neurite_quantification.md`, `ml/neurite/README.md` |
+| miniSOG history | `docs/MINISOG_HISTORY.md` |
+| MRID connections to the pipeline | `docs/mrid_pipeline_wiring.md` |
+| GEDI rules | `docs/gedi_reference/` |
+
+The `analyses/` folder contains scripts for specific experiments. The repository does not contain results. Results are on the HIVE project folders and in Dropbox.
+
+## Use This Pipeline with Claude Code
+
+Austin wrote most of this branch with Claude Code. Claude Code is an AI coding assistant from Anthropic. It reads the repository, answers questions about it, and edits files when you approve.
+
+### Start a Session
+
+1. Install Claude Code. Read the instructions at <https://claude.com/claude-code>.
+2. Clone the repository:
+
+       git clone https://github.com/finkbeiner-lab/nextflow-cluster.git
+       cd nextflow-cluster
+       git checkout austin-claude
+
+3. Make a new branch for your work:
+
+       git checkout -b <your-name>/<task>
+
+4. Start Claude Code in the repository folder:
+
+       claude
+
+Claude Code reads `CLAUDE.md` when it starts. This file tells Claude about the modules, the database, and the cluster. When you add a module, update `CLAUDE.md`.
+
+### Ask Questions First
+
+Before you change code, ask Claude to explain it. These are good first questions:
+
+- "Explain how `pipeline.nf` starts `DO_NEURITE_MONTAGE`."
+- "Which database tables does `bin/minisog.py` write to?"
+- "Which `DO_*` flags must I set to run the IXM standard workflow?"
+- "Read `docs/DEVELOPMENT.md` and tell me how my edit gets to a Slurm job."
+
+### Make Changes Safely
+
+1. Tell Claude what result you want and which files are in scope.
+2. For a large change, ask Claude for a plan first. Read the plan before Claude edits.
+3. Read each change that Claude makes. Use `git diff` to see all changes.
+4. Ask Claude to do a test of the change. For example: "Run `bin/validate_config.py` on my config" or "Run a Nextflow preview with only `DO_MINISOG` on."
+5. Commit to your own branch. Push only your own branch.
+
+CAUTION: Do not let Claude push to `main`. `main` is the shared branch for the whole lab.
+
+### Use Claude with the Cluster
+
+Claude Code runs on your computer. It can send commands to the cluster through ScaleFT:
+
+    sft ssh --command '<command>' fb-galaxy-dev01
+
+Austin used this division of work:
+
+- Claude writes the `sbatch` script and puts it on the cluster.
+- You read the script. Then you submit it with `sbatch` yourself.
+- Claude reads the job log after the job ends.
+
+CAUTION: Do not let Claude run large jobs on `fb-galaxy-dev01`. This node has no GPU, and other users share it. Send heavy work to Slurm with `sbatch`.
+
+### Tips
+
+- Give Claude the experiment name, the wells, and the timepoints. Then it can write a correct config file.
+- If Claude gives a wrong fact about the lab or the cluster, correct it. Ask Claude to add the correct fact to `CLAUDE.md`.
+- Keep experiment-specific scripts in `analyses/`. Keep generic pipeline code in `bin/`.
+- Do not put passwords or database credentials in files that you commit.
 
 ## Running the Pipeline
 
