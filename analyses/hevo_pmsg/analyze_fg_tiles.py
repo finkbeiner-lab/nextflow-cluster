@@ -27,7 +27,7 @@ plt.Axes.fill_between = lambda ax, *a, **k: _fill(ax, *[np.asarray(x) if isinsta
 LAYOUT = {
     "hevo-pmsG-1": dict(line={"C": "TP0357", "D": "TP0359", "E": "TP0388", "F": "TP0398"},
                         dose_ms={3: 500, 4: 1000, 5: 5000, 6: 10000}, hours_per_tp=4),
-    "hevo-pmsG-2": dict(line={"C": "TP057", "D": "TP057", "E": "TP059", "F": "TP059"},
+    "hevo-pmsG-2": dict(line={"C": "TP0357", "D": "TP0357", "E": "TP0359", "F": "TP0359"},
                         dose_ms={3: 250, 4: 500, 5: 1000, 6: 2000, 7: 5000, 8: 0}, hours_per_tp=4),
 }
 # ordinal dose ramp (one hue, light -> dark); 0 ms control is neutral gray
