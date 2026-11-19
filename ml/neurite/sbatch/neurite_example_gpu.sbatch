@@ -28,6 +28,14 @@ RAW_ROOT=${RAW_ROOT:-/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin}
 : "${OUT:?Set OUT=<a folder in your lab project space>, e.g. sbatch --export=ALL,OUT=... }"
 RUN_OUT="$OUT/gpu_from_raw"
 
+if [ ! -r "$SIF" ]; then
+  echo "ERROR: cannot read the container: $SIF"
+  echo "  The lab-shared container for this module is"
+  echo "  /gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif"
+  echo "  If it exists, ask IT to add you to the finkbeinerlab group. Or pass SIF=/path/to.sif."
+  exit 1
+fi
+echo "container: $SIF"
 for f in "$REPO/ml/neurite/montage_percell.py" "$SIF" "$CKPT" "$KIT/manifest.csv"; do
   [ -e "$f" ] || { echo "ERROR: not found: $f"; exit 1; }
 done

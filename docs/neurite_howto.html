@@ -153,6 +153,12 @@ Use it only to edit files, run <code>git</code>, and submit jobs. Run all real w
 <p>On <code>fb-galaxy-dev01</code>:</p>
 <pre><code>git clone -b austin-claude https://github.com/finkbeiner-lab/nextflow-cluster.git ~/nextflow-cluster
 cd ~/nextflow-cluster &amp;&amp; git log --oneline -1</code></pre>
+<div class="note"><b>The container is not in the clone.</b>
+Git does not store the 9.3&nbsp;GB container image. Everything on this branch finds the lab-shared copy by itself:
+the neurite job scripts use <code>/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif</code>, and
+<code>run.sh</code> uses it when your checkout has no <code>nextflow-cluster.sif</code> (the job log then starts with a NOTE that says so).
+To use a different image, pass <code>SIF=/path/to.sif</code> (job scripts) or <code>NEXTFLOW_SIF=/path/to.sif</code> (<code>run.sh</code>).
+Do not use the older image in <code>steve/work/projects/nextflow-cluster/</code>: it does not have this module.</div>
 <p>Code may live in your cluster home. <b>Outputs may not.</b> Write all outputs to a lab project folder on the HIVE,
 for example <code>/gladstone/finkbeiner/&lt;PI-or-project&gt;/&lt;your-folder&gt;/</code>. Raw image folders under
 <code>/gladstone/finkbeiner/robodata/</code> are read-only: never write there.</p>
@@ -380,6 +386,7 @@ so its numbers are not the same. It also needs an experiment that is registered 
 <tr><td>Run is about 10&times; slower than expected</td><td>Cellpose 4 must use <code>use_bfloat16=False</code> on V100 GPUs. The script already does this; keep it if you edit the code.</td></tr>
 <tr><td><code>refuses to overwrite</code></td><td>The run folder exists. Use a new <code>LABEL</code>, or <code>--overwrite</code> if you are sure.</td></tr>
 <tr><td>Bright bands or straight lines along tile edges in the overlay</td><td>Edge effects of per-tile normalisation. Keep <code>--seam-band 6</code> and <code>--flatten-size 128</code>.</td></tr>
+<tr><td><code>ERROR: cannot read the container</code> or <code>Container not found</code></td><td>The shared image is missing or you cannot read it. Check with <code>ls -l /gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif</code>. If it is gone, rebuild it from <code>nextflow-cluster.def</code> (see <code>docs/DEVELOPMENT.md</code>).</td></tr>
 <tr><td><code>Permission denied</code> on the SIF or the model</td><td>You are not in the <code>finkbeinerlab</code> group. Ask IT.</td></tr>
 <tr><td>Test 1 fails</td><td>Your checkout is not <code>austin-claude</code>, or the code was changed. Check <code>git -C ~/nextflow-cluster status</code> and the <code>code:</code> line at the top of the log.</td></tr>
 </table></div>

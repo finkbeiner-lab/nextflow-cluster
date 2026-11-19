@@ -119,7 +119,7 @@ All core Python files follow these conventions:
 - **`containers/ultrack.def`** - Separate container for `tracking_ultrack.py`. The main container does not contain the `ultrack` package.
 - Gurobi needs a WLS `gurobi.lic` bound to `/opt/gurobi` at run time. WLS checks the license over the network, so the compute node needs network access.
 - **`Dockerfile`** - Docker equivalent (PyTorch base, used for local dev).
-- The built container is at `nextflow-cluster.sif` in the repo root.
+- The built container is NOT in git (`*.sif` is ignored), so a fresh clone has none. The lab-shared image built from this branch is `/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif` (readable by the `finkbeinerlab` group). `run.sh` uses, in order: `$NEXTFLOW_SIF`, `<install dir>/nextflow-cluster.sif`, then that shared image (with a NOTE in the log). The neurite job scripts default to the shared image (override with `SIF=`). The shared install on `main` (`steve/work/projects/nextflow-cluster/nextflow-cluster.sif`, Oct 2025) is older and lacks this branch's modules.
 
 ### Database Schema
 PostgreSQL tables form a hierarchy: `experimentdata` → `welldata` → `tiledata` → `celldata` → `intensitycelldata`. Also: `channeldata`, `dosagedata`, `punctadata`, `intensitypunctadata`, `cropdata`, `modeldata`, `modelcropdata`. All tables use UUID primary keys. Foreign keys cascade on delete.

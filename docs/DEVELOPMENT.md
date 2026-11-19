@@ -88,6 +88,7 @@ env vars so a branch/worktree run needs no edits to tracked files:
 | Env var | Effect |
 |---------|--------|
 | `NEXTFLOW_INSTALL_DIR=<dir>` | `run.sh` reads `pipeline.nf` / `modules.nf` / the SIF from `<dir>`; the DEV bind uses `<dir>/bin`. Default = shared steve install. |
+| `NEXTFLOW_SIF=<file>` | Use this container image. Without it, `run.sh` uses `<install dir>/nextflow-cluster.sif`, then the lab-shared `/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif` (built from `austin-claude`). |
 | `DEEPCELL_DEV=1` | Bind-mount the host `bin/` over the container's baked `/app`, so a `bin/*.py` edit is used without rebuilding the SIF. Default = off (use baked `/app`). |
 | `DEEPCELL_DEV_BIN=<dir>` | Explicit override of which `bin/` the DEV bind uses (rarely needed; defaults to `NEXTFLOW_INSTALL_DIR/bin`). |
 | `NEXTFLOW_BIN`, `NXF_VER`, `NXF_HOME` | Nextflow launcher / version / cache overrides (see `run.sh` header comments). |

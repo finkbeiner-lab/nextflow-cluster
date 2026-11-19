@@ -99,7 +99,29 @@ echo "================================="
 export PATH=/usr/bin:$PATH
 
 VALIDATE_SCRIPT="${INSTALL_DIR}/bin/validate_config.py"
-CONTAINER="${INSTALL_DIR}/nextflow-cluster.sif"
+
+# ---------------------------------------------------------------------------
+# Resolve the container image.
+#
+# The SIF is a 9 GB build artifact that git does not track, so a fresh clone
+# of this branch has none. Order: $NEXTFLOW_SIF (explicit override), then
+# ${INSTALL_DIR}/nextflow-cluster.sif, then the lab-shared image built from
+# the austin-claude branch (Cellpose 4, PyTorch/CUDA, skan, gurobipy).
+# ---------------------------------------------------------------------------
+SHARED_SIF="/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif"
+if [ -n "${NEXTFLOW_SIF:-}" ]; then
+    CONTAINER="${NEXTFLOW_SIF}"
+elif [ -f "${INSTALL_DIR}/nextflow-cluster.sif" ]; then
+    CONTAINER="${INSTALL_DIR}/nextflow-cluster.sif"
+elif [ -r "${SHARED_SIF}" ]; then
+    CONTAINER="${SHARED_SIF}"
+    echo "NOTE: ${INSTALL_DIR} has no nextflow-cluster.sif."
+    echo "      Using the lab-shared container: ${SHARED_SIF}"
+    echo "      To use another image: sbatch --export=ALL,NEXTFLOW_SIF=/path/to.sif ..."
+else
+    CONTAINER="${INSTALL_DIR}/nextflow-cluster.sif"
+fi
+echo "Container:         ${CONTAINER}"
 
 # Validate config file before running Nextflow
 echo "================================="
@@ -126,6 +148,11 @@ fi
 # Check if container exists
 if [ ! -f "${CONTAINER}" ]; then
     echo "ERROR: Container not found: ${CONTAINER}"
+    echo "  The lab-shared image is ${SHARED_SIF}"
+    if [ -e "${SHARED_SIF}" ]; then
+        echo "  It exists but you cannot read it: ask IT to add you to the finkbeinerlab group."
+    fi
+    echo "  Or pass one: sbatch --export=ALL,NEXTFLOW_SIF=/path/to.sif ..."
     exit 1
 fi
 
