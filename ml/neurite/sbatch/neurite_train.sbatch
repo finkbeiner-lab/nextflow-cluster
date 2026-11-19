@@ -18,6 +18,10 @@
 #          from different wells/lines; they are not used for training.
 # INIT     optional: start from an existing checkpoint (fine-tune) instead of from zero,
 #          e.g. INIT=/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-model-runs/run1/best.pt
+# SCORE_ONLY  optional: a checkpoint to SCORE on the VAL crops, with no training.
+#          Use it first, to see how the shipped model (run1) does on your own traces:
+#          SCORE_ONLY=/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-model-runs/run1/best.pt
+#          Then train/fine-tune with the SAME VAL crops and compare the F1 values.
 #
 #   sbatch --export=ALL,DATA=...,OUT=/gladstone/finkbeiner/<lab>/<project>/neurite-model/run2,VAL=H15:I07 \
 #          ~/nextflow-cluster/ml/neurite/sbatch/neurite_train.sbatch
@@ -31,13 +35,23 @@ EPOCHS=${EPOCHS:-200}
 : "${VAL:?Set VAL=<held-out crop names, e.g. H15:I07>}"
 VAL=${VAL//:/,}
 [ -r "$SIF" ] || { echo "ERROR: cannot read the container: $SIF (pass SIF=/path/to.sif)"; exit 1; }
-[ ! -e "$OUT/best.pt" ] || { echo "ERROR: $OUT/best.pt exists; use a new OUT"; exit 1; }
 echo "code: $(git -C "$REPO" rev-parse --abbrev-ref HEAD) @ $(git -C "$REPO" rev-parse --short HEAD)"
+cd "$REPO/ml/neurite"
+if [ -n "${SCORE_ONLY:-}" ]; then
+  [ -r "$SCORE_ONLY" ] || { echo "ERROR: cannot read checkpoint $SCORE_ONLY"; exit 1; }
+  mkdir -p "$OUT"
+  echo "score only: $SCORE_ONLY on $VAL"
+  apptainer exec --nv -B /gladstone/finkbeiner:/gladstone/finkbeiner "$SIF" \
+    python eval_qa.py --data "$DATA" --checkpoint "$SCORE_ONLY" --out "$OUT" \
+      --val-stems "$VAL" --device cuda
+  echo "DONE: scores in this log, QA images in $OUT"
+  exit 0
+fi
+[ ! -e "$OUT/best.pt" ] || { echo "ERROR: $OUT/best.pt exists; use a new OUT"; exit 1; }
 mkdir -p "$OUT"
 INIT_ARG=()
 [ -n "${INIT:-}" ] && INIT_ARG=(--init "$INIT")
 
-cd "$REPO/ml/neurite"
 apptainer exec --nv -B /gladstone/finkbeiner:/gladstone/finkbeiner "$SIF" \
   python train.py --data "$DATA" --out "$OUT" --device cuda --epochs "$EPOCHS" --batch 8 \
     --crop 256 --iters-per-epoch 200 --lr 1e-3 --depth 4 --base 32 \
