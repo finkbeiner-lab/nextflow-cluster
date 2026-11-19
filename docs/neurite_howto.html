@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neurite Module Guide</title>
+<style>
+:root{
+  --bg:#fbfaf7; --panel:#ffffff; --ink:#1d1d1b; --muted:#5d5c57; --line:#e3e0d8;
+  --accent:#2f6f5e; --accent-soft:#e3f0eb; --warn:#8a5a00; --warn-soft:#fbf1dc;
+  --code-bg:#f2f0ea; --code-ink:#22211f; --stop:#9b2c2c; --stop-soft:#fbe7e7;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#161614; --panel:#1f1f1c; --ink:#ecebe6; --muted:#a6a59e; --line:#34332f;
+    --accent:#7cc3ad; --accent-soft:#1f3530; --warn:#e5b65c; --warn-soft:#352b17;
+    --code-bg:#262622; --code-ink:#ecebe6; --stop:#f09a9a; --stop-soft:#3a2020;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#161614; --panel:#1f1f1c; --ink:#ecebe6; --muted:#a6a59e; --line:#34332f;
+  --accent:#7cc3ad; --accent-soft:#1f3530; --warn:#e5b65c; --warn-soft:#352b17;
+  --code-bg:#262622; --code-ink:#ecebe6; --stop:#f09a9a; --stop-soft:#3a2020;
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+.wrap{max-width:980px;margin:0 auto;padding:32px 16px 80px}
+header{border-bottom:1px solid var(--line);padding-bottom:20px;margin-bottom:28px}
+h1{font-size:30px;line-height:1.2;margin:0 0 8px}
+.sub{color:var(--muted);margin:0}
+h2{font-size:22px;margin:44px 0 12px;padding-top:8px;border-top:1px solid var(--line)}
+h3{font-size:17px;margin:26px 0 8px}
+p,li{max-width:76ch}
+a{color:var(--accent)}
+code{font:13.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:var(--code-bg);
+  color:var(--code-ink);padding:1px 5px;border-radius:4px;overflow-wrap:anywhere}
+pre{background:var(--code-bg);color:var(--code-ink);padding:14px 16px;border-radius:8px;overflow-x:auto;
+  border:1px solid var(--line);margin:10px 0 16px}
+pre code{background:none;padding:0;font-size:13px;overflow-wrap:normal;white-space:pre}
+table{border-collapse:collapse;width:100%;margin:10px 0 18px;font-size:14.5px}
+.tbl{overflow-x:auto}
+th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{font-weight:600;background:var(--panel)}
+td code{font-size:12.5px}
+.note,.warn,.stop{border-radius:8px;padding:12px 16px;margin:14px 0;border:1px solid var(--line)}
+.note{background:var(--accent-soft)}
+.warn{background:var(--warn-soft)}
+.stop{background:var(--stop-soft)}
+.note b,.warn b,.stop b{display:block;margin-bottom:2px}
+.toc{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 20px;margin:20px 0}
+.toc ol{margin:6px 0;padding-left:22px}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:18px 0}
+.fact{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.fact .k{color:var(--muted);font-size:13px}
+.fact .v{font-weight:600;overflow-wrap:anywhere}
+.flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0}
+.flow span.box{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:14px}
+.flow span.arr{color:var(--muted)}
+.step{display:inline-block;background:var(--accent);color:var(--bg);border-radius:999px;
+  padding:0 10px;font-size:13px;font-weight:600;margin-right:6px}
+footer{margin-top:56px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>Neurite analysis module: how-to guide</h1>
+  <p class="sub">Finkbeiner Lab, Gladstone. Written by Austin Holub for handoff, November 2026.
+  Read sections 1&ndash;4 first. They take you from nothing to a verified test run.</p>
+</header>
+
+<div class="facts">
+  <div class="fact"><div class="k">Repository</div><div class="v"><a href="https://github.com/finkbeiner-lab/nextflow-cluster/tree/austin-claude">github.com/finkbeiner-lab/nextflow-cluster</a></div></div>
+  <div class="fact"><div class="k">Branch</div><div class="v"><code>austin-claude</code> (not <code>main</code>)</div></div>
+  <div class="fact"><div class="k">Main script</div><div class="v"><code>ml/neurite/montage_percell.py</code></div></div>
+  <div class="fact"><div class="k">Example test data</div><div class="v"><code>/gladstone/finkbeiner/kaye/XDP/neurite-rework/example-test/</code></div></div>
+</div>
+
+<nav class="toc">
+  <b>Contents</b>
+  <ol>
+    <li><a href="#what">What the module does</a></li>
+    <li><a href="#where">Where everything is</a></li>
+    <li><a href="#setup">One-time setup</a></li>
+    <li><a href="#test">Reproduce the example output (do this first)</a></li>
+    <li><a href="#own">Run the module on your own data</a></li>
+    <li><a href="#outputs">Output files and how to read them</a></li>
+    <li><a href="#params">Settings</a></li>
+    <li><a href="#claude">How we ran cluster jobs with Claude</a></li>
+    <li><a href="#db">The other route: Nextflow + database module</a></li>
+    <li><a href="#limits">Limits, known problems, troubleshooting</a></li>
+  </ol>
+</nav>
+
+<h2 id="what">1. What the module does</h2>
+<p>The module measures neurites for each cell in live high-content images (for example RGEDI,
+EGFP fill in the FITC channel). For each well and timepoint it does these steps:</p>
+<div class="flow">
+  <span class="box">16 raw IXM tiles</span><span class="arr">&rarr;</span>
+  <span class="box">whole-well montage (4&times;4, 8192&times;8192 px)</span><span class="arr">&rarr;</span>
+  <span class="box">Cellpose-SAM cell bodies (somas)</span><span class="arr">&rarr;</span>
+  <span class="box">clDice U-Net neurite map</span><span class="arr">&rarr;</span>
+  <span class="box">each neurite assigned to the soma it grows from</span><span class="arr">&rarr;</span>
+  <span class="box">percell.csv + perwell.csv + QC overlay</span>
+</div>
+<ul>
+  <li><b>Montage, not tiles.</b> Neurites that cross a tile edge are traced as one piece.</li>
+  <li><b>Somas:</b> Cellpose-SAM on each raw tile, with a debris filter.</li>
+  <li><b>Neurites:</b> a small U-Net trained with the clDice loss on 12 hand-traced fields (SNT).
+      On held-out fields it scored F1&nbsp;0.645, against 0.135 for the old Frangi filter.</li>
+  <li><b>Attribution:</b> a neurite counts for a soma only if it leaves that soma outward
+      (root-contact rule). A neighbour's neurite that only touches the soma is not counted.</li>
+  <li><b>Measurements per cell:</b> total neurite length, skeleton pixels, branch points, tips,
+      primary neurites, longest path.</li>
+  <li><b>Cache:</b> the slow GPU part (somas + neurite map) is saved per well. Later runs with new
+      post-segmentation settings use the cache and need only a CPU.</li>
+</ul>
+<p>The full methods text is in <code>docs/METHODS_neurite_quantification.md</code>.</p>
+
+<h2 id="where">2. Where everything is</h2>
+<div class="tbl"><table>
+<tr><th>Item</th><th>Location</th></tr>
+<tr><td>Code (GitHub)</td><td><code>https://github.com/finkbeiner-lab/nextflow-cluster</code>, branch <code>austin-claude</code></td></tr>
+<tr><td>Main script</td><td><code>ml/neurite/montage_percell.py</code> (uses <code>percell_integrate.py</code> and <code>model.py</code> in the same folder)</td></tr>
+<tr><td>Job scripts (Slurm)</td><td><code>ml/neurite/sbatch/neurite_example_cpu.sbatch</code>, <code>neurite_example_gpu.sbatch</code>, <code>neurite_run.sbatch</code></td></tr>
+<tr><td>Result checker</td><td><code>ml/neurite/compare_runs.py</code></td></tr>
+<tr><td>Container (Apptainer image)</td><td><code>/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif</code> (9.3&nbsp;GB, Cellpose 4, PyTorch with CUDA)</td></tr>
+<tr><td>Neurite model checkpoint</td><td><code>/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-model-runs/run1/best.pt</code></td></tr>
+<tr><td>Model training data (SNT traces, crops)</td><td><code>/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-training-data/</code> and <code>neurite-roi-tracing/</code></td></tr>
+<tr><td>Example test kit</td><td><code>/gladstone/finkbeiner/kaye/XDP/neurite-rework/example-test/</code></td></tr>
+<tr><td>Example raw images (read-only)</td><td><code>/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin/XDP5-RGEDI/C03/</code> and <code>.../I03/</code></td></tr>
+<tr><td>Full XDP results (final, frozen)</td><td><code>/gladstone/finkbeiner/kaye/XDP/neurite-rework/&lt;EXP&gt;/latest/</code> (XDP1, 3, 5, 8, 10, 11). A <code>CLAUDE.md</code> in <code>neurite-rework/</code> describes every column.</td></tr>
+<tr><td>Model training code</td><td><code>ml/neurite/train.py</code>, <code>rasterize_traces.py</code>, <code>losses.py</code>; see <code>ml/neurite/README.md</code></td></tr>
+<tr><td>Methods write-up</td><td><code>docs/METHODS_neurite_quantification.md</code></td></tr>
+</table></div>
+
+<h2 id="setup">3. One-time setup</h2>
+<h3>3a. Cluster access</h3>
+<ol>
+  <li>Get a cluster account in the <code>finkbeinerlab</code> group, and ScaleFT (<code>sft</code>) on your computer. Ask Gladstone IT.</li>
+  <li>Enroll once: <code>sft enroll</code> (team <code>gladstone</code>, in your browser). If a command later says
+      &ldquo;Authentication token expired&rdquo;, run <code>sft unenroll</code> and then <code>sft enroll</code> again.</li>
+  <li>Log in to the dev node: <code>sft ssh fb-galaxy-dev01</code>. To run one command without logging in:
+      <code>sft ssh --command '&lt;command&gt;' fb-galaxy-dev01</code>. The remote command must use <code>--command</code>.</li>
+</ol>
+<div class="warn"><b>The dev node is shared and has no GPU.</b>
+Use it only to edit files, run <code>git</code>, and submit jobs. Run all real work as a Slurm job (<code>sbatch</code>) on the <code>galaxy</code> partition.</div>
+
+<h3>3b. Get the code on the cluster</h3>
+<p>On <code>fb-galaxy-dev01</code>:</p>
+<pre><code>git clone -b austin-claude https://github.com/finkbeiner-lab/nextflow-cluster.git ~/nextflow-cluster
+cd ~/nextflow-cluster &amp;&amp; git log --oneline -1</code></pre>
+<p>Code may live in your cluster home. <b>Outputs may not.</b> Write all outputs to a lab project folder on the HIVE,
+for example <code>/gladstone/finkbeiner/&lt;PI-or-project&gt;/&lt;your-folder&gt;/</code>. Raw image folders under
+<code>/gladstone/finkbeiner/robodata/</code> are read-only: never write there.</p>
+
+<h3>3c. Check that you can read the shared files</h3>
+<pre><code>ls -l /gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif \
+      /gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-model-runs/run1/best.pt \
+      /gladstone/finkbeiner/kaye/XDP/neurite-rework/example-test/</code></pre>
+<p>If you get &ldquo;Permission denied&rdquo;, ask IT to add you to the <code>finkbeinerlab</code> group.</p>
+
+<h2 id="test">4. Reproduce the example output (do this first)</h2>
+<p>The example is two wells from experiment XDP5 at timepoint T7: one control well and one XDP well.
+These are real wells from the final published run, so you can compare your numbers with ours.</p>
+
+<h3>The example kit</h3>
+<p><code>/gladstone/finkbeiner/kaye/XDP/neurite-rework/example-test/</code></p>
+<div class="tbl"><table>
+<tr><th>File</th><th>What it is</th></tr>
+<tr><td><code>manifest.csv</code></td><td>Input list: <code>XDP5,C03,T7,33114.C,CTR</code> and <code>XDP5,I03,T7,33109.2B,XDP</code></td></tr>
+<tr><td><code>cache/XDP5_C03_T7.npz</code>, <code>cache/XDP5_I03_T7.npz</code></td><td>Saved soma labels + neurite map for the two wells (for test 1)</td></tr>
+<tr><td><code>expected/perwell.csv</code></td><td>Expected per-well result (2 rows)</td></tr>
+<tr><td><code>expected/percell.csv</code></td><td>Expected per-cell result (5,593 cells)</td></tr>
+<tr><td><code>expected/params.json</code></td><td>The exact settings of the original run</td></tr>
+<tr><td><code>expected/XDP5_*_T7_percell.tif</code></td><td>QC overlays (grey image, soma outlines, coloured neurites), 2048&times;2048. From the September 2026 run; the attribution rule changed after that, so a few neurite colours can differ.</td></tr>
+</table></div>
+<p>The raw input tiles are in <code>/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin/XDP5-RGEDI/C03/</code> and <code>.../I03/</code>
+(16 FITC tiles per well at T7, for example <code>PID20240911_XDP5-RGEDI_T7_0-1_C03_1_FITC_0_1_0.tif</code>).</p>
+
+<p><b>Expected result</b> (<code>expected/perwell.csv</code>):</p>
+<div class="tbl"><table>
+<tr><th>Well</th><th>Line</th><th>Genotype</th><th>Somas</th><th>Somas with neurite</th><th>Mean length per soma (px)</th><th>Mean branch points</th></tr>
+<tr><td>C03</td><td>33114.C</td><td>CTR</td><td>1976</td><td>744</td><td>67.3</td><td>0.90</td></tr>
+<tr><td>I03</td><td>33109.2B</td><td>XDP</td><td>3617</td><td>1798</td><td>166.3</td><td>3.22</td></tr>
+</table></div>
+
+<h3><span class="step">Test 1</span>CPU, from the cache (about 5 minutes)</h3>
+<p>This checks your code checkout, the container and the model path. The numbers must be identical.</p>
+<pre><code>mkdir -p ~/neurite-jobs &amp;&amp; cd ~/neurite-jobs
+sbatch --export=ALL,OUT=/gladstone/finkbeiner/&lt;your-lab-folder&gt;/neurite-example-test \
+       ~/nextflow-cluster/ml/neurite/sbatch/neurite_example_cpu.sbatch</code></pre>
+
+<h3><span class="step">Test 2</span>GPU, from the raw images (about 10 minutes when it runs)</h3>
+<p>This is the full path you will use for new data. It needs a GPU, so it can wait in the queue for a while.</p>
+<pre><code>cd ~/neurite-jobs
+sbatch --export=ALL,OUT=/gladstone/finkbeiner/&lt;your-lab-folder&gt;/neurite-example-test \
+       ~/nextflow-cluster/ml/neurite/sbatch/neurite_example_gpu.sbatch</code></pre>
+
+<h3>Watch the jobs and read the result</h3>
+<pre><code>squeue -o "%.8i %.10u %.14j %.9P %.8T %.10M %.9l %.6D %.10b %R" -S -t,i
+cat ~/neurite-jobs/nrt_example_cpu_*.out
+cat ~/neurite-jobs/nrt_example_gpu_*.out</code></pre>
+<p>The last line of each log is <code>RESULT: PASS</code> or <code>RESULT: FAIL</code>.
+Test 1 must pass exactly. Test 2 allows 5% per column, because the GPU can give very small differences.
+For test 2, also open <code>&lt;OUT&gt;/gpu_from_raw/latest/XDP5_C03_T7_percell.tif</code> in Fiji and compare it with the overlay in <code>expected/</code>.</p>
+<div class="note"><b>Both tests pass?</b> Your setup is correct, and you can run your own data.</div>
+
+<h2 id="own">5. Run the module on your own data</h2>
+<h3>5a. Check that your images fit</h3>
+<ul>
+  <li>ImageXpress (IXM) file names with the pattern <code>..._&lt;TP&gt;_..._&lt;WELL&gt;_&lt;SITE&gt;_FITC_....tif</code>.</li>
+  <li>16 sites per well in a 4&times;4 grid, read left to right and top to bottom, with no overlap.</li>
+  <li>The cell-fill (morphology) signal is in the <b>FITC</b> channel. The channel name is fixed in the code.</li>
+  <li>Folder layout <code>&lt;RAW_ROOT&gt;/&lt;raw_folder&gt;/&lt;WELL&gt;/</code>.</li>
+  <li>20X objective, as in the training data. Other objectives, markers or cell types need a check (see <a href="#limits">section 10</a>).</li>
+</ul>
+<p>A different grid, channel name or file pattern needs a small code change in <code>well_tiles()</code> and <code>GRID</code> in
+<code>montage_percell.py</code>. Ask Claude to make it, then run the example test again.</p>
+
+<h3>5b. Make a manifest</h3>
+<p>One row per well. One timepoint per row; to measure several timepoints, add one row per (well, timepoint).</p>
+<pre><code>experiment,well,timepoint,cell_line,genotype,raw_folder
+MYEXP,B02,T5,lineA,CTR,MYEXP-RGEDI
+MYEXP,B03,T5,lineB,XDP,MYEXP-RGEDI</code></pre>
+<p><code>cell_line</code> and <code>genotype</code> are only copied to the output. Use any labels.
+If you leave out <code>raw_folder</code>, the script uses <code>&lt;experiment&gt;-RGEDI</code>.
+Put the manifest in your lab project folder.</p>
+
+<h3>5c. Submit</h3>
+<pre><code>cd ~/neurite-jobs
+sbatch --time=10:00:00 \
+  --export=ALL,MANIFEST=/gladstone/finkbeiner/&lt;lab-folder&gt;/&lt;project&gt;/manifest.csv,RAW_ROOT=/gladstone/finkbeiner/robodata/&lt;scope&gt;/&lt;user&gt;,OUT=/gladstone/finkbeiner/&lt;lab-folder&gt;/&lt;project&gt;/neurite,LABEL=first \
+  ~/nextflow-cluster/ml/neurite/sbatch/neurite_run.sbatch</code></pre>
+<ul>
+  <li><b>Time:</b> about 4&ndash;5 minutes per well on a V100 GPU. Set <code>--time</code> to that plus margin.
+      If the job runs out of time, submit it again with the same <code>OUT</code>: finished wells come from the cache in about a minute each.</li>
+  <li><b>Start small.</b> Run 2&ndash;4 wells first and look at the overlays before you run a full plate.</li>
+  <li><b>One well fails?</b> The log shows <code>FAILED</code> or <code>SKIP</code> for that well and the job goes on with the next one.
+      <code>SKIP: found N FITC tiles (need 16)</code> means the files are missing or the names do not match.</li>
+</ul>
+
+<h3>5d. Change settings later without the GPU</h3>
+<p>The cache keeps soma labels and the neurite map. You can change the neurite threshold, <code>--seam-band</code>,
+<code>--min-neurite</code>, <code>--soma-dilation</code> and the attribution settings (<code>--root-px</code>, <code>--min-radial</code>, <code>--cross-cos</code>)
+and recompute on a CPU node: same <code>OUT</code>, a new <code>LABEL</code>, <code>DEVICE=cpu</code>, and remove the <code>--gres</code> line.
+Each run goes to its own folder <code>OUT/runs/&lt;timestamp&gt;_&lt;LABEL&gt;/</code>; earlier runs are never overwritten.</p>
+<p>Soma settings (<code>--diameter</code>, <code>--flow</code>, <code>--cellprob</code>, <code>--clean-k</code>, <code>--soma-*</code>), <code>--flatten-size</code> and the checkpoint
+are saved inside the cache. If you change them, use a new cache folder. The script refuses a cache that was made with different settings.</p>
+<p>Cache runs do not write overlays. To make overlays for a cache run (CPU only):</p>
+<pre><code>apptainer exec -B /gladstone/finkbeiner:/gladstone/finkbeiner &lt;SIF&gt; \
+  python ~/nextflow-cluster/ml/neurite/montage_percell.py --overlay-only --run-id &lt;run id&gt; \
+  --manifest &lt;manifest&gt; --raw-root &lt;RAW_ROOT&gt; --out-dir &lt;OUT&gt; --cache-dir &lt;OUT&gt;/cache --checkpoint &lt;CKPT&gt;</code></pre>
+<p>Run this inside a Slurm job, not on the dev node.</p>
+
+<h2 id="outputs">6. Output files and how to read them</h2>
+<pre><code>OUT/
+  runs/&lt;timestamp&gt;_&lt;label&gt;/
+    percell.csv              one row per soma
+    perwell.csv              one row per well
+    params.json              every setting of this run
+    &lt;EXP&gt;_&lt;WELL&gt;_&lt;TP&gt;_percell.tif   QC overlay, 4x downsampled (fresh GPU wells only)
+  latest -&gt; runs/&lt;newest&gt;
+  cache/&lt;EXP&gt;_&lt;WELL&gt;_&lt;TP&gt;.npz      soma labels + neurite map (keep this)</code></pre>
+
+<h3>percell.csv</h3>
+<div class="tbl"><table>
+<tr><th>Column</th><th>Meaning</th></tr>
+<tr><td><code>soma_id</code></td><td>Soma label in the montage. Unique only inside one (experiment, well, timepoint).</td></tr>
+<tr><td><code>area_px</code>, <code>cy</code>, <code>cx</code></td><td>Soma area and centre (row, column) in montage pixels</td></tr>
+<tr><td><code>neurite_len_px</code></td><td>Total length of this soma's neurites (straight step = 1, diagonal = &radic;2). 0 = no neurite.</td></tr>
+<tr><td><code>skel_px</code></td><td>Number of skeleton pixels (the unit CellProfiler uses)</td></tr>
+<tr><td><code>n_branch_points</code>, <code>n_end_points</code></td><td>Branch nodes and tips on this soma's neurites</td></tr>
+<tr><td><code>n_primary_neurites</code></td><td>Neurites that leave the soma</td></tr>
+<tr><td><code>max_branch_length</code></td><td>Longest path from the soma along the neurite (px)</td></tr>
+</table></div>
+
+<h3>perwell.csv</h3>
+<div class="tbl"><table>
+<tr><th>Column</th><th>Meaning</th></tr>
+<tr><td><code>n_somas</code>, <code>n_somas_with_neurite</code></td><td>All somas; somas with a neurite</td></tr>
+<tr><td><code>total_len_px</code>, <code>mean_len_per_soma</code></td><td>Sum of lengths; sum divided by <b>all</b> somas (zeros included)</td></tr>
+<tr><td><code>median_len_per_soma</code></td><td>Usually 0, because most somas have no neurite. Do not use it for length.</td></tr>
+<tr><td><code>mean_branch_points</code>, <code>mean_tips</code>, <code>mean_primary_neurites</code>, <code>mean_max_branch_len</code>, <code>frac_branched</code></td><td>Averages over somas <b>with</b> a neurite only</td></tr>
+</table></div>
+
+<h3>How we analysed the XDP data</h3>
+<ul>
+  <li><b>Two readouts</b> (agreed with Julia, October 2026): (1) length and branching among cells that have a neurite
+      (<code>neurite_len_px</code> where <code>skel_px &gt; 0</code>); (2) the fraction of cells with a neurite.
+      The fraction of cells with no neurite changes a lot between experiments for technical reasons, so we did not use mean length over all somas.</li>
+  <li><b>Replicates:</b> the cell line is the replicate for genotype; wells are not independent.
+      Use a mixed model with experiment and cell line as random effects.</li>
+  <li><b>Units:</b> pixels. For the IXM 20X objective with 1&times;1 binning, 1&nbsp;px &asymp; 0.348&nbsp;&micro;m
+      (XDP1/3/5: 0.347534; XDP8/10/11: 0.348214). Read your own value from the tile metadata (<code>spatial-calibration-x</code>).</li>
+  <li><b>siRNA or drug</b> is not in the output. Join it from your plate map on (experiment, well).</li>
+</ul>
+
+<h2 id="params">7. Settings</h2>
+<p>These are the settings of the final XDP run. The job scripts already use them.</p>
+<div class="tbl"><table>
+<tr><th>Option</th><th>Value</th><th>What it does</th><th>Change from cache?</th></tr>
+<tr><td><code>--diameter</code></td><td>25</td><td>Expected soma diameter for Cellpose-SAM (px)</td><td>No</td></tr>
+<tr><td><code>--flow</code> / <code>--cellprob</code></td><td>0.6 / &minus;1.0</td><td>Cellpose thresholds</td><td>No</td></tr>
+<tr><td><code>--clean-k</code></td><td>2.0</td><td>Drop somas not brighter than background + k &times; robust SD</td><td>No</td></tr>
+<tr><td><code>--flatten-size</code></td><td>128</td><td>Background flattening of the neurite image (px); 0 = off</td><td>No</td></tr>
+<tr><td><code>--threshold</code></td><td>0.5</td><td>Neurite probability cutoff</td><td>Yes</td></tr>
+<tr><td><code>--seam-band</code></td><td>6</td><td>Ignore neurite pixels this close to tile seams (removes false straight lines)</td><td>Yes</td></tr>
+<tr><td><code>--min-neurite</code></td><td>25</td><td>Drop neurite pieces smaller than this (px)</td><td>Yes</td></tr>
+<tr><td><code>--root-px</code> / <code>--min-radial</code></td><td>6 / 0.8</td><td>Root-contact attribution: a neurite must leave the soma outward within 6 px</td><td>Yes</td></tr>
+<tr><td><code>--cross-cos</code></td><td>&minus;0.7</td><td>Do not count a neurite that crosses straight over a soma</td><td>Yes</td></tr>
+<tr><td><code>--soma-dilation</code></td><td>3</td><td>Ring used to count primary neurites</td><td>Yes</td></tr>
+</table></div>
+<p>Run <code>python ml/neurite/montage_percell.py --help</code> (inside the container) for all options.</p>
+
+<h2 id="claude">8. How we ran cluster jobs with Claude</h2>
+<p>Most of this module was built with Claude Code, an AI coding assistant. This is the way of working that we used. It is safe on a shared cluster.</p>
+<h3>Who does what</h3>
+<div class="tbl"><table>
+<tr><th>Claude</th><th>You</th></tr>
+<tr><td>Reads code and data (read-only), writes and edits code, writes the <code>.sbatch</code> job script, reads logs and results, makes figures and reports.</td>
+<td>Submits every job (<code>sbatch</code>), cancels jobs (<code>scancel</code>), approves every write, decides what to delete, pushes code.</td></tr>
+</table></div>
+<div class="stop"><b>Rules we kept</b>
+Claude never submits or cancels a Slurm job. No heavy work on the dev node. Raw data is read-only. Outputs go to the HIVE, never to the cluster home.
+Never push to or merge into <code>main</code>; it belongs to the whole lab. Work on your own branch made from <code>austin-claude</code>.</div>
+
+<h3>The loop</h3>
+<ol>
+  <li>Tell Claude what you want, for example: &ldquo;Run the neurite module on wells B02&ndash;B12 of MYEXP at T5. The raw data is in &lt;path&gt;. Write outputs to &lt;HIVE folder&gt;.&rdquo;</li>
+  <li>Claude checks the input files over <code>sft</code> (read-only), writes the manifest and a self-contained <code>.sbatch</code> script on your computer, and gives you one command to submit it.</li>
+  <li>You run the submit command. It sends the script to the cluster and submits it:
+<pre><code>base64 &lt; ~/sbatch-claude/JOB.sbatch | sft ssh --command 'mkdir -p ~/&lt;project&gt; &amp;&amp; cd ~/&lt;project&gt; &amp;&amp; base64 --decode &gt; JOB.sbatch &amp;&amp; sbatch JOB.sbatch' fb-galaxy-dev01</code></pre>
+      <code>base64</code> turns the script into plain text, so it goes through the SSH pipe without quoting problems.</li>
+  <li>Check the queue (all users, so you can see GPU contention):
+<pre><code>sft ssh --command 'squeue -o "%.8i %.10u %.14j %.9P %.8T %.10M %.9l %.6D %.10b %R" -S -t,i' fb-galaxy-dev01</code></pre></li>
+  <li>When it is done, Claude reads the log and the CSVs over <code>sft</code> and reports the result.</li>
+</ol>
+<h3>Help for your own Claude sessions</h3>
+<ul>
+  <li><code>CLAUDE.md</code> in the repository root tells Claude the project rules, the cluster setup and this module. Claude Code reads it automatically when you start it in the repository folder.</li>
+  <li><code>.claude/skills/cluster-batch-submit/</code> in the repository teaches Claude the submit hand-off above.</li>
+  <li>Good first prompts: &ldquo;Read docs/neurite_howto.html and CLAUDE.md, then help me run the neurite example test.&rdquo;
+      &ldquo;Explain how montage_percell.py assigns a neurite to a soma.&rdquo;</li>
+  <li>Ask for a plan before large changes. Read every change (<code>git diff</code>). Run the example test again after you change the code.</li>
+</ul>
+
+<h2 id="db">9. The other route: Nextflow + database module</h2>
+<p><code>bin/neurite_montage.py</code> is the same method as a Nextflow pipeline step (<code>DO_NEURITE_MONTAGE = true</code> in the config).
+It reads tiles from the <code>galaxy</code> database and writes <code>celldata</code> and <code>neuritecelldata</code> rows instead of CSV files.
+It was tested on XDP5 (job 20554, 2026-09-04). Example config: <code>configs/austin/finkbeiner-neurite-montage-XDP5.config</code>.</p>
+<pre><code>cd ~/nextflow-cluster
+python bin/validate_config.py &lt;your.config&gt;
+sbatch --export=ALL,NEXTFLOW_INSTALL_DIR=$HOME/nextflow-cluster run.sh -c &lt;your.config&gt;</code></pre>
+<div class="warn"><b>Use the CSV route for results that you compare with the XDP data.</b>
+The database module does not have the root-contact attribution (<code>--root-px</code>, <code>--cross-cos</code>) or the newer branch metrics,
+so its numbers are not the same. It also needs an experiment that is registered in the database, and
+<code>params.platemap_path</code> must list your wells.</div>
+
+<h2 id="limits">10. Limits, known problems, troubleshooting</h2>
+<h3>What we know about accuracy</h3>
+<ul>
+  <li>The neurite model was trained on 12 hand-traced fields of live RGEDI (EGFP fill) neurons, 20X, from four XDP experiments. Held-out F1 = 0.645.
+      For a new marker, objective or cell type, look at overlays first, and if possible trace a few fields in SNT and score them
+      (<code>ml/neurite/eval_qa.py</code>). To retrain, see <code>ml/neurite/README.md</code>.</li>
+  <li>Attribution is not perfect. In a check with fake somas (real masks moved to random places), we estimated that 14&ndash;24% of
+      &ldquo;has a neurite&rdquo; calls are chance contacts in dense wells. Total length per well does not depend on attribution.</li>
+  <li>Live neurite images are faint and change between experiments. Fixed MAP2 staining traces much more cleanly, if your question allows fixed cells.</li>
+  <li>Most somas have no traced neurite, so medians are usually 0.</li>
+</ul>
+<h3>Troubleshooting</h3>
+<div class="tbl"><table>
+<tr><th>Problem</th><th>Cause and fix</th></tr>
+<tr><td>Job is <code>PENDING (Resources)</code> for hours</td><td>The <code>galaxy</code> partition has only 2 GPU nodes (one V100 each). CPU jobs from other users can fill them. Wait, or ask the other user or IT.</td></tr>
+<tr><td><code>SKIP: found N FITC tiles (need 16)</code></td><td>Wrong <code>RAW_ROOT</code>, <code>raw_folder</code>, well or timepoint, or not a 16-tile FITC well.</td></tr>
+<tr><td><code>cache ... built with different params</code></td><td>You changed a soma setting or the checkpoint. Use a new cache folder.</td></tr>
+<tr><td>Run is about 10&times; slower than expected</td><td>Cellpose 4 must use <code>use_bfloat16=False</code> on V100 GPUs. The script already does this; keep it if you edit the code.</td></tr>
+<tr><td><code>refuses to overwrite</code></td><td>The run folder exists. Use a new <code>LABEL</code>, or <code>--overwrite</code> if you are sure.</td></tr>
+<tr><td>Bright bands or straight lines along tile edges in the overlay</td><td>Edge effects of per-tile normalisation. Keep <code>--seam-band 6</code> and <code>--flatten-size 128</code>.</td></tr>
+<tr><td><code>Permission denied</code> on the SIF or the model</td><td>You are not in the <code>finkbeinerlab</code> group. Ask IT.</td></tr>
+<tr><td>Test 1 fails</td><td>Your checkout is not <code>austin-claude</code>, or the code was changed. Check <code>git -C ~/nextflow-cluster status</code> and the <code>code:</code> line at the top of the log.</td></tr>
+</table></div>
+
+<footer>
+Repository <code>finkbeiner-lab/nextflow-cluster</code>, branch <code>austin-claude</code>. This guide: <code>docs/neurite_howto.html</code>.
+Other documents: <code>docs/METHODS_neurite_quantification.md</code>, <code>docs/DEVELOPMENT.md</code>, <code>ml/neurite/README.md</code>,
+<code>/gladstone/finkbeiner/kaye/XDP/neurite-rework/CLAUDE.md</code>.
+</footer>
+</div>
+</body>
+</html>

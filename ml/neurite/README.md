@@ -1,5 +1,12 @@
 # Neurite DL segmentation (Track B — "DL, built now")
 
+> **To run the neurite module, read `docs/neurite_howto.html` first.** The production
+> driver is `montage_percell.py` (job scripts in `sbatch/`, checker `compare_runs.py`).
+> The trained checkpoint is
+> `/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-model-runs/run1/best.pt`
+> (12 traced fields, held-out F1 0.645). The "Status" note below describes the
+> early scaffolding and is out of date.
+
 Offline deep-learning training harness for **2D neurite segmentation on faint
 fluorescence** (RGEDI / FITC = EGFP fill), plus a pipeline-facing inference
 stub. It replaces the CellProfiler / Frangi-vesselness detector that fragments

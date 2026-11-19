@@ -50,6 +50,7 @@ The branch also corrects three standalone modules that did not start on `main`: 
 | Topic | File |
 |---|---|
 | How a code change gets to a Slurm job | `docs/DEVELOPMENT.md` |
+| How to run the neurite module (start here) | `docs/neurite_howto.html` |
 | Neurite methods | `docs/METHODS_neurite_quantification.md`, `ml/neurite/README.md` |
 | miniSOG history | `docs/MINISOG_HISTORY.md` |
 | MRID connections to the pipeline | `docs/mrid_pipeline_wiring.md` |

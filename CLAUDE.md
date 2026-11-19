@@ -96,6 +96,17 @@ Standalone scripts (run with `python` / `Rscript`, not wired into `pipeline.nf`)
 - **`tracking_ultrack.py`** - Ultrack (ILP, Gurobi) tracker. Needs the separate `containers/ultrack.def` container.
 - **`ml/cellpose_ft/`** - Tools to label cells and export Cellpose fine-tuning sets.
 
+#### Neurite analysis module (read this before neurite work)
+Full user guide: `docs/neurite_howto.html`. Methods: `docs/METHODS_neurite_quantification.md`.
+- **Use `ml/neurite/montage_percell.py`** (CSV route). It made the final XDP results. Per well: 16 raw IXM FITC tiles → 4x4 montage → Cellpose-SAM somas → clDice U-Net neurite map → root-contact attribution → `percell.csv`, `perwell.csv`, `params.json`, QC overlay TIFs in `<out>/runs/<timestamp>_<label>/` (`<out>/latest` → newest). `bin/neurite_montage.py` (`DO_NEURITE_MONTAGE`, writes to the DB) is the same method WITHOUT root-contact attribution, so its numbers differ.
+- Job scripts: `ml/neurite/sbatch/neurite_example_cpu.sbatch` (test 1), `neurite_example_gpu.sbatch` (test 2), `neurite_run.sbatch` (own data). Settings via `--export=ALL,OUT=...,MANIFEST=...,RAW_ROOT=...,LABEL=...`. Checker: `ml/neurite/compare_runs.py --expected <dir> --got <run dir> [--exact|--rtol 0.05]`.
+- Container: `/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/nextflow-cluster.sif`. Model: `/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-model-runs/run1/best.pt`. Run the repo's `ml/neurite/*.py`, not the copy baked at `/ml/neurite` in the SIF (older, lacks `--root-px`/`--cross-cos`).
+- **Example to reproduce before new work:** `/gladstone/finkbeiner/kaye/XDP/neurite-rework/example-test/`. Input: `manifest.csv` (XDP5 C03 CTR + I03 XDP, T7), raw tiles in `/gladstone/finkbeiner/robodata/IXM4Galaxy/Austin/XDP5-RGEDI/{C03,I03}/`, `cache/*.npz`. Expected output: `expected/{perwell.csv,percell.csv,params.json,*_percell.tif}` (C03: 1976 somas, 744 with neurite, 67.3 px/soma; I03: 3617, 1798, 166.3). Test 1 (cache, CPU) must match exactly; test 2 (raw, GPU) within 5%.
+- Locked settings: `--threshold 0.5 --diameter 25 --flow 0.6 --cellprob -1.0 --clean-k 2.0 --flatten-size 128 --seam-band 6 --root-px 6 --min-radial 0.8 --cross-cos -0.7`. Soma settings, `--flatten-size` and the checkpoint are stored in the cache: change them → new `--cache-dir`. Post-segmentation settings can be re-run from the cache on CPU (~1 min/well). Fresh GPU: ~4-5 min/well on V100.
+- Inputs it expects: IXM names `*_<TP>_*_<WELL>_<SITE>_FITC_*.tif`, 16 sites in a 4x4 raster, no overlap, at `<raw-root>/<raw_folder or EXP-RGEDI>/<WELL>/`. Manifest columns: `experiment,well,timepoint,cell_line,genotype[,raw_folder]`.
+- Units are pixels (IXM 20X, bin 1: ~0.348 µm/px; read `spatial-calibration-x` from the tile metadata). XDP analysis used two readouts: length/branching among neurite-bearing cells, and fraction of cells with a neurite; cell line is the replicate for genotype.
+- Frozen XDP results (do not overwrite): `/gladstone/finkbeiner/kaye/XDP/neurite-rework/<EXP>/latest/`; column guide in `neurite-rework/CLAUDE.md`.
+
 #### Code style conventions
 All core Python files follow these conventions:
 - **Docstrings**: Google style (`Args:`, `Returns:`, `Raises:`)
@@ -139,7 +150,7 @@ The Singularity container binds:
 ## Working Rules for Claude
 
 - Never push to, merge into, or open a PR against `main`. `main` belongs to the whole lab. Work on a personal branch made from `austin-claude` or `main`.
-- Do not submit or cancel Slurm jobs (`sbatch`, `scancel`) unless the user tells you to. Write the sbatch script, then give the user the submit command.
+- Do not submit or cancel Slurm jobs (`sbatch`, `scancel`) unless the user tells you to. Write the sbatch script, then give the user the submit command (see the `cluster-batch-submit` skill in `.claude/skills/`).
 - Reach the cluster with `sft ssh --command '<command>' fb-galaxy-dev01`. This dev node has no GPU and is shared: do not run heavy compute on it.
 - Raw image data is read-only. Write outputs to the lab project folders on `/gladstone/finkbeiner`, not to the cluster home directory.
 - Keep experiment-specific scripts in `analyses/<project>/`. Commit only generic pipeline code. Do not commit results, credentials, or experiment names in help text.
