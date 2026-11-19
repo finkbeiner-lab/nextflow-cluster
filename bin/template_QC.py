@@ -110,7 +110,11 @@ class TemplateQC:
                     assert ':' not in row.Exposure
                     exposure_vals = row.Exposure.split(';')
                     for exposure in exposure_vals:
-                        assert exposure.isnumeric(), f'exposure {exposure} is not numeric'
+                        try:
+                            value = float(exposure)
+                        except ValueError:
+                            raise AssertionError(f'exposure {exposure} is not numeric')
+                        assert 0 < value < 20000, f'check Exposure in template, {exposure}'
                 else:
                     assert 0 < row.Exposure < 20000, f'check Exposure in template, {row.Exposure}'
 
@@ -177,10 +181,10 @@ class TemplateQC:
             for e in exposures:
                 if isinstance(e, str):
                     try:
-                        assert int(e) >= 0, f"{e} is not greater than or equal to 0."
+                        assert float(e) >= 0, f"{e} is not greater than or equal to 0."
                     except ValueError as err:
-                        logger.error(f'Value {e} cannot be converted to int\n{err}')
-                        print(f'Value {e} cannot be converted to int\n{err}')
+                        logger.error(f'Value {e} cannot be converted to a number\n{err}')
+                        print(f'Value {e} cannot be converted to a number\n{err}')
                         raise err
 ######### KS edit for single channel in IXM
         #     # Handle ExcitationIntensity
