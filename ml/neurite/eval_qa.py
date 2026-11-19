@@ -10,7 +10,8 @@ For each held-out validation field, this:
   comparison (the CP-Tubeness / Frangi ceilings were F1 ~0.25 / ~0.19 on the
   earlier annotation set);
 * writes an RGB QA overlay: gray image, GT centreline in green, DL prediction
-  centreline in magenta (agreement reads white-ish).
+  centreline in magenta drawn on top (agreement shows magenta; green alone =
+  missed by the model; magenta alone = found but not traced).
 
 Usage::
 

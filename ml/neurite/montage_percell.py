@@ -2,12 +2,19 @@
 """Whole-well montage per-cell neurite quantification (CP tool-to-tool batch).
 
 For each well in a manifest, this rebuilds a whole-well montage DIRECTLY FROM
-RAW IXM tiles (CellProfiler used individually background-subtracted tiles, which
+RAW tiles (CellProfiler used individually background-subtracted tiles, which
 we deliberately do not use), then runs the trained pipeline on it:
 
-* **Montage geometry** — 16 sites in a 4x4 ``standard`` raster grid, edge-to-edge
+* **Input** — any microscope. ``--tile-pattern`` describes the file names
+  (``{well}``, ``{tp}``, ``{site}``, ``*`` placeholders), ``--well-dir`` the
+  folder, ``--grid`` the tile grid (``1x1`` = one already-stitched image per
+  well), ``--tile-order`` the scan order and ``--overlap-px`` the tile overlap.
+  Defaults = the ImageXpress (IXM) layout used for the XDP results.
+* **Montage geometry** — default 16 sites in a 4x4 ``standard`` grid, edge-to-edge
   (overlap measured ~0: IXM fields are contiguous, so edge-to-edge keeps neurites
-  continuous across seams; verified against CP's own BGs_MN montage).
+  continuous across seams; verified against CP's own BGs_MN montage). With
+  ``--overlap-px N`` each shared strip is split down the middle, so no region
+  appears twice.
 * **Per-tile normalization** — each raw tile is percentile-normalized (1-99.5)
   BEFORE stitching. This removes tile-to-tile vignetting seams and matches exactly
   how the clDice model was trained (on per-tile percentile-normalized crops).
@@ -42,29 +49,186 @@ from scipy import ndimage
 from skimage.measure import regionprops
 from skimage.filters import apply_hysteresis_threshold
 from skimage.morphology import remove_small_objects
+from skimage.segmentation import relabel_sequential
 
 from percell_integrate import (attribute, colorize, load_model, parse_name,
                                percentile_normalize, per_soma_lengths,
                                predict_tiled, segment_somas)
 
-GRID = 4  # 4x4 = 16 tiles
+# Defaults = ImageXpress (IXM) layout used for the XDP results.
+DEFAULT_TILE_PATTERN = "*_{tp}_*_{well}_{site}_FITC_*.tif"
+DEFAULT_WELL_DIR = "{raw_folder}/{well}"
+TILE_ORDERS = ("standard", "serpentine", "legacy")  # same names as bin/montage.py
 
 
-def well_tiles(welldir: str, well: str, tp: str) -> Tuple[List[str], List[int]]:
-    """List a well's FITC tiles at one timepoint, ordered by site 1..16.
+class Layout:
+    """Where each acquired tile goes in the whole-well montage.
+
+    Tiles are ranked by their site number (lowest first); rank ``k`` is the
+    ``k``-th tile of the microscope's scan. ``order`` gives the scan path:
+
+    * ``standard``:   1 2 3 / 4 5 6 / 7 8 9 (left to right on every row; IXM)
+    * ``serpentine``: 1 2 3 / 6 5 4 / 7 8 9 (odd rows reversed; e.g. Robo4)
+    * ``legacy``:     3 2 1 / 4 5 6 / 9 8 7 (even rows reversed)
+
+    With ``overlap`` px shared between neighbours, each shared strip is split
+    down the middle (half cropped from each tile), so nothing appears twice.
+    """
+
+    def __init__(self, rows: int, cols: int, order: str = "standard",
+                 overlap: int = 0) -> None:
+        if rows < 1 or cols < 1:
+            raise ValueError(f"grid must be at least 1x1, got {rows}x{cols}")
+        if order not in TILE_ORDERS:
+            raise ValueError(f"tile order must be one of {TILE_ORDERS}, got {order!r}")
+        if overlap < 0:
+            raise ValueError(f"overlap must be >= 0 px, got {overlap}")
+        self.rows, self.cols, self.order, self.overlap = rows, cols, order, overlap
+
+    @classmethod
+    def from_args(cls, args: argparse.Namespace) -> "Layout":
+        """Build from ``--grid ROWSxCOLS``, ``--tile-order``, ``--overlap-px``."""
+        m = re.fullmatch(r"\s*(\d+)\s*[xX]\s*(\d+)\s*", args.grid)
+        if not m:
+            raise SystemExit(f"--grid must look like 4x4 (rows x columns), got {args.grid!r}")
+        try:
+            return cls(int(m.group(1)), int(m.group(2)), args.tile_order, args.overlap_px)
+        except ValueError as exc:
+            raise SystemExit(str(exc))
+
+    @property
+    def n(self) -> int:
+        """Number of tiles per well."""
+        return self.rows * self.cols
+
+    def describe(self) -> str:
+        """Short text for cache meta and logs, e.g. ``4x4 standard overlap 0``."""
+        return f"{self.rows}x{self.cols} {self.order} overlap {self.overlap}"
+
+    def cell(self, k: int) -> Tuple[int, int]:
+        """Grid (row, col) of the ``k``-th tile (0-based scan rank)."""
+        r, j = divmod(k, self.cols)
+        rev = ((self.order == "serpentine" and r % 2 == 1)
+               or (self.order == "legacy" and r % 2 == 0))
+        return r, (self.cols - 1 - j if rev else j)
+
+    def _crop(self, i: int, n: int) -> Tuple[int, int]:
+        """(start, end) px to crop from a tile at grid index ``i`` of ``n``."""
+        before = self.overlap - self.overlap // 2 if i > 0 else 0
+        after = self.overlap // 2 if i < n - 1 else 0
+        return before, after
+
+    def geometry(self, th: int, tw: int) -> Tuple[int, int, List[int], List[int]]:
+        """Montage size and row/column start offsets for tiles of size (th, tw).
+
+        Returns:
+            ``(H, W, row_starts, col_starts)``; the interior seams are at
+            ``row_starts[1:]`` and ``col_starts[1:]``.
+        """
+        if 2 * self.overlap >= min(th, tw):
+            raise ValueError(f"overlap {self.overlap} px is too large for {th}x{tw} tiles")
+        def starts(n: int, size: int) -> Tuple[int, List[int]]:
+            out, pos = [], 0
+            for i in range(n):
+                out.append(pos)
+                b, a = self._crop(i, n)
+                pos += size - b - a
+            return pos, out
+        H, rs = starts(self.rows, th)
+        W, cs = starts(self.cols, tw)
+        return H, W, rs, cs
+
+    def place(self, canvas: np.ndarray, tile: np.ndarray, k: int) -> None:
+        """Write the ``k``-th tile (overlap cropped) into the montage, in place."""
+        th, tw = tile.shape
+        _, _, rs, cs = self.geometry(th, tw)
+        r, c = self.cell(k)
+        t0, t1 = self._crop(r, self.rows)
+        l0, l1 = self._crop(c, self.cols)
+        part = tile[t0:th - t1, l0:tw - l1]
+        canvas[rs[r]:rs[r] + part.shape[0], cs[c]:cs[c] + part.shape[1]] = part
+
+
+def _pattern_parts(pattern: str) -> List[str]:
+    """Split a tile pattern into literal text and placeholder/wildcard tokens."""
+    return [p for p in re.split(r"(\{site\}|\{well\}|\{tp\}|\{experiment\}|\*|\?)",
+                                pattern) if p]
+
+
+def well_dir(raw_root: str, template: str, row: Dict[str, str]) -> str:
+    """The folder that holds one well's raw tiles.
+
+    Args:
+        raw_root: ``--raw-root``.
+        template: ``--well-dir``; placeholders ``{experiment}``, ``{well}``,
+            ``{tp}``, ``{raw_folder}`` (the manifest column, or
+            ``<experiment>-RGEDI`` when the column is absent/empty).
+        row: Manifest row.
+    """
+    exp = row["experiment"]
+    return os.path.join(raw_root, template.format(
+        experiment=exp, well=row["well"], tp=row["timepoint"],
+        raw_folder=(row.get("raw_folder") or f"{exp}-RGEDI")))
+
+
+def well_tiles(welldir: str, pattern: str, exp: str, well: str,
+               tp: str) -> Tuple[List[str], List[int]]:
+    """List a well's tiles at one timepoint, ordered by site number.
 
     Args:
         welldir: Directory of raw tiles for the well.
+        pattern: File-name pattern. ``{well}``, ``{tp}``, ``{experiment}`` are
+            filled from the manifest; ``{site}`` matches the site number; ``*``
+            and ``?`` are wildcards. Without ``{site}`` there must be exactly one
+            matching image (one already-stitched image per well, ``--grid 1x1``).
+        exp: Experiment name.
         well: Well id (e.g. ``"J03"``).
-        tp: Timepoint token (e.g. ``"T9"``).
+        tp: Timepoint token as it appears in the file names (e.g. ``"T9"``).
 
     Returns:
-        ``(paths, sites)`` sorted ascending by site index.
+        ``(paths, sites)`` sorted ascending by site number.
     """
-    pat = re.compile(rf'_{well}_(\d+)_FITC_')
-    fs = [f for f in glob.glob(f"{welldir}/*_{tp}_*_{well}_*_FITC_*.tif") if pat.search(f)]
-    fs.sort(key=lambda f: int(pat.search(f).group(1)))
-    return fs, [int(pat.search(f).group(1)) for f in fs]
+    fill = {"{well}": well, "{tp}": tp, "{experiment}": exp}
+    rx, gl = "", ""
+    for p in _pattern_parts(pattern):
+        if p == "{site}":
+            rx, gl = rx + r"(\d+)", gl + "*"
+        elif p in fill:
+            rx, gl = rx + re.escape(fill[p]), gl + glob.escape(fill[p])
+        elif p == "*":
+            rx, gl = rx + ".*", gl + "*"
+        elif p == "?":
+            rx, gl = rx + ".", gl + "?"
+        else:
+            rx, gl = rx + re.escape(p), gl + glob.escape(p)
+    pat = re.compile(rx)
+    has_site = "{site}" in pattern
+    hits = []
+    for f in glob.glob(os.path.join(glob.escape(welldir), gl)):
+        m = pat.fullmatch(os.path.basename(f))
+        if m:
+            hits.append((int(m.group(1)) if has_site else 1, f))
+    hits.sort()
+    return [f for _, f in hits], [s for s, _ in hits]
+
+
+def find_well_tiles(args: argparse.Namespace, row: Dict[str, str],
+                    layout: Layout) -> Tuple[List[str], str]:
+    """Find one manifest row's tiles and check there is one per grid cell.
+
+    Returns:
+        ``(paths, problem)``: paths in scan order, and ``""`` if they fit the
+        grid, else a one-line reason to skip the well.
+    """
+    exp, well, tp = row["experiment"], row["well"], row["timepoint"]
+    wdir = well_dir(args.raw_root, args.well_dir, row)
+    paths, sites = well_tiles(wdir, args.tile_pattern, exp, well, tp)
+    if len(paths) != layout.n:
+        return paths, (f"found {len(paths)} tiles (need {layout.n} for a "
+                       f"{layout.rows}x{layout.cols} grid) in {wdir}")
+    if len(set(sites)) != len(sites):
+        return paths, f"site numbers repeat in {wdir}; make --tile-pattern more specific"
+    return paths, ""
 
 
 def flatten_tile(raw: np.ndarray, size: int) -> np.ndarray:
@@ -97,7 +261,8 @@ def flatten_tile(raw: np.ndarray, size: int) -> np.ndarray:
 
 
 def neurite_mask_from_prob(prob: np.ndarray, threshold: float, thr_low: float,
-                           seam_band: int, min_neurite: int) -> np.ndarray:
+                           seam_band: int, min_neurite: int,
+                           seams: Tuple[List[int], List[int]]) -> np.ndarray:
     """Binary neurite mask from the U-Net probability montage.
 
     Args:
@@ -109,6 +274,8 @@ def neurite_mask_from_prob(prob: np.ndarray, threshold: float, thr_low: float,
             >= ``threshold`` disable hysteresis (plain ``prob >= threshold``).
         seam_band: Zero this many px either side of each interior tile seam.
         min_neurite: Drop connected components smaller than this (px).
+        seams: ``(row_seams, col_seams)`` px positions of the interior seams
+            (see :func:`montage_seams`).
 
     Returns:
         Boolean neurite mask (H, W).
@@ -122,12 +289,33 @@ def neurite_mask_from_prob(prob: np.ndarray, threshold: float, thr_low: float,
     # (false long straight neurites). Zero a thin band at each interior seam;
     # real neurites crossing a seam lose only ~2*band px (negligible for length).
     # Applied after hysteresis so a seam line can never seed a real trace.
-    th_m, tw_m = prob.shape[0] // GRID, prob.shape[1] // GRID
     if seam_band > 0:
-        for kk in range(1, GRID):
-            mask[kk * th_m - seam_band:kk * th_m + seam_band, :] = False
-            mask[:, kk * tw_m - seam_band:kk * tw_m + seam_band] = False
+        for y in seams[0]:
+            mask[max(0, y - seam_band):y + seam_band, :] = False
+        for x in seams[1]:
+            mask[:, max(0, x - seam_band):x + seam_band] = False
     return remove_small_objects(mask, min_neurite)
+
+
+def montage_seams(layout: Layout,
+                  montage_shape: Tuple[int, int]) -> Tuple[List[int], List[int]]:
+    """Interior seam positions for a montage built with ``layout``.
+
+    The tile size follows from the montage size (``H = rows*th - (rows-1)*overlap``),
+    so a cache built with another grid/overlap is caught here.
+
+    Raises:
+        ValueError: If ``layout`` cannot give ``montage_shape``.
+    """
+    ov = layout.overlap
+    th = (montage_shape[0] + (layout.rows - 1) * ov) // layout.rows
+    tw = (montage_shape[1] + (layout.cols - 1) * ov) // layout.cols
+    H, W, rs, cs = layout.geometry(th, tw)
+    if (H, W) != tuple(montage_shape):
+        raise ValueError(f"montage is {montage_shape[0]}x{montage_shape[1]} but --grid/"
+                         f"--overlap-px ({layout.describe()}) with {th}x{tw} tiles gives "
+                         f"{H}x{W}; use the layout the cache was built with")
+    return rs[1:], cs[1:]
 
 
 def cache_params(args: argparse.Namespace) -> Dict[str, object]:
@@ -140,6 +328,7 @@ def cache_params(args: argparse.Namespace) -> Dict[str, object]:
                 cellprob=args.cellprob, clean_k=args.clean_k,
                 soma_flatten=args.soma_flatten, soma_floor_px=args.soma_floor_px,
                 soma_min_width=args.soma_min_width,
+                layout=Layout.from_args(args).describe(),
                 checkpoint=os.path.basename(os.path.dirname(os.path.abspath(args.checkpoint)))
                 + "/" + os.path.basename(args.checkpoint))
 
@@ -175,20 +364,6 @@ def check_cache(z, args: argparse.Namespace, cache_path: str) -> None:
                          "use a fresh --cache-dir")
 
 
-def place(canvas: np.ndarray, tile: np.ndarray, site: int, th: int, tw: int) -> None:
-    """Place a tile into the montage canvas at its standard-raster grid cell.
-
-    Args:
-        canvas: Montage array to write into (modified in place).
-        tile: Tile image (th, tw).
-        site: 1-based site index (1..16).
-        th: Tile height.
-        tw: Tile width.
-    """
-    r, c = (site - 1) // GRID, (site - 1) % GRID
-    canvas[r * th:(r + 1) * th, c * tw:(c + 1) * tw] = tile
-
-
 def _read_tiles(paths: List[str]) -> List[np.ndarray]:
     """Read tiles once as float32 (drop any trailing channel axis)."""
     tiles = []
@@ -200,7 +375,18 @@ def _read_tiles(paths: List[str]) -> List[np.ndarray]:
     return tiles
 
 
-def _montage_image01(tiles: List[np.ndarray], sites: List[int],
+def _check_tiles(tiles: List[np.ndarray], layout: Layout) -> Tuple[int, int, int, int]:
+    """Check tile count/sizes against the layout; return ``(th, tw, H, W)``."""
+    if len(tiles) != layout.n:
+        raise ValueError(f"{len(tiles)} tiles for a {layout.rows}x{layout.cols} grid")
+    th, tw = tiles[0].shape
+    if any(t.shape != (th, tw) for t in tiles):
+        raise ValueError("tiles in a well differ in size")
+    H, W, _, _ = layout.geometry(th, tw)
+    return th, tw, H, W
+
+
+def _montage_image01(tiles: List[np.ndarray], layout: Layout,
                      flatten_size: int = 0) -> np.ndarray:
     """Assemble the normalized [0,1] grayscale montage from raw tiles (no GPU).
 
@@ -208,8 +394,7 @@ def _montage_image01(tiles: List[np.ndarray], sites: List[int],
     cache hit (soma+prob restored from disk) to regenerate overlays without ever
     touching Cellpose / the U-Net.
     """
-    th, tw = tiles[0].shape
-    H, W = GRID * th, GRID * tw
+    _, _, H, W = _check_tiles(tiles, layout)
     # Neurite-image source: optional data-driven rolling-background flattening
     # (vignetting / illumination correction) applied per tile BEFORE percentile
     # normalization.
@@ -222,23 +407,23 @@ def _montage_image01(tiles: List[np.ndarray], sites: List[int],
     ranges = np.array([np.percentile(t, 99.5) - np.percentile(t, 1) for t in img_src])
     global_range = float(np.median(ranges))
     image01 = np.zeros((H, W), np.float32)
-    for imgt, s in zip(img_src, sites):
+    for k, imgt in enumerate(img_src):
         lo, hi = np.percentile(imgt, 1), np.percentile(imgt, 99.5)
         if global_range <= 0 or (hi - lo) < EMPTY_FRAC * global_range:
             norm = np.zeros_like(imgt)  # empty/low-signal tile: do not amplify
         else:
             norm = np.clip((imgt - lo) / (hi - lo), 0, 1).astype(np.float32)
-        place(image01, norm, s, th, tw)
+        layout.place(image01, norm, k)
     return image01
 
 
-def build_image01(paths: List[str], sites: List[int],
+def build_image01(paths: List[str], layout: Layout,
                   flatten_size: int = 0) -> np.ndarray:
     """CPU-only montage grayscale rebuild from raw tiles (for overlay regen)."""
-    return _montage_image01(_read_tiles(paths), sites, flatten_size)
+    return _montage_image01(_read_tiles(paths), layout, flatten_size)
 
 
-def build_montages(cp_model, paths: List[str], sites: List[int],
+def build_montages(cp_model, paths: List[str], layout: Layout,
                    diameter: int, flow: float, cellprob: float, clean_k: float,
                    flatten_size: int = 0, soma_flatten: int = 0,
                    soma_floor_px: float = 0.0, soma_min_width: float = 0.0
@@ -247,8 +432,8 @@ def build_montages(cp_model, paths: List[str], sites: List[int],
 
     Args:
         cp_model: Cellpose model.
-        paths: Tile paths ordered by site.
-        sites: Site indices matching ``paths``.
+        paths: Tile paths ordered by site number (scan order).
+        layout: Grid, scan order and overlap of the tiles.
         diameter/flow/cellprob/clean_k: Cellpose soma-recipe params.
         flatten_size: Rolling-background footprint for the NEURITE image.
         soma_flatten: Rolling-background footprint for the SOMA image (Cellpose
@@ -256,20 +441,19 @@ def build_montages(cp_model, paths: List[str], sites: List[int],
         soma_floor_px/soma_min_width: see :func:`segment_somas`.
 
     Returns:
-        ``(image01, soma_labels)`` montages, both (GRID*th, GRID*tw).
+        ``(image01, soma_labels)`` montages, both the montage size (H, W).
     """
-    # Read all 16 tiles once (16 x 2048^2 float32 ~= 256MB, fine).
+    # Read all tiles once (16 x 2048^2 float32 ~= 256MB for the IXM default).
     tiles = _read_tiles(paths)
-    th, tw = tiles[0].shape
-    H, W = GRID * th, GRID * tw
-    image01 = _montage_image01(tiles, sites, flatten_size)
+    _, _, H, W = _check_tiles(tiles, layout)
+    image01 = _montage_image01(tiles, layout, flatten_size)
 
     # Somas run on the raw tiles unless --soma-flatten is set, in which case
     # Cellpose and its intensity cleanup see a flat-fielded copy (vignetting
     # otherwise hides dim/clumped cells). Independent of the neurite flatten.
     soma = np.zeros((H, W), np.int32)
     offset = 0
-    for raw, s in zip(tiles, sites):
+    for k, raw in enumerate(tiles):
         seg = flatten_tile(raw, soma_flatten) if soma_flatten > 0 else None
         labels = segment_somas(cp_model, raw, diameter, flow, cellprob, clean_k,
                                seg_image=seg, floor_px=soma_floor_px,
@@ -278,7 +462,11 @@ def build_montages(cp_model, paths: List[str], sites: List[int],
             lab = labels.copy()
             lab[labels > 0] += offset
             offset = int(lab.max())
-            place(soma, lab, s, th, tw)
+            layout.place(soma, lab, k)
+    if layout.overlap > 0:
+        # Cropping the overlap drops some labels; renumber 1..n so that
+        # n_somas (= soma.max()) stays a count.
+        soma = relabel_sequential(soma)[0]
     return image01, soma
 
 
@@ -411,7 +599,8 @@ def _write_params(run_dir: str, args: argparse.Namespace, run_id: str,
     keys = ["manifest", "raw_root", "out_dir", "cache_dir", "checkpoint",
             "device", "threshold", "diameter", "flow", "cellprob", "clean_k",
             "min_neurite", "seam_band", "flatten_size", "soma_dilation",
-            "thr_low", "attach_px", "root_px", "min_radial", "cross_cos", "soma_flatten", "soma_floor_px", "soma_min_width"]
+            "thr_low", "attach_px", "root_px", "min_radial", "cross_cos", "soma_flatten", "soma_floor_px", "soma_min_width",
+            "tile_pattern", "well_dir", "grid", "tile_order", "overlap_px"]
     meta = dict(run_id=run_id,
                 created=datetime.datetime.now().isoformat(timespec="seconds"),
                 n_wells=n_wells,
@@ -449,6 +638,12 @@ def run_overlay_only(args: argparse.Namespace) -> None:
     root_px = p.get("root_px", 0 if p else args.root_px)
     min_radial = p.get("min_radial", args.min_radial)
     cross_cos = p.get("cross_cos", None if p else args.cross_cos)
+    # Input layout: from the run's params.json when recorded (runs before the
+    # layout options were all IXM 4x4 = the CLI defaults).
+    for k in ("tile_pattern", "well_dir", "grid", "tile_order", "overlap_px"):
+        if k in p:
+            setattr(args, k, p[k])
+    layout = Layout.from_args(args)
 
     manifest = list(csv.DictReader(open(args.manifest)))
     n = 0
@@ -458,18 +653,16 @@ def run_overlay_only(args: argparse.Namespace) -> None:
         if not os.path.exists(cache_path):
             print(f"{exp}/{well}: no cache -> skip (run a GPU analyze pass first)")
             continue
-        welldir = os.path.join(args.raw_root,
-                               (row.get("raw_folder") or f"{exp}-RGEDI"), well)
-        paths, sites = well_tiles(welldir, well, tp)
-        if len(paths) != 16:
-            print(f"{exp}/{well}: found {len(paths)} tiles (need 16) -> skip")
+        paths, problem = find_well_tiles(args, row, layout)
+        if problem:
+            print(f"{exp}/{well}: {problem} -> skip")
             continue
         z = np.load(cache_path)
         soma = z["soma_labels"].astype(np.int32)
         prob = z["neurite_prob"].astype(np.float32) / 255.0
-        image01 = build_image01(paths, sites, flatten_size)
+        image01 = build_image01(paths, layout, flatten_size)
         neurite_mask = neurite_mask_from_prob(prob, threshold, thr_low, seam_band,
-                                              min_neurite)
+                                              min_neurite, montage_seams(layout, prob.shape))
         owner, skel = attribute(soma, neurite_mask, attach_px, root_px, min_radial,
                                 cross_cos)
         tifffile.imwrite(
@@ -484,9 +677,31 @@ def main() -> None:
     """CLI entry point."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--manifest", required=True,
-                    help="CSV: experiment,well,timepoint,cell_line,genotype")
+                    help="CSV: experiment,well,timepoint,cell_line,genotype[,raw_folder]")
     ap.add_argument("--raw-root", required=True,
-                    help="root holding <EXP>-RGEDI/<WELL>/ raw tiles")
+                    help="root folder of the raw images; each well's folder is "
+                         "<raw-root>/<--well-dir>")
+    ap.add_argument("--well-dir", default=DEFAULT_WELL_DIR,
+                    help="folder of one well's images under --raw-root. Placeholders: "
+                         "{experiment} {well} {tp} {raw_folder} (manifest column; "
+                         "<experiment>-RGEDI if absent). Use '.' if all images are in "
+                         "--raw-root itself. Default: %(default)s")
+    ap.add_argument("--tile-pattern", default=DEFAULT_TILE_PATTERN,
+                    help="file-name pattern of the morphology-channel tiles. {well} {tp} "
+                         "{experiment} are filled from the manifest, {site} matches the "
+                         "tile/site number, * and ? are wildcards. Leave out {site} for "
+                         "one already-stitched image per well (with --grid 1x1). "
+                         "Default (ImageXpress, FITC): %(default)s")
+    ap.add_argument("--grid", default="4x4",
+                    help="tiles per well as ROWSxCOLUMNS, e.g. 4x4, 3x5, 1x1. The well "
+                         "must have exactly ROWS*COLUMNS matching tiles. Default: %(default)s")
+    ap.add_argument("--tile-order", default="standard", choices=TILE_ORDERS,
+                    help="scan order of the tiles by site number: standard = 1 2 3/4 5 6 "
+                         "(IXM); serpentine = 1 2 3/6 5 4 (e.g. Robo4); legacy = 3 2 1/4 5 6. "
+                         "Same names as bin/montage.py. Default: %(default)s")
+    ap.add_argument("--overlap-px", type=int, default=0,
+                    help="px shared by neighbouring tiles (0 = edge to edge, IXM). Each "
+                         "shared strip is split down the middle. Default: %(default)s")
     ap.add_argument("--out-dir", required=True)
     ap.add_argument("--checkpoint", required=True)
     ap.add_argument("--device", default="cuda")
@@ -564,6 +779,7 @@ def main() -> None:
     args = ap.parse_args()
     if args.thr_low is None:
         args.thr_low = args.threshold
+    layout = Layout.from_args(args)  # exits with a clear message on a bad --grid
 
     if args.overlay_only:
         run_overlay_only(args)
@@ -612,10 +828,9 @@ def main() -> None:
     print(f"{'experiment/well':18}{'line':10}{'geno':>5}{'somas':>7}{'len/soma':>10}")
     for row in manifest:
         exp, well, tp = row["experiment"], row["well"], row["timepoint"]
-        welldir = os.path.join(args.raw_root, (row.get("raw_folder") or f"{exp}-RGEDI"), well)
-        paths, sites = well_tiles(welldir, well, tp)
-        if len(paths) != 16:
-            print(f"{exp}/{well:14}  SKIP: found {len(paths)} FITC tiles (need 16)")
+        paths, problem = find_well_tiles(args, row, layout)
+        if problem:
+            print(f"{exp}/{well:14}  SKIP: {problem}")
             continue
         # Per-well try/except: one bad well (corrupt tile, transient CUDA error,
         # etc.) must NOT abort the remaining wells. Completed wells are already
@@ -633,7 +848,7 @@ def main() -> None:
                 image01, from_cache = None, True
             else:
                 cp_model, unet = ensure_models()
-                image01, soma = build_montages(cp_model, paths, sites, args.diameter,
+                image01, soma = build_montages(cp_model, paths, layout, args.diameter,
                                                args.flow, args.cellprob, args.clean_k,
                                                flatten_size=args.flatten_size,
                                                soma_flatten=args.soma_flatten,
@@ -649,12 +864,13 @@ def main() -> None:
                         meta=np.array(json.dumps(dict(
                             experiment=exp, well=well, timepoint=tp,
                             cell_line=row.get("cell_line", "?"),
-                            genotype=row.get("genotype", "?"), grid=GRID,
+                            genotype=row.get("genotype", "?"),
                             threshold=args.threshold, seam_band=args.seam_band,
                             min_neurite=args.min_neurite, **cache_params(args)))))
                     os.replace(tmp, cache_path)
             neurite_mask = neurite_mask_from_prob(prob, args.threshold, args.thr_low,
-                                                  args.seam_band, args.min_neurite)
+                                                  args.seam_band, args.min_neurite,
+                                                  montage_seams(layout, prob.shape))
             owner, skel = attribute(soma, neurite_mask, args.attach_px,
                                     args.root_px, args.min_radial, args.cross_cos)
             lengths = per_soma_lengths(owner, skel, soma)

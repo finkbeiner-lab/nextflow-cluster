@@ -32,17 +32,19 @@ Outputs, per field ``<name>``, into ``--out``:
 * ``<name>_mask.npy``  — dilated binary neurite target, uint8 {0,1}.
 * ``<name>_skel.npy``  — 1-px skeleton centreline, uint8 {0,1} (for metric/QA).
 
-CLI::
+* ``<name>_qa.tif``    — RGB check image: grey crop + magenta trace. Open it
+  and confirm the trace lies on the neurites.
+
+CLI (the run that made the production model)::
 
     python rasterize_traces.py \
-        --traces /Users/aholub/Desktop/neurite-annotation/traces \
-        --tiles  /Users/aholub/Desktop/neurite-annotation/tiles \
-        --out    ml/neurite/data \
-        --dilation-radius 2
+        --traces /gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-roi-tracing \
+        --tiles  /gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-roi-tracing \
+        --out    <training-data dir> --dilation-radius 2
 
-Labels currently cover only the two annotated fields (``C03_t1``, ``I03_t1``).
-Track 0 owns extending the SNT annotation set; point ``--traces`` at the larger
-set once it exists and everything downstream scales without code changes.
+Each ``<name>.traces`` is paired with ``<name>*__ROI.tif`` (crops from
+``pick_roi_crops.py``) or ``<name>_raw*.tif``. SNT can cut the saved name at the
+first dot (``..._33114.traces`` for ``..._33114.C__ROI.tif``); the ``*`` covers it.
 """
 
 from __future__ import annotations
@@ -80,7 +82,8 @@ def parse_traces(path: str) -> Tuple[np.ndarray, np.ndarray]:
     height = int(root.find("imagesize").get("height"))
     raster = np.zeros((height, width), dtype=bool)
     for p in root.findall("path"):
-        pts = [(int(pt.get("x")), int(pt.get("y"))) for pt in p.findall("point")]
+        pts = [(int(round(float(pt.get("x")))), int(round(float(pt.get("y")))))
+               for pt in p.findall("point")]
         for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
             n = max(abs(x1 - x0), abs(y1 - y0), 1)
             for i in range(n + 1):
@@ -92,10 +95,10 @@ def parse_traces(path: str) -> Tuple[np.ndarray, np.ndarray]:
 
 
 def find_raw_tile(tiles_dir: str, name: str) -> str:
-    """Locate the raw morphology tile for a field name.
+    """Locate the raw morphology image (crop or tile) for a field name.
 
     Args:
-        tiles_dir: Directory holding ``<name>_raw.tif`` files.
+        tiles_dir: Directory holding ``<name>*__ROI.tif`` or ``<name>_raw*.tif``.
         name: Field stem, e.g. ``"C03_t1"``.
 
     Returns:
@@ -104,7 +107,8 @@ def find_raw_tile(tiles_dir: str, name: str) -> str:
     Raises:
         FileNotFoundError: If no matching raw tile is found.
     """
-    candidates = sorted(glob.glob(os.path.join(tiles_dir, f"{name}_raw*.tif")))
+    candidates = sorted(glob.glob(os.path.join(tiles_dir, f"{name}*__ROI.tif")))
+    candidates += sorted(glob.glob(os.path.join(tiles_dir, f"{name}_raw*.tif")))
     if not candidates:
         raise FileNotFoundError(f"no raw tile for '{name}' in {tiles_dir}")
     return candidates[0]
@@ -148,6 +152,9 @@ def rasterize_field(
     image = tifffile.imread(find_raw_tile(tiles_dir, name)).astype(np.float32)
     if image.ndim == 3:
         image = image[..., 0]
+    if image.shape != skel.shape:
+        raise ValueError(f"{name}: image {image.shape} but traces are {skel.shape}; "
+                         "trace the same image you pair it with")
     if dilation_radius > 0:
         mask = binary_dilation(skel, disk(dilation_radius))
     else:
@@ -159,7 +166,8 @@ def main() -> None:
     """CLI entry point: rasterize every annotated field into ``--out``."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--traces", required=True, help="dir of SNT .traces files")
-    ap.add_argument("--tiles", required=True, help="dir of <name>_raw.tif tiles")
+    ap.add_argument("--tiles", required=True,
+                    help="dir of the traced images: <name>*__ROI.tif or <name>_raw*.tif")
     ap.add_argument("--out", required=True, help="output dir for .npy pairs")
     ap.add_argument(
         "--dilation-radius",
@@ -186,6 +194,11 @@ def main() -> None:
         np.save(os.path.join(args.out, f"{name}_img.npy"), image)
         np.save(os.path.join(args.out, f"{name}_mask.npy"), mask)
         np.save(os.path.join(args.out, f"{name}_skel.npy"), skel)
+        lo, hi = np.percentile(image, [1, 99.5])
+        grey = (np.clip((image - lo) / (hi - lo + 1e-6), 0, 1) * 255).astype(np.uint8)
+        qa = np.dstack([grey, grey, grey])
+        qa[binary_dilation(skel.astype(bool), disk(1))] = [255, 0, 255]
+        tifffile.imwrite(os.path.join(args.out, f"{name}_qa.tif"), qa)
         if args.save_tif:
             tifffile.imwrite(
                 os.path.join(args.out, f"{name}_mask.tif"), mask * 255

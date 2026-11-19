@@ -4,8 +4,10 @@
 > driver is `montage_percell.py` (job scripts in `sbatch/`, checker `compare_runs.py`).
 > The trained checkpoint is
 > `/gladstone/finkbeiner/kaye/XDP/dev-nextflow-modules/neurite-model-runs/run1/best.pt`
-> (12 traced fields, held-out F1 0.645). The "Status" note below describes the
-> early scaffolding and is out of date.
+> (12 traced fields, held-out F1 0.645). Section 8 of the guide shows the full training
+> workflow with pictures (crops → SNT tracing → rasterize → train → score), and
+> `sbatch/neurite_trace_prep.sbatch` + `sbatch/neurite_train.sbatch` run it. The
+> "Status" note and "Dry-run result" below describe the early scaffolding and are out of date.
 
 Offline deep-learning training harness for **2D neurite segmentation on faint
 fluorescence** (RGEDI / FITC = EGFP fill), plus a pipeline-facing inference
@@ -47,6 +49,7 @@ inference stub another track wires in).
 
 | File | Purpose |
 |---|---|
+| `pick_roi_crops.py` | Pick one neurite-rich, low-saturation crop (default 640 px) per tile for hand tracing; writes `<name>__ROI.tif` + `<name>__ROI_context.tif`. |
 | `rasterize_traces.py` | Parse SNT `.traces` (gzipped XML) → rasterize polylines → skeleton, dilate to a neurite-width target, save `(img, mask, skel)` `.npy`. Reuses the scorer's exact parsing. |
 | `losses.py` | Self-contained PyTorch soft-clDice + Dice + BCE (`SoftDiceClDiceBCELoss`). Optional `monai` path. `python losses.py` runs a sanity check. |
 | `model.py` | Compact configurable 2D U-Net, 1-channel in, 1-logit out. CPU-runnable. |
@@ -65,18 +68,21 @@ inference stub another track wires in).
 python -m venv .venv-neurite && . .venv-neurite/bin/activate
 pip install -r ml/neurite/requirements-ml.txt
 
-# 1. rasterize SNT traces into (image, mask) training pairs
-python ml/neurite/rasterize_traces.py \
-    --traces /Users/aholub/Desktop/neurite-annotation/traces \
-    --tiles  /Users/aholub/Desktop/neurite-annotation/tiles \
-    --out    ml/neurite/data --dilation-radius 2
+# 1. pick crops, trace them in Fiji > SNT (save <name>.traces next to each __ROI.tif),
+#    then rasterize the traces into (image, mask) training pairs (+ _qa.tif check images)
+python ml/neurite/pick_roi_crops.py --in <tiles> --out <tracing dir> --roi 640
+python ml/neurite/rasterize_traces.py --traces <tracing dir> --tiles <tracing dir> \
+    --out <training-data dir> --dilation-radius 2
 
 # 2a. CPU dry run (proves the harness on the 2 existing fields)
 python ml/neurite/train.py --dry-run --data ml/neurite/data --out ml/neurite/runs/dryrun
 
-# 2b. real training (later, GPU, once Track 0 expands the annotation set)
-python ml/neurite/train.py --data <big_data_dir> --out runs/full \
-    --device cuda --epochs 200 --crop 512 --depth 4 --base 32
+# 2b. real training on GPU (the settings of the production model, run1)
+python ml/neurite/train.py --data <training-data dir> --out <run dir> --device cuda \
+    --epochs 200 --batch 8 --crop 256 --iters-per-epoch 200 --lr 1e-3 --depth 4 --base 32 \
+    --pos-weight 5 --cldice-iters 10 --val-stems H15,I07 --seed 0
+python ml/neurite/eval_qa.py --data <training-data dir> --checkpoint <run dir>/best.pt \
+    --out <run dir> --val-stems H15,I07 --device cuda
 
 # 3. inference → probability map
 python ml/neurite/infer.py --checkpoint runs/full/best.pt \
