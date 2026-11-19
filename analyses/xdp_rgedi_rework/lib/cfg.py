@@ -49,7 +49,15 @@ def experiments() -> Dict[str, dict]:
 
 
 def lines_in_scope() -> Dict[str, dict]:
-    return load_yaml("experiments.yaml")["lines_in_scope"]
+    """Lines analysed. XDP_RGEDI_EXTRA_LINES (comma-separated Sci_SampleIDs from lines_out_of_scope) adds lines for
+    one run only, e.g. run 4 (2026-11-17) added CTR-33362.C; unset = the configured scope of runs 1-3."""
+    y = load_yaml("experiments.yaml")
+    scope = dict(y["lines_in_scope"])
+    for line in filter(None, os.environ.get("XDP_RGEDI_EXTRA_LINES", "").split(",")):
+        if line not in y.get("lines_out_of_scope", {}):
+            raise ValueError(f"XDP_RGEDI_EXTRA_LINES: {line} is not a configured out-of-scope line")
+        scope[line] = {"short": line.split("-", 1)[1], "genotype": line.split("-", 1)[0]}
+    return scope
 
 
 def params() -> dict:

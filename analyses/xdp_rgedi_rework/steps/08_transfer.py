@@ -105,6 +105,9 @@ def main() -> None:
     # Targets.
     targets = [(r.exp, r.line) for r in direct[~direct.usable].itertuples()]
     targets += [("XDP8", l) for l in figs.LINE_ORDER if l in cfg.experiments()["XDP8"]["lines"]]
+    # Extra lines (XDP_RGEDI_EXTRA_LINES, run 4) go last, so every other target keeps its run 1-3 bootstrap seed.
+    targets = ([t for t in targets if t[1] in figs.BASE_LINE_ORDER] +
+               [t for t in targets if t[1] not in figs.BASE_LINE_ORDER])
     jobs = []
     for i, (exp, line) in enumerate(targets):
         k = src[src.line == line][["exp"] + [f"k_{c}" for c in CUTS] + [f"abs_{c}" for c in CUTS]].rename(

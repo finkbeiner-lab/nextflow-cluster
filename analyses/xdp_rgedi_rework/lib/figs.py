@@ -7,6 +7,7 @@ Colours come from the validated reference palette (dataviz skill):
             the surface, so cross-line figures always carry direct labels or a table)
 """
 
+import os
 from pathlib import Path
 from typing import Iterable
 
@@ -35,6 +36,15 @@ LINE_ORDER = ["CTR-33114.C", "CTR-33113.2I", "XDP-33109.2B", "XDP-33363.D"]
 LINE_SHORT = {"CTR-33114.C": "14C", "CTR-33113.2I": "13I", "XDP-33109.2B": "09B", "XDP-33363.D": "63D"}
 LINE_COLOR = {"CTR-33114.C": "#2a78d6", "CTR-33113.2I": "#eb6834", "XDP-33109.2B": "#1baf7a",
               "XDP-33363.D": "#eda100"}
+# XDP_RGEDI_EXTRA_LINES (see lib/cfg.lines_in_scope) appends lines for one run, after the four lines of runs 1-3,
+# so the other lines keep their order. Run 4 (2026-11-17) added CTR-33362.C.
+BASE_LINE_ORDER = list(LINE_ORDER)   # the lines of runs 1-3, before any extra lines
+_EXTRA_COLORS = ["#7d4fb3", "#8a8a8a"]
+for _i, _l in enumerate(l for l in os.environ.get("XDP_RGEDI_EXTRA_LINES", "").split(",") if l):
+    if _l not in LINE_ORDER:
+        LINE_ORDER.append(_l)
+        LINE_SHORT[_l] = _l.split("-", 1)[1].replace(".", "")[-3:]
+        LINE_COLOR[_l] = _EXTRA_COLORS[_i % len(_EXTRA_COLORS)]
 EXP_ORDER = ["XDP1", "XDP3", "XDP5", "XDP8", "XDP10", "XDP11"]
 
 RATIO_TICKS = [0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1.0]
