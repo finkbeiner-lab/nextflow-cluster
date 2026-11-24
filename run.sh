@@ -242,8 +242,22 @@ echo "Nextflow version:  ${NXF_VER}"
 #
 # Per-user subdirectory under a shared parent: always on the NAS, and no
 # cross-user permission collisions on the framework/plugin cache.
+#
+# The parent is /gladstone/finkbeiner/deepcell/nxf because that is the only
+# tree the production deepcell service account can write to. If it is not
+# writable for the submitting user (e.g. a lab member running run.sh by hand
+# after the launcher chmod'd that dir 0700), fall back to the legacy
+# ${INSTALL_DIR}/nxf/<user> location. An explicit NXF_HOME always wins.
 # ---------------------------------------------------------------------------
-export NXF_HOME="${NXF_HOME:-${INSTALL_DIR}/nxf/$(whoami)}"
+NXF_HOME_ROOT="${NXF_HOME_ROOT:-/gladstone/finkbeiner/deepcell/nxf}"
+if [ -z "${NXF_HOME:-}" ]; then
+    NXF_HOME="${NXF_HOME_ROOT}/$(whoami)"
+    if ! mkdir -p "${NXF_HOME}" 2>/dev/null; then
+        echo "WARNING: cannot create ${NXF_HOME}; falling back to ${INSTALL_DIR}/nxf/$(whoami)"
+        NXF_HOME="${INSTALL_DIR}/nxf/$(whoami)"
+    fi
+fi
+export NXF_HOME
 if ! mkdir -p "${NXF_HOME}" 2>/dev/null; then
     echo "ERROR: cannot create NXF_HOME at ${NXF_HOME}"
     echo "  Set NXF_HOME to a directory writable from the compute nodes."
